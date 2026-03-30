@@ -9,10 +9,14 @@ import type {
   ProcessingProgress,
 } from "../types";
 
+type SideTab = "media" | "files" | "settings";
+
 interface ProjectState {
   // Navigation
   currentView: AppView;
   setView: (view: AppView) => void;
+  activeSideTab: SideTab;
+  setActiveSideTab: (tab: SideTab) => void;
 
   // Video
   filePath: string | null;
@@ -75,6 +79,8 @@ const defaultProgress: ProcessingProgress = {
 export const useProjectStore = create<ProjectState>((set) => ({
   currentView: "import",
   setView: (view) => set({ currentView: view }),
+  activeSideTab: "media",
+  setActiveSideTab: (tab) => set({ activeSideTab: tab }),
 
   filePath: null,
   videoMetadata: null,
@@ -118,6 +124,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
   resetProject: () =>
     set({
       currentView: "import",
+      activeSideTab: "media",
       filePath: null,
       videoMetadata: null,
       processedFilePath: null,
