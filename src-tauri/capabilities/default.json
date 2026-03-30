@@ -22,6 +22,17 @@
     "fs:allow-stat",
     "core:event:default",
     "core:event:allow-emit",
-    "core:event:allow-listen"
+    "core:event:allow-listen",
+    "updater:default",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
+    "sql:default",
+    "sql:allow-load",
+    "sql:allow-execute",
+    "sql:allow-select",
+    "sql:allow-close",
+    "process:default",
+    "process:allow-restart",
+    "process:allow-exit"
   ]
 }

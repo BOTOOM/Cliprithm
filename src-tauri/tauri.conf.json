@@ -22,7 +22,11 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' asset: tauri: data:; media-src 'self' asset: tauri:; script-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; connect-src 'self' https://github.com https://api.github.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' asset: tauri: data:; media-src 'self' asset: tauri:; script-src 'self' 'unsafe-inline'",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
     }
   },
   "bundle": {
@@ -34,7 +38,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhGQkE1Qjc2MDgwMjdCRTUKUldUbGV3SUlkbHU2ajA1RHNzWTZnMEpwMi9HWm5vR2xFV2loZHoxV2xmN0RHVitwaXFNbzd2Q1UK",
+      "endpoints": [
+        "https://github.com/botom/silencut/releases/latest/download/latest.json"
+      ]
+    }
+  }
 }

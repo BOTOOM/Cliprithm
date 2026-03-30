@@ -1,5 +1,6 @@
 import { TopNavBar } from "./TopNavBar";
 import { SideNavBar } from "./SideNavBar";
+import { UpdateNotification } from "./UpdateNotification";
 import { useProjectStore } from "../../stores/projectStore";
 import { EmptyState } from "../import/EmptyState";
 import { ProcessingView } from "../processing/ProcessingView";
@@ -29,6 +30,7 @@ export function MainLayout() {
         </main>
       </div>
       {showExportModal && <ExportModal />}
+      <UpdateNotification />
     </div>
   );
 }

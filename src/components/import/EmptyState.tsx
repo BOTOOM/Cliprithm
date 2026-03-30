@@ -1,9 +1,13 @@
 import { useCallback, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
+import { appDataDir } from "@tauri-apps/api/path";
 import { useProjectStore } from "../../stores/projectStore";
 import { getVideoMetadata, detectSilence } from "../../services/tauriCommands";
+import { createProject } from "../../services/database";
 import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
+import { MediaLibrary } from "./MediaLibrary";
 
 export function EmptyState() {
   const {
@@ -31,6 +35,40 @@ export function EmptyState() {
 
         const metadata = await getVideoMetadata(path);
         setVideoMetadata(metadata);
+
+        // Generate thumbnail and save to DB
+        const fileName = path.split("/").pop()?.split("\\").pop() ?? "Untitled";
+        let thumbnailPath: string | null = null;
+        try {
+          const dataDir = await appDataDir();
+          thumbnailPath = `${dataDir}/thumbnails/${Date.now()}.jpg`;
+          await invoke("generate_thumbnail", {
+            videoPath: path,
+            outputPath: thumbnailPath,
+          });
+        } catch {
+          thumbnailPath = null;
+        }
+
+        // Save project to local database
+        try {
+          await createProject({
+            name: fileName,
+            file_path: path,
+            thumbnail_path: thumbnailPath,
+            duration: metadata.duration,
+            width: metadata.width,
+            height: metadata.height,
+            fps: metadata.fps,
+            codec: metadata.codec,
+            file_size: metadata.file_size,
+            noise_threshold: detectionSettings.noiseThreshold,
+            min_duration: detectionSettings.minDuration,
+            mode: detectionSettings.mode,
+          });
+        } catch (dbErr) {
+          console.warn("Failed to save project to DB:", dbErr);
+        }
 
         setProgress({
           percent: 30,
@@ -94,8 +132,8 @@ export function EmptyState() {
     <div className="flex-1 flex flex-col h-full">
       {/* Media Sidebar */}
       <div className="flex h-full">
-        <div className="w-64 bg-surface-container p-4 border-r border-surface-container-high flex flex-col">
-          <div className="flex items-center justify-between mb-8">
+        <div className="w-64 bg-surface-container border-r border-surface-container-high flex flex-col">
+          <div className="flex items-center justify-between p-4 pb-0">
             <h2 className="text-on-surface-variant font-medium uppercase tracking-widest text-xs">
               Media Library
             </h2>
@@ -104,14 +142,7 @@ export function EmptyState() {
               className="text-on-surface-variant text-sm"
             />
           </div>
-          <div className="flex-1 flex flex-col items-center justify-center text-center px-4 space-y-4">
-            <div className="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center">
-              <Icon name="cloud_off" className="text-outline text-xl" />
-            </div>
-            <p className="text-xs text-on-surface-variant">
-              No media imported yet. Start a new project to see files here.
-            </p>
-          </div>
+          <MediaLibrary />
         </div>
 
         {/* Main Drop Zone */}
