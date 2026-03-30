@@ -4,7 +4,6 @@ import { useProjectStore } from "../../stores/projectStore";
 import { exportVideo } from "../../services/tauriCommands";
 import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
-import { formatFileSize } from "../../lib/utils";
 
 const PRESETS = [
   {

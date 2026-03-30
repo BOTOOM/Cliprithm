@@ -13,7 +13,7 @@ interface TimelineProps {
 export function Timeline({
   duration,
   currentTime,
-  silenceSegments,
+  silenceSegments: _silenceSegments,
   removedSegments,
   onSeek,
 }: TimelineProps) {

@@ -1,6 +1,5 @@
 import { useProjectStore } from "../../stores/projectStore";
 import { Icon } from "../ui/Icon";
-import { formatFileSize } from "../../lib/utils";
 
 export function ProcessingView() {
   const { progress, filePath, detectionSettings, detectionResult } =
