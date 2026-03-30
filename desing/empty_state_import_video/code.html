@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>The Precision Darkroom - Video Silence Remover</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary-fixed": "#ae8dff",
+              "secondary-dim": "#bb87f1",
+              "outline-variant": "#484847",
+              "error-dim": "#d73357",
+              "surface-variant": "#262626",
+              "secondary-fixed-dim": "#dab4ff",
+              "primary-dim": "#8455ef",
+              "secondary-container": "#5e2c91",
+              "tertiary-fixed": "#ff8eb0",
+              "on-secondary-container": "#e3c4ff",
+              "on-error": "#490013",
+              "on-secondary": "#390068",
+              "background": "#0e0e0e",
+              "primary": "#ba9eff",
+              "surface-container": "#1a1919",
+              "inverse-primary": "#6e3bd7",
+              "tertiary-dim": "#f0779d",
+              "on-tertiary-fixed-variant": "#701039",
+              "on-tertiary-fixed": "#380018",
+              "tertiary-container": "#fd81a8",
+              "outline": "#767575",
+              "secondary": "#c08cf7",
+              "on-error-container": "#ffb2b9",
+              "primary-container": "#ae8dff",
+              "surface-tint": "#ba9eff",
+              "on-secondary-fixed-variant": "#69379c",
+              "error-container": "#a70138",
+              "on-primary-fixed-variant": "#370086",
+              "on-surface-variant": "#adaaaa",
+              "surface-container-high": "#201f1f",
+              "surface-container-lowest": "#000000",
+              "on-tertiary": "#6a0934",
+              "surface-bright": "#2c2c2c",
+              "on-primary-container": "#2b006e",
+              "surface-container-low": "#131313",
+              "on-primary": "#39008c",
+              "tertiary": "#ff97b5",
+              "surface": "#0e0e0e",
+              "on-primary-fixed": "#000000",
+              "error": "#ff6e84",
+              "on-background": "#ffffff",
+              "secondary-fixed": "#e4c6ff",
+              "inverse-surface": "#fcf9f8",
+              "surface-container-highest": "#262626",
+              "tertiary-fixed-dim": "#f67ca3",
+              "on-secondary-fixed": "#4b147d",
+              "on-surface": "#ffffff",
+              "on-tertiary-container": "#59002a",
+              "primary-fixed-dim": "#a27cff",
+              "inverse-on-surface": "#565555",
+              "surface-dim": "#0e0e0e"
+            },
+            fontFamily: {
+              "headline": ["Inter"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .tonal-shift-from-surface-to-surface-container-low {
+            background-color: #0e0e0e;
+        }
+        .flat-no-shadows {
+            box-shadow: none;
+        }
+        .glass-panel {
+            background: rgba(38, 38, 38, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(72, 72, 71, 0.15);
+        }
+        .milled-boundary {
+            background-color: #131313;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface selection:bg-primary selection:text-on-primary">
+<!-- TopNavBar Shell -->
+<header class="w-full h-14 flex items-center border-b border-surface-container-high px-6 flex justify-between items-center bg-[#0e0e0e] fixed top-0 z-50">
+<div class="flex items-center gap-4">
+<span class="text-lg font-bold tracking-tighter text-white">The Precision Darkroom</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="px-4 py-1.5 rounded-md font-['Inter'] font-medium tracking-[0.05em] text-sm text-[#adaaaa] hover:bg-[#262626] transition-colors duration-200 active:scale-95 duration-150 transition-transform">
+                Import
+            </button>
+<button class="px-5 py-1.5 rounded-md font-['Inter'] font-medium tracking-[0.05em] text-sm text-[#adaaaa] opacity-40 cursor-not-allowed">
+                Export
+            </button>
+</div>
+</header>
+<div class="flex pt-14 h-screen">
+<!-- SideNavBar Shell -->
+<aside class="fixed left-0 top-14 bottom-0 w-20 flex flex-col items-center py-6 bg-[#1a1919] z-40 transition-all ease-in-out duration-300">
+<div class="flex flex-col gap-8 items-center w-full">
+<!-- Media Library Tab (Active Intent Mapping: Project Hub) -->
+<div class="w-full flex flex-col items-center gap-1 group cursor-pointer border-l-2 border-primary text-primary bg-[#201f1f] py-3">
+<span class="material-symbols-outlined text-2xl" data-icon="video_library">video_library</span>
+<span class="font-['Inter'] text-[9px] font-semibold uppercase tracking-widest text-center px-1">Media Library</span>
+</div>
+<!-- Project Files Tab -->
+<div class="w-full flex flex-col items-center gap-1 group cursor-pointer text-[#adaaaa] opacity-60 hover:text-white hover:bg-[#201f1f] transition-all py-3">
+<span class="material-symbols-outlined text-2xl" data-icon="folder_open">folder_open</span>
+<span class="font-['Inter'] text-[9px] font-semibold uppercase tracking-widest text-center px-1">Project Files</span>
+</div>
+<!-- Settings Tab -->
+<div class="w-full mt-auto flex flex-col items-center gap-1 group cursor-pointer text-[#adaaaa] opacity-60 hover:text-white hover:bg-[#201f1f] transition-all py-3">
+<span class="material-symbols-outlined text-2xl" data-icon="settings">settings</span>
+<span class="font-['Inter'] text-[9px] font-semibold uppercase tracking-widest text-center px-1">Settings</span>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-20 flex-1 bg-surface flex flex-col relative overflow-hidden">
+<!-- Secondary Sidebar (Nested Media Bin) -->
+<div class="absolute left-0 top-0 bottom-0 w-64 bg-surface-container border-r border-surface-container-high flex flex-col p-4">
+<div class="flex items-center justify-between mb-8">
+<h2 class="headline-sm text-on-surface-variant font-medium uppercase tracking-[0.05em] text-xs">Media Library</h2>
+<span class="material-symbols-outlined text-on-surface-variant text-sm" data-icon="filter_list">filter_list</span>
+</div>
+<div class="flex-1 flex flex-col items-center justify-center text-center px-4 space-y-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center">
+<span class="material-symbols-outlined text-outline text-xl" data-icon="cloud_off">cloud_off</span>
+</div>
+<p class="text-xs text-on-surface-variant font-['Inter']">No media imported yet. Start a new project to see files here.</p>
+</div>
+</div>
+<!-- Central Content Area -->
+<div class="ml-64 flex-1 flex flex-col items-center justify-center p-12 bg-surface-container-low">
+<!-- Main Drag and Drop Well -->
+<div class="w-full max-w-4xl aspect-[16/9] glass-panel rounded-xl flex flex-col items-center justify-center border-2 border-dashed border-outline-variant/30 relative group transition-all duration-500 hover:border-primary/40 hover:bg-surface-container-high/40">
+<!-- Decorative Background Element -->
+<div class="absolute inset-0 opacity-10 pointer-events-none overflow-hidden rounded-xl">
+<img alt="subtle dark abstract texture with flowing digital lines and deep shadows" class="w-full h-full object-cover grayscale" data-alt="subtle dark abstract texture with flowing digital lines and deep shadows" src="https://lh3.googleusercontent.com/aida-public/AB6AXuClkcMRkmJBs-NsW4rpBAvo3fvOyyaU0DElrryiiph_utilKHGu7MfNAhZyzldhvIPlIm4-LPysk4HzL5AAtkYjI39rOfs6QgRcmUISvWaT0CFfOn-ySuYkx-By-gC0xBupV7NXuZfUKunX_5-pT_-DBAeXKQQkD9lBCl_LTe7GFvpfQ7ev-ta_RbeejUnGp1Yg2tnIvcxe0xsFU0FwsNbrvU710kVhgd-BJ8aL3XC__NaBlNf-6uK9NmB0BDd9JGmYZgwTZXJcgX_6"/>
+</div>
+<div class="relative z-10 flex flex-col items-center text-center max-w-md">
+<div class="mb-8 w-24 h-24 rounded-full bg-surface-container-highest flex items-center justify-center shadow-2xl relative">
+<div class="absolute inset-0 rounded-full bg-primary/10 blur-xl animate-pulse"></div>
+<span class="material-symbols-outlined text-primary text-5xl relative z-20" data-icon="upload_file">upload_file</span>
+</div>
+<h1 class="text-2xl font-bold text-on-surface mb-3 tracking-tight">Drag &amp; Drop your video here to start removing silence.</h1>
+<p class="text-on-surface-variant text-sm mb-10 leading-relaxed px-8">
+                            Our AI-powered engine surgically detects and removes audio gaps to make your content punchy and professional.
+                        </p>
+<div class="flex flex-col gap-4 w-full px-12">
+<button class="w-full py-3 rounded-lg bg-gradient-to-br from-primary to-primary-dim text-on-primary-fixed font-semibold text-sm tracking-wide shadow-lg shadow-primary/20 hover:brightness-110 active:scale-[0.98] transition-all">
+                                Browse Files
+                            </button>
+<div class="flex items-center gap-2 justify-center py-4">
+<span class="h-px w-8 bg-outline-variant/30"></span>
+<span class="text-[10px] uppercase tracking-widest text-outline">or paste a link</span>
+<span class="h-px w-8 bg-outline-variant/30"></span>
+</div>
+<div class="relative w-full">
+<input class="w-full bg-surface-container-lowest border border-outline-variant/20 rounded-lg px-4 py-2.5 text-xs text-on-surface-variant focus:border-primary/50 focus:ring-0 transition-colors" placeholder="https://youtube.com/..." type="text"/>
+<button class="absolute right-2 top-1.5 text-primary text-xs font-bold px-2 py-1">Fetch</button>
+</div>
+</div>
+</div>
+<!-- Lower Status Indicators -->
+<div class="absolute bottom-8 flex gap-8">
+<div class="flex items-center gap-2 text-[10px] text-on-surface-variant/60 font-medium uppercase tracking-[0.1em]">
+<span class="material-symbols-outlined text-sm" data-icon="check_circle">check_circle</span>
+                            MP4, MOV, MKV
+                        </div>
+<div class="flex items-center gap-2 text-[10px] text-on-surface-variant/60 font-medium uppercase tracking-[0.1em]">
+<span class="material-symbols-outlined text-sm" data-icon="check_circle">check_circle</span>
+                            Up to 4K 60FPS
+                        </div>
+<div class="flex items-center gap-2 text-[10px] text-on-surface-variant/60 font-medium uppercase tracking-[0.1em]">
+<span class="material-symbols-outlined text-sm" data-icon="check_circle">check_circle</span>
+                            Max 2GB
+                        </div>
+</div>
+</div>
+<!-- Footer Quick Actions / Tips -->
+<div class="mt-12 w-full max-w-4xl grid grid-cols-3 gap-6">
+<div class="p-6 rounded-lg bg-surface-container flex flex-col gap-3 group hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-primary-dim" data-icon="auto_fix_high">auto_fix_high</span>
+<h3 class="text-xs font-bold text-on-surface uppercase tracking-wider">Smart Cut</h3>
+<p class="text-[11px] text-on-surface-variant leading-relaxed">Automatically identifies pauses based on decibel thresholds and breath analysis.</p>
+</div>
+<div class="p-6 rounded-lg bg-surface-container flex flex-col gap-3 group hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-secondary" data-icon="speed">speed</span>
+<h3 class="text-xs font-bold text-on-surface uppercase tracking-wider">Time Warp</h3>
+<p class="text-[11px] text-on-surface-variant leading-relaxed">Accelerate dead air instead of cutting it for a more natural conversational flow.</p>
+</div>
+<div class="p-6 rounded-lg bg-surface-container flex flex-col gap-3 group hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-tertiary" data-icon="closed_caption">closed_caption</span>
+<h3 class="text-xs font-bold text-on-surface uppercase tracking-wider">Captions Beta</h3>
+<p class="text-[11px] text-on-surface-variant leading-relaxed">Generate transcription and captions simultaneously as you process the video.</p>
+</div>
+</div>
+</div>
+<!-- Bottom Information Bar -->
+<div class="h-10 border-t border-surface-container-high bg-surface-container px-6 flex items-center justify-between text-[10px] text-on-surface-variant/50 font-medium uppercase tracking-widest">
+<div class="flex gap-4">
+<span>Engine: V3.4 Obsidian</span>
+<span>Status: Ready</span>
+</div>
+<div class="flex gap-4">
+<span>System Latency: 12ms</span>
+<span class="text-primary-fixed/50">Pro License Active</span>
+</div>
+</div>
+</main>
+</div>
+</body></html>

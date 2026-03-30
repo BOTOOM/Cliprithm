@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary-fixed": "#ae8dff",
+              "secondary-dim": "#bb87f1",
+              "outline-variant": "#484847",
+              "error-dim": "#d73357",
+              "surface-variant": "#262626",
+              "secondary-fixed-dim": "#dab4ff",
+              "primary-dim": "#8455ef",
+              "secondary-container": "#5e2c91",
+              "tertiary-fixed": "#ff8eb0",
+              "on-secondary-container": "#e3c4ff",
+              "on-error": "#490013",
+              "on-secondary": "#390068",
+              "background": "#0e0e0e",
+              "primary": "#ba9eff",
+              "surface-container": "#1a1919",
+              "inverse-primary": "#6e3bd7",
+              "tertiary-dim": "#f0779d",
+              "on-tertiary-fixed-variant": "#701039",
+              "on-tertiary-fixed": "#380018",
+              "tertiary-container": "#fd81a8",
+              "outline": "#767575",
+              "secondary": "#c08cf7",
+              "on-error-container": "#ffb2b9",
+              "primary-container": "#ae8dff",
+              "surface-tint": "#ba9eff",
+              "on-secondary-fixed-variant": "#69379c",
+              "error-container": "#a70138",
+              "on-primary-fixed-variant": "#370086",
+              "on-surface-variant": "#adaaaa",
+              "surface-container-high": "#201f1f",
+              "surface-container-lowest": "#000000",
+              "on-tertiary": "#6a0934",
+              "surface-bright": "#2c2c2c",
+              "on-primary-container": "#2b006e",
+              "surface-container-low": "#131313",
+              "on-primary": "#39008c",
+              "tertiary": "#ff97b5",
+              "surface": "#0e0e0e",
+              "on-primary-fixed": "#000000",
+              "error": "#ff6e84",
+              "on-background": "#ffffff",
+              "secondary-fixed": "#e4c6ff",
+              "inverse-surface": "#fcf9f8",
+              "surface-container-highest": "#262626",
+              "tertiary-fixed-dim": "#f67ca3",
+              "on-secondary-fixed": "#4b147d",
+              "on-surface": "#ffffff",
+              "on-tertiary-container": "#59002a",
+              "primary-fixed-dim": "#a27cff",
+              "inverse-on-surface": "#565555",
+              "surface-dim": "#0e0e0e"
+            },
+            fontFamily: {
+              "headline": ["Inter"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .glass-panel {
+            background: rgba(38, 38, 38, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+        .waveform-mask {
+            mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+        }
+        .shimmer {
+            background: linear-gradient(90deg, rgba(186, 158, 255, 0) 0%, rgba(186, 158, 255, 0.2) 50%, rgba(186, 158, 255, 0) 100%);
+            background-size: 200% 100%;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body overflow-hidden">
+<!-- Top Navigation Bar -->
+<header class="w-full h-14 flex items-center border-b border-[#1a1919] bg-[#0e0e0e] flex justify-between items-center px-6 w-full">
+<div class="flex items-center gap-4">
+<span class="text-lg font-bold tracking-tighter text-white">The Precision Darkroom</span>
+<div class="h-4 w-[1px] bg-outline-variant/30 ml-2"></div>
+<span class="text-xs font-semibold uppercase tracking-widest text-[#adaaaa] font-['Inter']">Processing Mode</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="px-4 py-1.5 rounded-md text-[#adaaaa] hover:bg-[#262626] transition-colors duration-200 font-['Inter'] font-medium tracking-[0.05em] text-sm">Import</button>
+<button class="px-5 py-1.5 rounded-md bg-gradient-to-br from-primary to-primary-dim text-on-primary-fixed font-bold tracking-[0.05em] text-sm opacity-50 cursor-not-allowed">Export</button>
+</div>
+</header>
+<div class="flex h-[calc(100vh-3.5rem)]">
+<!-- Side Navigation Bar -->
+<nav class="h-full w-20 flex flex-col items-center py-6 bg-[#1a1919] z-40">
+<div class="flex flex-col gap-8 items-center w-full">
+<div class="flex flex-col items-center gap-1 group cursor-pointer border-l-2 border-primary text-primary bg-[#201f1f] w-full py-3 transition-all ease-in-out duration-300">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">video_library</span>
+<span class="text-[10px] font-semibold uppercase tracking-widest text-center px-1">Media Library</span>
+</div>
+<div class="flex flex-col items-center gap-1 group cursor-pointer text-[#adaaaa] opacity-60 hover:text-white hover:bg-[#201f1f] w-full py-3 transition-all ease-in-out duration-300">
+<span class="material-symbols-outlined">folder_open</span>
+<span class="text-[10px] font-semibold uppercase tracking-widest text-center px-1">Project Files</span>
+</div>
+<div class="mt-auto flex flex-col items-center gap-1 group cursor-pointer text-[#adaaaa] opacity-60 hover:text-white hover:bg-[#201f1f] w-full py-3 transition-all ease-in-out duration-300">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-[10px] font-semibold uppercase tracking-widest text-center px-1">Settings</span>
+</div>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 relative bg-surface overflow-hidden flex flex-col items-center justify-center p-8">
+<!-- Background Visualization: Preview of Detected Cuts -->
+<div class="absolute inset-0 opacity-20 pointer-events-none flex flex-col justify-end pb-24 px-12">
+<div class="w-full h-48 bg-surface-container-lowest rounded-xl overflow-hidden relative">
+<!-- Audio Waveform with Cut Zones -->
+<div class="absolute inset-0 flex items-center justify-around gap-[2px] px-4 waveform-mask">
+<!-- Iterative bars to represent a professional waveform -->
+<div class="h-12 w-1 bg-secondary-dim rounded-full"></div>
+<div class="h-20 w-1 bg-secondary-dim rounded-full"></div>
+<div class="h-32 w-1 bg-secondary-dim rounded-full"></div>
+<!-- Silence Cut Zone 1 -->
+<div class="h-4 w-48 bg-error-container/40 flex items-center justify-center border-x border-error-dim/50 self-center">
+<span class="text-[8px] uppercase font-bold tracking-tighter text-error-dim">Silence Removed</span>
+</div>
+<div class="h-24 w-1 bg-secondary-dim rounded-full"></div>
+<div class="h-36 w-1 bg-secondary-dim rounded-full"></div>
+<div class="h-20 w-1 bg-secondary-dim rounded-full"></div>
+<!-- Silence Cut Zone 2 -->
+<div class="h-4 w-32 bg-error-container/40 flex items-center justify-center border-x border-error-dim/50 self-center">
+<span class="text-[8px] uppercase font-bold tracking-tighter text-error-dim">Silence Removed</span>
+</div>
+<div class="h-28 w-1 bg-secondary-dim rounded-full"></div>
+<div class="h-16 w-1 bg-secondary-dim rounded-full"></div>
+<div class="h-40 w-1 bg-secondary-dim rounded-full"></div>
+<div class="h-22 w-1 bg-secondary-dim rounded-full"></div>
+<div class="h-12 w-1 bg-secondary-dim rounded-full"></div>
+</div>
+<!-- Scrubbing indicator -->
+<div class="absolute top-0 bottom-0 left-[75%] w-[2px] bg-primary-fixed shadow-[0_0_15px_rgba(174,141,255,0.8)] z-10"></div>
+</div>
+<div class="mt-4 flex justify-between px-2">
+<span class="text-[10px] font-mono text-on-surface-variant">00:12:44:02</span>
+<span class="text-[10px] font-mono text-on-surface-variant">00:15:30:00</span>
+</div>
+</div>
+<!-- Central Processing UI -->
+<div class="relative z-20 flex flex-col items-center">
+<!-- Circular Loading Assembly -->
+<div class="relative w-64 h-64 mb-10 flex items-center justify-center">
+<!-- Outer ring -->
+<div class="absolute inset-0 rounded-full border-4 border-surface-container-highest"></div>
+<!-- Progress ring (75%) -->
+<svg class="absolute inset-0 w-full h-full -rotate-90 transform" viewbox="0 0 100 100">
+<circle class="text-primary" cx="50" cy="50" fill="transparent" r="37.5" stroke="currentColor" stroke-dasharray="235.6" stroke-dashoffset="58.9" stroke-linecap="round" stroke-width="4"></circle>
+</svg>
+<!-- Inner Core with Percentage -->
+<div class="w-48 h-48 rounded-full glass-panel flex flex-col items-center justify-center border border-outline-variant/20 shadow-2xl">
+<div class="text-6xl font-extrabold tracking-tighter text-on-surface mb-0">75<span class="text-2xl text-primary">%</span></div>
+<div class="text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant">Complete</div>
+</div>
+<!-- Orbital Element (Animated feel) -->
+<div class="absolute top-[5%] right-[22%] w-3 h-3 bg-primary-fixed rounded-full shadow-[0_0_20px_#ae8dff]"></div>
+</div>
+<!-- Text Feedback -->
+<div class="text-center space-y-3">
+<h2 class="text-2xl font-bold text-on-surface tracking-tight">Analyzing video for silence...</h2>
+<div class="flex items-center justify-center gap-6">
+<div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high rounded-full border border-outline-variant/10">
+<span class="material-symbols-outlined text-sm text-primary">timer</span>
+<span class="text-xs font-medium text-on-surface-variant">Remaining: <span class="text-on-surface">3 seconds</span></span>
+</div>
+<div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high rounded-full border border-outline-variant/10">
+<span class="material-symbols-outlined text-sm text-secondary">cut</span>
+<span class="text-xs font-medium text-on-surface-variant">Cuts detected: <span class="text-on-surface">18</span></span>
+</div>
+</div>
+</div>
+<!-- Linear Secondary Progress -->
+<div class="w-80 mt-12 bg-surface-container-high h-1.5 rounded-full overflow-hidden">
+<div class="h-full bg-primary w-3/4 shimmer rounded-full"></div>
+</div>
+</div>
+<!-- Bento-style Metadata Cards (Floating at the bottom) -->
+<div class="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4 w-full max-w-4xl px-8">
+<div class="flex-1 glass-panel p-4 rounded-xl border border-outline-variant/10">
+<div class="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Source File</div>
+<div class="text-sm font-medium truncate">vlog_tokyo_night_04_processed.mp4</div>
+</div>
+<div class="flex-none w-48 glass-panel p-4 rounded-xl border border-outline-variant/10">
+<div class="text-[10px] font-bold text-secondary uppercase tracking-widest mb-1">Decibel Floor</div>
+<div class="text-sm font-medium">-34dB Sensitivity</div>
+</div>
+<div class="flex-none w-48 glass-panel p-4 rounded-xl border border-outline-variant/10">
+<div class="text-[10px] font-bold text-tertiary uppercase tracking-widest mb-1">Speed Multiplier</div>
+<div class="text-sm font-medium">1.5x Skip Speed</div>
+</div>
+</div>
+</main>
+<!-- Right Inspector (Minimized/Hidden state style) -->
+<aside class="w-12 bg-surface-container flex flex-col items-center py-6 border-l border-outline-variant/10">
+<button class="p-2 text-on-surface-variant hover:text-white transition-colors">
+<span class="material-symbols-outlined">info</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:text-white transition-colors mt-4">
+<span class="material-symbols-outlined">tune</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:text-white transition-colors mt-4">
+<span class="material-symbols-outlined">history</span>
+</button>
+</aside>
+</div>
+<!-- Background Elements -->
+<div class="fixed top-1/4 -right-24 w-96 h-96 bg-primary/10 blur-[120px] rounded-full pointer-events-none -z-10"></div>
+<div class="fixed bottom-1/4 -left-24 w-96 h-96 bg-secondary/10 blur-[120px] rounded-full pointer-events-none -z-10"></div>
+</body></html>

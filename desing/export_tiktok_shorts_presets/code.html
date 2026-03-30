@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>The Precision Darkroom - Export</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary-fixed": "#ae8dff",
+              "secondary-dim": "#bb87f1",
+              "outline-variant": "#484847",
+              "error-dim": "#d73357",
+              "surface-variant": "#262626",
+              "secondary-fixed-dim": "#dab4ff",
+              "primary-dim": "#8455ef",
+              "secondary-container": "#5e2c91",
+              "tertiary-fixed": "#ff8eb0",
+              "on-secondary-container": "#e3c4ff",
+              "on-error": "#490013",
+              "on-secondary": "#390068",
+              "background": "#0e0e0e",
+              "primary": "#ba9eff",
+              "surface-container": "#1a1919",
+              "inverse-primary": "#6e3bd7",
+              "tertiary-dim": "#f0779d",
+              "on-tertiary-fixed-variant": "#701039",
+              "on-tertiary-fixed": "#380018",
+              "tertiary-container": "#fd81a8",
+              "outline": "#767575",
+              "secondary": "#c08cf7",
+              "on-error-container": "#ffb2b9",
+              "primary-container": "#ae8dff",
+              "surface-tint": "#ba9eff",
+              "on-secondary-fixed-variant": "#69379c",
+              "error-container": "#a70138",
+              "on-primary-fixed-variant": "#370086",
+              "on-surface-variant": "#adaaaa",
+              "surface-container-high": "#201f1f",
+              "surface-container-lowest": "#000000",
+              "on-tertiary": "#6a0934",
+              "surface-bright": "#2c2c2c",
+              "on-primary-container": "#2b006e",
+              "surface-container-low": "#131313",
+              "on-primary": "#39008c",
+              "tertiary": "#ff97b5",
+              "surface": "#0e0e0e",
+              "on-primary-fixed": "#000000",
+              "error": "#ff6e84",
+              "on-background": "#ffffff",
+              "secondary-fixed": "#e4c6ff",
+              "inverse-surface": "#fcf9f8",
+              "surface-container-highest": "#262626",
+              "tertiary-fixed-dim": "#f67ca3",
+              "on-secondary-fixed": "#4b147d",
+              "on-surface": "#ffffff",
+              "on-tertiary-container": "#59002a",
+              "primary-fixed-dim": "#a27cff",
+              "inverse-on-surface": "#565555",
+              "surface-dim": "#0e0e0e"
+            },
+            fontFamily: {
+              "headline": ["Inter"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .glass-panel {
+        background: rgba(32, 31, 31, 0.7);
+        backdrop-filter: blur(20px);
+      }
+      .ghost-border {
+        border: 1px solid rgba(72, 72, 71, 0.15);
+      }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface selection:bg-primary-container selection:text-on-primary-container overflow-hidden">
+<!-- Background: Main Editor Interface (Blurred) -->
+<div class="fixed inset-0 flex flex-col blur-xl grayscale-[0.2] opacity-40 pointer-events-none">
+<!-- TopAppBar -->
+<header class="w-full h-14 flex items-center border-b border-outline-variant/10 px-6 bg-surface">
+<span class="text-lg font-bold tracking-tighter text-white">The Precision Darkroom</span>
+<div class="ml-auto flex gap-4">
+<button class="text-on-surface-variant font-medium text-sm">Import</button>
+<button class="bg-primary text-on-primary px-4 py-1.5 rounded-md font-medium text-sm">Export</button>
+</div>
+</header>
+<main class="flex-1 flex overflow-hidden">
+<!-- SideNavBar -->
+<aside class="h-full w-20 flex flex-col items-center py-6 bg-surface-container border-r border-outline-variant/10">
+<div class="flex flex-col gap-8 items-center">
+<span class="material-symbols-outlined text-primary">video_library</span>
+<span class="material-symbols-outlined text-on-surface-variant">folder_open</span>
+<span class="material-symbols-outlined text-on-surface-variant">settings</span>
+</div>
+</aside>
+<!-- Workspace Content -->
+<div class="flex-1 flex flex-col gap-6 p-8">
+<div class="aspect-video w-full bg-surface-container-low rounded-xl relative overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Cinematic shot of a modern workspace with a curved monitor displaying video editing software in a dark room with purple ambient lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAPZyhzfLKA9gcXj4IR6b-Fn6sJcDvXnqDqDzSFUFSrpqTWFmnlJUhqtCw6skt5TU5kr5FUE1T_8jcRAj10KS8Rdd21yz-pr-ZpI2WQigB7v9GLG8nGJI0qJTAlKc4sHU627pKu_0UeUxiwPhk8q3m_De2S4WMC6oEU_ygyBN9Dv9wqvrBKXSBbe0pg2B5OwB4L_KOCjAdiew1yKBfkEb90HN3Q7qvsQACt9cR6dC4ihSOVbOHLo9OKLWTenev6rnPClmPFnCiJPA7o"/>
+</div>
+<div class="h-48 bg-surface-container rounded-xl flex items-center justify-center">
+<div class="w-full px-12 h-1 bg-surface-container-highest relative">
+<div class="absolute inset-y-0 left-0 w-1/3 bg-primary"></div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- Export Modal Overlay -->
+<div class="fixed inset-0 z-50 flex items-center justify-center p-6 bg-surface-container-lowest/40">
+<!-- Modal Window -->
+<div class="w-full max-w-2xl glass-panel ghost-border rounded-xl shadow-2xl overflow-hidden flex flex-col">
+<!-- Modal Header -->
+<div class="px-8 pt-8 pb-4 flex justify-between items-center">
+<h2 class="text-2xl font-bold tracking-tight text-white headline-sm">Export Video</h2>
+<button class="text-on-surface-variant hover:text-white transition-colors">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<!-- Modal Content -->
+<div class="px-8 py-6 space-y-8 overflow-y-auto max-h-[716px]">
+<!-- Presets Bento -->
+<section class="space-y-4">
+<label class="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">Presets</label>
+<div class="grid grid-cols-3 gap-3">
+<div class="group cursor-pointer p-4 rounded-lg bg-surface-container-high border border-transparent hover:border-primary-dim/30 hover:bg-surface-container-highest transition-all">
+<span class="material-symbols-outlined text-primary mb-2 block">smartphone</span>
+<div class="font-medium text-sm text-on-surface">TikTok / Shorts</div>
+<div class="text-[10px] text-on-surface-variant uppercase tracking-tighter">9:16 Ratio</div>
+</div>
+<div class="group cursor-pointer p-4 rounded-lg bg-surface-container-high border border-transparent hover:border-primary-dim/30 hover:bg-surface-container-highest transition-all">
+<span class="material-symbols-outlined text-secondary mb-2 block">spool</span>
+<div class="font-medium text-sm text-on-surface">Instagram Reels</div>
+<div class="text-[10px] text-on-surface-variant uppercase tracking-tighter">9:16 Ratio</div>
+</div>
+<div class="group cursor-pointer p-4 rounded-lg bg-surface-container-high border border-primary/40 bg-surface-container-highest transition-all">
+<span class="material-symbols-outlined text-tertiary mb-2 block">tune</span>
+<div class="font-medium text-sm text-white">Custom</div>
+<div class="text-[10px] text-on-surface-variant uppercase tracking-tighter">Manual Settings</div>
+</div>
+</div>
+</section>
+<!-- Configuration Grid -->
+<section class="grid grid-cols-2 gap-x-8 gap-y-6">
+<!-- File Name -->
+<div class="col-span-2 space-y-2">
+<label class="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">File Name</label>
+<input class="w-full bg-surface-container-lowest border-0 rounded-md focus:ring-1 focus:ring-primary text-on-surface py-2.5 px-4 placeholder-on-surface-variant/30 text-sm" type="text" value="vlog_final_v2_edit"/>
+</div>
+<!-- Resolution -->
+<div class="space-y-3">
+<label class="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">Resolution</label>
+<div class="flex flex-col gap-2">
+<label class="flex items-center gap-3 cursor-pointer group">
+<input class="text-primary bg-surface-container border-outline-variant focus:ring-offset-surface" name="res" type="radio"/>
+<span class="text-sm text-on-surface-variant group-hover:text-on-surface">1080p (Full HD)</span>
+</label>
+<label class="flex items-center gap-3 cursor-pointer group">
+<input checked="" class="text-primary bg-surface-container border-outline-variant focus:ring-offset-surface" name="res" type="radio"/>
+<span class="text-sm text-on-surface font-medium">4K (Ultra HD)</span>
+</label>
+</div>
+</div>
+<!-- Frame Rate -->
+<div class="space-y-3">
+<label class="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">Frame Rate</label>
+<div class="flex flex-col gap-2">
+<label class="flex items-center gap-3 cursor-pointer group">
+<input checked="" class="text-primary bg-surface-container border-outline-variant focus:ring-offset-surface" name="fps" type="radio"/>
+<span class="text-sm text-on-surface font-medium">60fps (Smooth)</span>
+</label>
+<label class="flex items-center gap-3 cursor-pointer group">
+<input class="text-primary bg-surface-container border-outline-variant focus:ring-offset-surface" name="fps" type="radio"/>
+<span class="text-sm text-on-surface-variant group-hover:text-on-surface">30fps (Standard)</span>
+</label>
+</div>
+</div>
+</section>
+<!-- Stats Footer Area -->
+<div class="p-4 rounded-lg bg-surface-container-low/50 flex items-center justify-between border-l-2 border-primary-dim">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-fixed text-xl">info</span>
+<div>
+<div class="text-xs text-on-surface-variant uppercase font-bold tracking-wider">Estimated File Size</div>
+<div class="text-lg font-mono text-white">428.5 MB</div>
+</div>
+</div>
+<div class="text-right">
+<div class="text-xs text-on-surface-variant">Format</div>
+<div class="text-sm font-medium text-on-surface">MP4 (H.264)</div>
+</div>
+</div>
+</div>
+<!-- Actions Footer -->
+<div class="px-8 py-8 flex items-center justify-end gap-4 bg-surface-container-high/30">
+<button class="px-6 py-2.5 text-sm font-semibold text-on-surface-variant hover:text-white transition-colors hover:bg-surface-container-highest rounded-md">
+                    Cancel
+                </button>
+<button class="px-10 py-2.5 text-sm font-bold text-on-primary bg-gradient-to-br from-primary to-primary-dim rounded-md hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-primary-dim/20">
+                    Export Now
+                </button>
+</div>
+</div>
+</div>
+<!-- Background Decorative Gradients -->
+<div class="fixed top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 blur-[120px] pointer-events-none -z-10"></div>
+<div class="fixed bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-secondary/5 blur-[120px] pointer-events-none -z-10"></div>
+</body></html>

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>The Precision Darkroom | Main Editor</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary-fixed": "#ae8dff",
+            "secondary-dim": "#bb87f1",
+            "outline-variant": "#484847",
+            "error-dim": "#d73357",
+            "surface-variant": "#262626",
+            "secondary-fixed-dim": "#dab4ff",
+            "primary-dim": "#8455ef",
+            "secondary-container": "#5e2c91",
+            "tertiary-fixed": "#ff8eb0",
+            "on-secondary-container": "#e3c4ff",
+            "on-error": "#490013",
+            "on-secondary": "#390068",
+            "background": "#0e0e0e",
+            "primary": "#ba9eff",
+            "surface-container": "#1a1919",
+            "inverse-primary": "#6e3bd7",
+            "tertiary-dim": "#f0779d",
+            "on-tertiary-fixed-variant": "#701039",
+            "on-tertiary-fixed": "#380018",
+            "tertiary-container": "#fd81a8",
+            "outline": "#767575",
+            "secondary": "#c08cf7",
+            "on-error-container": "#ffb2b9",
+            "primary-container": "#ae8dff",
+            "surface-tint": "#ba9eff",
+            "on-secondary-fixed-variant": "#69379c",
+            "error-container": "#a70138",
+            "on-primary-fixed-variant": "#370086",
+            "on-surface-variant": "#adaaaa",
+            "surface-container-high": "#201f1f",
+            "surface-container-lowest": "#000000",
+            "on-tertiary": "#6a0934",
+            "surface-bright": "#2c2c2c",
+            "on-primary-container": "#2b006e",
+            "surface-container-low": "#131313",
+            "on-primary": "#39008c",
+            "tertiary": "#ff97b5",
+            "surface": "#0e0e0e",
+            "on-primary-fixed": "#000000",
+            "error": "#ff6e84",
+            "on-background": "#ffffff",
+            "secondary-fixed": "#e4c6ff",
+            "inverse-surface": "#fcf9f8",
+            "surface-container-highest": "#262626",
+            "tertiary-fixed-dim": "#f67ca3",
+            "on-secondary-fixed": "#4b147d",
+            "on-surface": "#ffffff",
+            "on-tertiary-container": "#59002a",
+            "primary-fixed-dim": "#a27cff",
+            "inverse-on-surface": "#565555",
+            "surface-dim": "#0e0e0e"
+          },
+          fontFamily: {
+            "headline": ["Inter"],
+            "body": ["Inter"],
+            "label": ["Inter"]
+          },
+          borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+        },
+      },
+    }
+  </script>
+<style>
+    body { font-family: 'Inter', sans-serif; }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #262626; border-radius: 10px; }
+  </style>
+</head>
+<body class="bg-background text-on-surface overflow-hidden h-screen flex flex-col">
+<!-- TopNavBar Implementation -->
+<header class="w-full h-14 flex items-center border-b border-[#1a1919] bg-[#0e0e0e] px-6 justify-between z-50">
+<div class="flex items-center gap-8">
+<span class="text-lg font-bold tracking-tighter text-white">The Precision Darkroom</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="font-['Inter'] font-medium tracking-[0.05em] text-sm text-white font-bold hover:bg-[#262626] transition-colors duration-200 px-3 py-1 rounded" href="#">Editor</a>
+<a class="font-['Inter'] font-medium tracking-[0.05em] text-sm text-[#adaaaa] hover:bg-[#262626] transition-colors duration-200 px-3 py-1 rounded" href="#">Library</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="px-4 py-1.5 text-sm font-medium text-[#adaaaa] hover:bg-[#262626] rounded transition-all active:scale-95">Import</button>
+<button class="px-5 py-1.5 text-sm font-bold bg-gradient-to-br from-primary to-primary-dim text-on-primary rounded shadow-lg active:scale-95 transition-all">Export</button>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden">
+<!-- SideNavBar Implementation -->
+<aside class="h-full w-20 flex flex-col items-center py-6 bg-[#1a1919] z-40">
+<div class="flex flex-col gap-8 w-full">
+<div class="flex flex-col items-center gap-1 group cursor-pointer border-l-2 border-[#ba9eff] text-[#ba9eff] bg-[#201f1f] py-4">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">video_library</span>
+<span class="font-['Inter'] text-[10px] font-semibold uppercase tracking-widest mt-1">Media</span>
+</div>
+<div class="flex flex-col items-center gap-1 group cursor-pointer text-[#adaaaa] opacity-60 hover:text-white hover:bg-[#201f1f] py-4 transition-all duration-300">
+<span class="material-symbols-outlined">folder_open</span>
+<span class="font-['Inter'] text-[10px] font-semibold uppercase tracking-widest mt-1">Files</span>
+</div>
+<div class="flex flex-col items-center gap-1 group cursor-pointer text-[#adaaaa] opacity-60 hover:text-white hover:bg-[#201f1f] py-4 transition-all duration-300">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-['Inter'] text-[10px] font-semibold uppercase tracking-widest mt-1">Settings</span>
+</div>
+</div>
+</aside>
+<!-- Main Workspace -->
+<main class="flex-1 flex flex-col bg-background">
+<!-- Center: Preview & Timeline Area -->
+<div class="flex-1 flex flex-col min-h-0">
+<!-- Top: Video Player -->
+<div class="flex-1 flex items-center justify-center p-8 bg-surface-container-low relative">
+<!-- Quick Action Floating Bar -->
+<div class="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-surface-container-highest/70 backdrop-blur-xl px-4 py-2 rounded-full border border-outline-variant/10 shadow-2xl z-10">
+<button class="p-2 hover:bg-surface-bright rounded-full text-on-surface-variant hover:text-white transition-colors">
+<span class="material-symbols-outlined text-xl">undo</span>
+</button>
+<button class="p-2 hover:bg-surface-bright rounded-full text-on-surface-variant hover:text-white transition-colors">
+<span class="material-symbols-outlined text-xl">redo</span>
+</button>
+<div class="w-px h-4 bg-outline-variant/30 mx-1"></div>
+<button class="flex items-center gap-2 px-3 py-1 hover:bg-surface-bright rounded-full text-sm font-medium text-on-surface-variant hover:text-white transition-colors">
+<span class="material-symbols-outlined text-lg">history</span>
+              Restore Segment
+            </button>
+</div>
+<!-- Vertical Preview (9:16) -->
+<div class="h-full aspect-[9/16] bg-surface-container-lowest rounded-xl shadow-[0_0_100px_rgba(186,158,255,0.05)] overflow-hidden relative border border-outline-variant/10 group">
+<img class="w-full h-full object-cover" data-alt="vibrant lifestyle shot of a content creator in a neon lit studio with high-end cameras and professional lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDbOValUlUgRAHus-g5K6c1tUxIKakd4UsmaOQF5iW2agaS8uFzD0N4k9_0u8tt6UycoHlspNZRkQpChJ4xxtQH4HM4XSEoWz_jXpKq2cMmHqdy5zeQpgdxkeXfuOG2TlCnjqdVubX8Q6eqGaWvogq54d_taLTWn25ii9dH4g9pH5MNetnao0yiIU4ZUR484S-zbUYGkeaArNiwUEcCahRYXjq9_F6DvWfH6fIbVCbgbEPi8gokoWbJeiJI20Ea18d61CWQ-EvaXXIC"/>
+<!-- Player Overlay Controls -->
+<div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex flex-col justify-end p-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+<div class="flex items-center justify-center gap-8 mb-6">
+<span class="material-symbols-outlined text-white text-3xl cursor-pointer">replay_10</span>
+<span class="material-symbols-outlined text-white text-5xl cursor-pointer" style="font-variation-settings: 'FILL' 1;">play_circle</span>
+<span class="material-symbols-outlined text-white text-3xl cursor-pointer">forward_10</span>
+</div>
+<div class="flex items-center justify-between text-xs font-mono text-white/80">
+<span>00:12:04</span>
+<span>00:45:00</span>
+</div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full mt-2 relative">
+<div class="absolute top-0 left-0 h-full w-[28%] bg-primary rounded-full"></div>
+<div class="absolute top-1/2 left-[28%] -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom: Timeline -->
+<div class="h-64 bg-surface-container border-t border-outline-variant/10 flex flex-col p-4">
+<div class="flex items-center justify-between mb-4">
+<div class="flex items-center gap-4">
+<span class="text-xs font-bold tracking-widest text-on-surface-variant uppercase">Timeline</span>
+<div class="flex items-center gap-2 px-2 py-0.5 bg-surface-container-high rounded border border-outline-variant/10">
+<span class="w-2 h-2 bg-secondary rounded-full"></span>
+<span class="text-[10px] font-medium text-secondary">Audio Active</span>
+</div>
+<div class="flex items-center gap-2 px-2 py-0.5 bg-surface-container-high rounded border border-outline-variant/10">
+<span class="w-2 h-2 bg-error-dim rounded-full"></span>
+<span class="text-[10px] font-medium text-error-dim">Silence Detected</span>
+</div>
+</div>
+<div class="flex items-center gap-4 text-on-surface-variant">
+<span class="material-symbols-outlined text-lg cursor-pointer hover:text-white">zoom_in</span>
+<span class="material-symbols-outlined text-lg cursor-pointer hover:text-white">zoom_out</span>
+</div>
+</div>
+<!-- Waveform View -->
+<div class="flex-1 relative bg-surface-container-lowest rounded overflow-hidden flex items-center group">
+<!-- Time Markers -->
+<div class="absolute top-0 left-0 w-full h-4 border-b border-outline-variant/5 flex justify-between px-2 text-[9px] text-on-surface-variant/40 font-mono">
+<span>0s</span><span>5s</span><span>10s</span><span>15s</span><span>20s</span><span>25s</span><span>30s</span><span>35s</span><span>40s</span>
+</div>
+<!-- Fake Waveform -->
+<div class="w-full h-24 flex items-center gap-[2px] px-2 opacity-80">
+<!-- Audio Burst 1 -->
+<div class="h-8 w-1 bg-secondary rounded-full"></div><div class="h-12 w-1 bg-secondary rounded-full"></div><div class="h-16 w-1 bg-secondary rounded-full"></div><div class="h-10 w-1 bg-secondary rounded-full"></div><div class="h-6 w-1 bg-secondary rounded-full"></div>
+<!-- Silence Block 1 -->
+<div class="h-1 w-20 mx-1 bg-error-dim/20 relative rounded group/silence flex items-center justify-center">
+<div class="h-1 w-full bg-error-dim/40 rounded"></div>
+<div class="absolute -top-6 px-1.5 py-0.5 bg-error-dim text-[8px] font-bold rounded text-white opacity-0 group-hover/silence:opacity-100 transition-opacity">CUT SILENCE</div>
+<div class="absolute inset-y-0 left-0 w-px bg-error-dim"></div>
+<div class="absolute inset-y-0 right-0 w-px bg-error-dim"></div>
+</div>
+<!-- Audio Burst 2 -->
+<div class="h-6 w-1 bg-secondary rounded-full"></div><div class="h-14 w-1 bg-secondary rounded-full"></div><div class="h-20 w-1 bg-secondary rounded-full"></div><div class="h-18 w-1 bg-secondary rounded-full"></div><div class="h-10 w-1 bg-secondary rounded-full"></div>
+<!-- Silence Block 2 (Cut) -->
+<div class="h-24 w-12 bg-surface-container-high/50 mx-1 border-x border-dashed border-outline relative flex items-center justify-center">
+<span class="text-[9px] font-bold text-outline rotate-90">CUT</span>
+</div>
+<!-- Audio Burst 3 -->
+<div class="h-8 w-1 bg-secondary rounded-full"></div><div class="h-12 w-1 bg-secondary rounded-full"></div><div class="h-16 w-1 bg-secondary rounded-full"></div><div class="h-24 w-1 bg-secondary rounded-full"></div><div class="h-14 w-1 bg-secondary rounded-full"></div>
+</div>
+<!-- Playhead -->
+<div class="absolute inset-y-0 left-[28%] w-px bg-primary shadow-[0_0_10px_rgba(186,158,255,0.8)] z-10 flex flex-col items-center">
+<div class="w-3 h-3 bg-primary rotate-45 -mt-1.5"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Panel: Silence Detection Settings -->
+<aside class="w-80 h-full border-l border-outline-variant/10 bg-surface-container-high p-6 flex flex-col">
+<div class="mb-8">
+<h2 class="text-sm font-bold tracking-widest text-on-surface uppercase mb-1">Silence Detection</h2>
+<p class="text-xs text-on-surface-variant">Automatically identify and remove dead air from your footage.</p>
+</div>
+<div class="space-y-8 flex-1">
+<!-- Threshold Slider -->
+<div class="space-y-4">
+<div class="flex justify-between items-center">
+<label class="text-xs font-semibold text-on-surface-variant">Threshold (dB)</label>
+<span class="text-xs font-mono text-primary">-42 dB</span>
+</div>
+<div class="relative h-1 w-full bg-surface-container-highest rounded-full">
+<div class="absolute top-0 left-0 h-full w-2/3 bg-primary-fixed rounded-full shadow-[0_0_8px_rgba(174,141,255,0.3)]"></div>
+<div class="absolute top-1/2 left-2/3 -translate-y-1/2 w-4 h-4 bg-primary border-2 border-on-primary rounded-full cursor-pointer hover:scale-110 transition-transform"></div>
+</div>
+</div>
+<!-- Min Duration Slider -->
+<div class="space-y-4">
+<div class="flex justify-between items-center">
+<label class="text-xs font-semibold text-on-surface-variant">Min Duration (s)</label>
+<span class="text-xs font-mono text-primary">0.4s</span>
+</div>
+<div class="relative h-1 w-full bg-surface-container-highest rounded-full">
+<div class="absolute top-0 left-0 h-full w-1/3 bg-primary-fixed rounded-full"></div>
+<div class="absolute top-1/2 left-1/3 -translate-y-1/2 w-4 h-4 bg-primary border-2 border-on-primary rounded-full cursor-pointer hover:scale-110 transition-transform"></div>
+</div>
+</div>
+<!-- Options -->
+<div class="pt-4 space-y-4">
+<div class="flex items-center justify-between">
+<span class="text-xs text-on-surface">Fade Out/In</span>
+<div class="w-8 h-4 bg-secondary-container rounded-full relative p-0.5">
+<div class="w-3 h-3 bg-secondary-fixed rounded-full ml-auto"></div>
+</div>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-xs text-on-surface">Detect Breath</span>
+<div class="w-8 h-4 bg-surface-container-highest rounded-full relative p-0.5">
+<div class="w-3 h-3 bg-outline rounded-full"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Primary Action -->
+<div class="mt-auto pt-6 border-t border-outline-variant/10">
+<div class="p-4 bg-surface-container-highest rounded-lg mb-4 border border-outline-variant/5">
+<div class="flex items-center gap-3 mb-2">
+<span class="material-symbols-outlined text-secondary text-xl">auto_fix_high</span>
+<span class="text-xs font-bold text-on-surface">Detected: 14 Gaps</span>
+</div>
+<p class="text-[10px] text-on-surface-variant leading-relaxed">Applying these settings will reduce video length from 01:12 to 00:48.</p>
+</div>
+<button class="w-full py-3 bg-gradient-to-br from-primary to-primary-dim text-on-primary font-bold rounded text-sm shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
+            Auto Cut Silence
+          </button>
+</div>
+</aside>
+</main>
+</div>
+</body></html>
