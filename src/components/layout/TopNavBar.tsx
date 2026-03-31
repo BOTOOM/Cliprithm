@@ -1,11 +1,14 @@
 import { useProjectStore } from "../../stores/projectStore";
+import { isDesktopRuntime } from "../../lib/runtime";
 import { Button } from "../ui/Button";
 
 export function TopNavBar() {
-  const { currentView, setShowExportModal, filePath } = useProjectStore();
+  const { currentView, setShowExportModal, filePath, clipSegments, setView } =
+    useProjectStore();
 
   const showEditorNav = currentView === "editor";
-  const canExport = filePath !== null && currentView !== "import";
+  const canExport =
+    isDesktopRuntime() && filePath !== null && clipSegments.length > 0;
 
   return (
     <header className="w-full h-14 flex items-center justify-between px-6 bg-surface border-b border-surface-container-high z-50">
@@ -18,9 +21,12 @@ export function TopNavBar() {
             <div className="h-4 w-px bg-outline-variant/30 ml-2" />
             <nav className="flex items-center gap-6">
               <span className="text-sm font-medium text-white">Editor</span>
-              <span className="text-sm font-medium text-on-surface-variant hover:text-white cursor-pointer transition-colors">
+              <button
+                className="text-sm font-medium text-on-surface-variant hover:text-white transition-colors"
+                onClick={() => setView("import")}
+              >
                 Library
-              </span>
+              </button>
             </nav>
           </>
         )}
@@ -34,7 +40,7 @@ export function TopNavBar() {
         )}
       </div>
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm">
+        <Button variant="ghost" size="sm" onClick={() => setView("import")}>
           Import
         </Button>
         <Button

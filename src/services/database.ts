@@ -1,5 +1,6 @@
 import Database from "@tauri-apps/plugin-sql";
 import { log } from "../lib/logger";
+import { isDesktopRuntime } from "../lib/runtime";
 
 export interface ProjectRecord {
   id: number;
@@ -23,30 +24,49 @@ export interface ProjectRecord {
 }
 
 let db: Database | null = null;
+let dbPromise: Promise<Database> | null = null;
+let memoryNextId = 1;
+const memoryProjects: ProjectRecord[] = [];
+const memorySettings = new Map<string, string>();
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
 
 async function getDb(): Promise<Database> {
-  if (!db) {
-    log.info("[db]", "Opening SQLite database: silencut.db");
-    db = await Database.load("sqlite:silencut.db");
-    log.info("[db]", "Database opened OK");
+  if (db) {
+    return db;
   }
-  return db;
+
+  if (!dbPromise) {
+    log.info("[db]", "Opening SQLite database: silencut.db");
+    dbPromise = Database.load("sqlite:silencut.db").then((database) => {
+      db = database;
+      log.info("[db]", "Database opened OK");
+      return database;
+    });
+  }
+
+  return dbPromise;
 }
 
 export async function getAllProjects(): Promise<ProjectRecord[]> {
+  if (!isDesktopRuntime()) {
+    return [...memoryProjects].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  }
+
   log.debug("[db]", "getAllProjects()");
   const database = await getDb();
-  const rows = await database.select<ProjectRecord[]>(
+  return database.select<ProjectRecord[]>(
     "SELECT * FROM projects ORDER BY updated_at DESC"
   );
-  log.debug("[db]", `getAllProjects → ${rows.length} records`);
-  return rows;
 }
 
-export async function getProjectById(
-  id: number
-): Promise<ProjectRecord | null> {
-  log.debug("[db]", `getProjectById(${id})`);
+export async function getProjectById(id: number): Promise<ProjectRecord | null> {
+  if (!isDesktopRuntime()) {
+    return memoryProjects.find((project) => project.id === id) ?? null;
+  }
+
   const database = await getDb();
   const results = await database.select<ProjectRecord[]>(
     "SELECT * FROM projects WHERE id = $1",
@@ -58,9 +78,29 @@ export async function getProjectById(
 export async function createProject(
   data: Omit<
     ProjectRecord,
-    "id" | "created_at" | "updated_at" | "processed_path" | "status" | "silence_segments"
+    | "id"
+    | "created_at"
+    | "updated_at"
+    | "processed_path"
+    | "status"
+    | "silence_segments"
   >
 ): Promise<number> {
+  if (!isDesktopRuntime()) {
+    const id = memoryNextId++;
+    const timestamp = nowIso();
+    memoryProjects.unshift({
+      ...data,
+      id,
+      processed_path: null,
+      status: "imported",
+      silence_segments: "[]",
+      created_at: timestamp,
+      updated_at: timestamp,
+    });
+    return id;
+  }
+
   log.info("[db]", `createProject: ${data.name} (${data.file_path})`);
   const database = await getDb();
   const result = await database.execute(
@@ -81,9 +121,7 @@ export async function createProject(
       data.mode,
     ]
   );
-  const newId = result.lastInsertId ?? 0;
-  log.info("[db]", `createProject → id=${newId}`);
-  return newId;
+  return result.lastInsertId ?? 0;
 }
 
 export async function updateProject(
@@ -101,6 +139,14 @@ export async function updateProject(
     >
   >
 ): Promise<void> {
+  if (!isDesktopRuntime()) {
+    const project = memoryProjects.find((item) => item.id === id);
+    if (project) {
+      Object.assign(project, data, { updated_at: nowIso() });
+    }
+    return;
+  }
+
   const database = await getDb();
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -109,10 +155,10 @@ export async function updateProject(
   for (const [key, value] of Object.entries(data)) {
     fields.push(`${key} = $${idx}`);
     values.push(value);
-    idx++;
+    idx += 1;
   }
 
-  fields.push(`updated_at = datetime('now')`);
+  fields.push("updated_at = datetime('now')");
   values.push(id);
 
   await database.execute(
@@ -122,11 +168,23 @@ export async function updateProject(
 }
 
 export async function deleteProject(id: number): Promise<void> {
+  if (!isDesktopRuntime()) {
+    const index = memoryProjects.findIndex((project) => project.id === id);
+    if (index >= 0) {
+      memoryProjects.splice(index, 1);
+    }
+    return;
+  }
+
   const database = await getDb();
   await database.execute("DELETE FROM projects WHERE id = $1", [id]);
 }
 
 export async function getSetting(key: string): Promise<string | null> {
+  if (!isDesktopRuntime()) {
+    return memorySettings.get(key) ?? null;
+  }
+
   const database = await getDb();
   const results = await database.select<{ value: string }[]>(
     "SELECT value FROM app_settings WHERE key = $1",
@@ -136,6 +194,11 @@ export async function getSetting(key: string): Promise<string | null> {
 }
 
 export async function setSetting(key: string, value: string): Promise<void> {
+  if (!isDesktopRuntime()) {
+    memorySettings.set(key, value);
+    return;
+  }
+
   const database = await getDb();
   await database.execute(
     "INSERT OR REPLACE INTO app_settings (key, value) VALUES ($1, $2)",

@@ -1,7 +1,11 @@
-import { useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
+import { log } from "../../lib/logger";
+import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
 import { exportVideo } from "../../services/tauriCommands";
+import type { ProcessingProgress } from "../../types";
 import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
 
@@ -34,15 +38,41 @@ export function ExportModal() {
     setShowExportModal,
     exportSettings,
     updateExportSettings,
-    processedFilePath,
     filePath,
     videoMetadata,
+    clipSegments,
+    detectionSettings,
+    setProcessedFilePath,
   } = useProjectStore();
 
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const [exportMessage, setExportMessage] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  const inputPath = processedFilePath || filePath || "";
+  useEffect(() => {
+    if (!isDesktopRuntime() || !isExporting) return;
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    listen<ProcessingProgress>("export-progress", (event) => {
+      setExportProgress(Math.round(event.payload.percent));
+      setExportMessage(event.payload.message);
+    }).then((dispose) => {
+      if (disposed) {
+        dispose();
+        return;
+      }
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [isExporting]);
+
   const estimatedSize = videoMetadata
     ? (videoMetadata.file_size *
         (exportSettings.resolution === "4k" ? 2 : 1) *
@@ -52,44 +82,65 @@ export function ExportModal() {
     : 0;
 
   const handleExport = useCallback(async () => {
+    if (!filePath || clipSegments.length === 0 || !isDesktopRuntime()) {
+      setError("La exportación solo funciona en la app desktop y requiere al menos un clip activo.");
+      return;
+    }
+
     const outputPath = await save({
       defaultPath: `${exportSettings.fileName}.mp4`,
       filters: [{ name: "Video", extensions: ["mp4"] }],
     });
+
     if (!outputPath) return;
 
+    setError(null);
     setIsExporting(true);
-    setExportProgress(10);
+    setExportProgress(5);
+    setExportMessage("Preparing export...");
 
     try {
-      await exportVideo({
-        input_path: inputPath,
+      const result = await exportVideo({
+        input_path: filePath,
         output_path: outputPath,
-        segments_to_keep: [],
+        segments_to_keep: clipSegments.map((clip) => [clip.start, clip.end]),
         resolution: exportSettings.resolution,
         fps: exportSettings.fps,
-        mode: "export",
-        speed_multiplier: null,
+        mode: detectionSettings.mode,
+        speed_multiplier:
+          detectionSettings.mode === "speed"
+            ? detectionSettings.speedMultiplier
+            : null,
       });
+      setProcessedFilePath(result);
       setExportProgress(100);
+      setExportMessage("Export complete!");
       setTimeout(() => {
         setShowExportModal(false);
-      }, 1000);
+      }, 900);
     } catch (err) {
-      console.error("Export failed:", err);
+      log.error("[export]", "Export failed:", err);
+      setError(String(err));
     } finally {
       setIsExporting(false);
     }
-  }, [inputPath, exportSettings, setShowExportModal]);
+  }, [
+    clipSegments,
+    detectionSettings.mode,
+    detectionSettings.speedMultiplier,
+    exportSettings.fileName,
+    exportSettings.fps,
+    exportSettings.resolution,
+    filePath,
+    setProcessedFilePath,
+    setShowExportModal,
+  ]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-surface-container-lowest/40">
       <div className="w-full max-w-2xl glass-panel ghost-border rounded-xl shadow-2xl overflow-hidden flex flex-col">
-        {/* Header */}
         <div className="px-8 pt-8 pb-4 flex justify-between items-center">
-          <h2 className="text-2xl font-bold tracking-tight text-white">
-            Export Video
-          </h2>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Export Video</h2>
           <button
             onClick={() => setShowExportModal(false)}
             className="text-on-surface-variant hover:text-white transition-colors"
@@ -98,9 +149,7 @@ export function ExportModal() {
           </button>
         </div>
 
-        {/* Content */}
         <div className="px-8 py-6 space-y-8 overflow-y-auto max-h-[716px]">
-          {/* Presets */}
           <section className="space-y-4">
             <label className="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">
               Presets
@@ -128,7 +177,6 @@ export function ExportModal() {
             </div>
           </section>
 
-          {/* File Name */}
           <div className="space-y-2">
             <label className="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">
               File Name
@@ -136,36 +184,38 @@ export function ExportModal() {
             <input
               type="text"
               value={exportSettings.fileName}
-              onChange={(e) =>
-                updateExportSettings({ fileName: e.target.value })
+              onChange={(event) =>
+                updateExportSettings({ fileName: event.target.value })
               }
               className="w-full bg-surface-container-lowest border-0 rounded-md focus:ring-1 focus:ring-primary text-on-surface py-2.5 px-4 text-sm"
             />
           </div>
 
-          {/* Resolution & FPS */}
           <div className="grid grid-cols-2 gap-x-8 gap-y-6">
             <div className="space-y-3">
               <label className="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">
                 Resolution
               </label>
               <div className="flex flex-col gap-2">
-                {(["1080p", "4k"] as const).map((res) => (
-                  <label
-                    key={res}
-                    className="flex items-center gap-3 cursor-pointer"
-                  >
+                {(["1080p", "4k"] as const).map((resolution) => (
+                  <label key={resolution} className="flex items-center gap-3 cursor-pointer">
                     <input
                       type="radio"
                       name="resolution"
-                      checked={exportSettings.resolution === res}
-                      onChange={() => updateExportSettings({ resolution: res })}
+                      checked={exportSettings.resolution === resolution}
+                      onChange={() =>
+                        updateExportSettings({ resolution })
+                      }
                       className="text-primary bg-surface-container border-outline-variant"
                     />
                     <span
-                      className={`text-sm ${exportSettings.resolution === res ? "text-on-surface font-medium" : "text-on-surface-variant"}`}
+                      className={`text-sm ${
+                        exportSettings.resolution === resolution
+                          ? "text-on-surface font-medium"
+                          : "text-on-surface-variant"
+                      }`}
                     >
-                      {res === "1080p" ? "1080p (Full HD)" : "4K (Ultra HD)"}
+                      {resolution === "1080p" ? "1080p (Full HD)" : "4K (Ultra HD)"}
                     </span>
                   </label>
                 ))}
@@ -177,10 +227,7 @@ export function ExportModal() {
               </label>
               <div className="flex flex-col gap-2">
                 {([60, 30] as const).map((fps) => (
-                  <label
-                    key={fps}
-                    className="flex items-center gap-3 cursor-pointer"
-                  >
+                  <label key={fps} className="flex items-center gap-3 cursor-pointer">
                     <input
                       type="radio"
                       name="fps"
@@ -189,7 +236,11 @@ export function ExportModal() {
                       className="text-primary bg-surface-container border-outline-variant"
                     />
                     <span
-                      className={`text-sm ${exportSettings.fps === fps ? "text-on-surface font-medium" : "text-on-surface-variant"}`}
+                      className={`text-sm ${
+                        exportSettings.fps === fps
+                          ? "text-on-surface font-medium"
+                          : "text-on-surface-variant"
+                      }`}
                     >
                       {fps === 60 ? "60fps (Smooth)" : "30fps (Standard)"}
                     </span>
@@ -199,7 +250,6 @@ export function ExportModal() {
             </div>
           </div>
 
-          {/* Estimated size */}
           <div className="p-4 rounded-lg bg-surface-container-low/50 flex items-center justify-between border-l-2 border-primary-dim">
             <div className="flex items-center gap-3">
               <Icon name="info" className="text-primary-fixed text-xl" />
@@ -207,21 +257,33 @@ export function ExportModal() {
                 <div className="text-xs text-on-surface-variant uppercase font-bold tracking-wider">
                   Estimated File Size
                 </div>
-                <div className="text-lg font-mono text-white">
-                  {estimatedSize.toFixed(1)} MB
-                </div>
+                <div className="text-lg font-mono text-white">{estimatedSize.toFixed(1)} MB</div>
               </div>
             </div>
             <div className="text-right">
-              <div className="text-xs text-on-surface-variant">Format</div>
-              <div className="text-sm font-medium text-on-surface">
-                MP4 (H.264)
-              </div>
+              <div className="text-xs text-on-surface-variant">Clips</div>
+              <div className="text-sm font-medium text-on-surface">{clipSegments.length}</div>
             </div>
           </div>
+
+          {isExporting && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs text-on-surface-variant">
+                <span>{exportMessage || "Exporting..."}</span>
+                <span>{exportProgress}%</span>
+              </div>
+              <div className="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary shimmer rounded-full transition-all duration-300"
+                  style={{ width: `${exportProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {error && <p className="text-sm text-error">{error}</p>}
         </div>
 
-        {/* Actions */}
         <div className="px-8 py-8 flex items-center justify-end gap-4 bg-surface-container-high/30">
           <Button variant="ghost" onClick={() => setShowExportModal(false)}>
             Cancel
@@ -229,7 +291,7 @@ export function ExportModal() {
           <Button
             variant="primary"
             onClick={handleExport}
-            disabled={isExporting}
+            disabled={isExporting || clipSegments.length === 0}
             className="px-10"
           >
             {isExporting ? `Exporting... ${exportProgress}%` : "Export Now"}

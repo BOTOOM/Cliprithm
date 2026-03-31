@@ -16,6 +16,14 @@ export interface SilenceSegment {
   duration: number;
 }
 
+export interface ClipSegment {
+  id: string;
+  label: string;
+  start: number;
+  end: number;
+  duration: number;
+}
+
 export interface DetectionResult {
   segments: SilenceSegment[];
   total_silence_duration: number;
@@ -55,7 +63,12 @@ export interface ExportSettings {
   fps: 30 | 60;
 }
 
-export type CaptionProvider = "openrouter" | "cerebras" | "groq" | "ollama" | "lmstudio";
+export type CaptionProvider =
+  | "openrouter"
+  | "cerebras"
+  | "groq"
+  | "ollama"
+  | "lmstudio";
 
 export interface CaptionSettings {
   enabled: boolean;

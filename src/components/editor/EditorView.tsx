@@ -1,11 +1,20 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { log } from "../../lib/logger";
+import {
+  editedToSourceTime,
+  findClipAtSourceTime,
+  getTotalClipDuration,
+  sourceToEditedTime,
+} from "../../lib/editor";
+import { formatTime } from "../../lib/utils";
+import { resolveMediaSrc } from "../../lib/media";
 import { useProjectStore } from "../../stores/projectStore";
-import { detectSilence, cutSilence } from "../../services/tauriCommands";
-import { Icon } from "../ui/Icon";
+import { detectSilence } from "../../services/tauriCommands";
+import type { ClipSegment } from "../../types";
 import { Button } from "../ui/Button";
+import { Icon } from "../ui/Icon";
 import { Slider } from "../ui/Slider";
 import { Toggle } from "../ui/Toggle";
-import { formatTime } from "../../lib/utils";
 import { Timeline } from "../timeline/Timeline";
 
 export function EditorView() {
@@ -17,36 +26,100 @@ export function EditorView() {
     updateDetectionSettings,
     setDetectionResult,
     removedSegments,
-    setProgress,
-    processedFilePath,
-    setProcessedFilePath,
-    setView,
+    clipSegments,
+    applySuggestedCuts,
+    removeClipSegment,
+    splitClipAtTime,
+    selectedClipId,
+    setSelectedClipId,
+    timelineZoom,
+    setTimelineZoom,
   } = useProjectStore();
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [currentSourceTime, setCurrentSourceTime] = useState(0);
   const [isRedetecting, setIsRedetecting] = useState(false);
-  const [isCutting, setIsCutting] = useState(false);
+  const [previewEdited, setPreviewEdited] = useState(true);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+
+  const duration = videoMetadata?.duration ?? 0;
+  const fallbackClip: ClipSegment | null = useMemo(() => {
+    if (duration <= 0) return null;
+    return {
+      id: "full-video",
+      label: "Full Video",
+      start: 0,
+      end: duration,
+      duration,
+    };
+  }, [duration]);
+
+  const activeClips = clipSegments.length > 0 ? clipSegments : fallbackClip ? [fallbackClip] : [];
+  const editedDuration = getTotalClipDuration(activeClips);
+  const currentEditedTime = previewEdited
+    ? sourceToEditedTime(currentSourceTime, activeClips)
+    : currentSourceTime;
+
+  const selectedClip =
+    activeClips.find((clip) => clip.id === selectedClipId) ?? activeClips[0] ?? null;
+
+  const gapCount = removedSegments.length;
+  const estimatedDuration = editedDuration || detectionResult?.estimated_output_duration || duration;
+  const videoSrc = resolveMediaSrc(filePath);
+
+  const seekSourceTime = useCallback((nextSourceTime: number) => {
+    if (!videoRef.current) return;
+    const bounded = Math.max(0, Math.min(duration, nextSourceTime));
+    videoRef.current.currentTime = bounded;
+    setCurrentSourceTime(bounded);
+  }, [duration]);
+
+  const handleSeek = useCallback(
+    (timelineTime: number) => {
+      const sourceTime = previewEdited
+        ? editedToSourceTime(timelineTime, activeClips)
+        : timelineTime;
+      seekSourceTime(sourceTime);
+      const clip = findClipAtSourceTime(sourceTime, activeClips);
+      setSelectedClipId(clip?.id ?? activeClips[0]?.id ?? null);
+    },
+    [activeClips, previewEdited, seekSourceTime, setSelectedClipId]
+  );
 
   const handlePlayPause = () => {
     if (!videoRef.current) return;
-    if (isPlaying) {
-      videoRef.current.pause();
+    if (videoRef.current.paused) {
+      void videoRef.current.play();
     } else {
-      videoRef.current.play();
+      videoRef.current.pause();
     }
-    setIsPlaying(!isPlaying);
   };
 
   const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
+    const video = videoRef.current;
+    if (!video) return;
+
+    let sourceTime = video.currentTime;
+    if (previewEdited && removedSegments.length > 0) {
+      const gap = removedSegments.find(
+        (segment) => sourceTime >= segment.start && sourceTime < segment.end - 0.05
+      );
+      if (gap) {
+        video.currentTime = gap.end;
+        sourceTime = gap.end;
+      }
+    }
+
+    setCurrentSourceTime(sourceTime);
+    const currentClip = findClipAtSourceTime(sourceTime, activeClips);
+    if (currentClip && currentClip.id !== selectedClipId) {
+      setSelectedClipId(currentClip.id);
     }
   };
 
   const handleRedetect = useCallback(async () => {
-    if (!filePath) return;
+    if (!filePath || filePath.startsWith("blob:")) return;
     setIsRedetecting(true);
     try {
       const result = await detectSilence(
@@ -55,100 +128,100 @@ export function EditorView() {
         detectionSettings.minDuration
       );
       setDetectionResult(result);
+      setPreviewEdited(true);
     } catch (err) {
-      console.error("Re-detection failed:", err);
+      log.error("[silence]", "Re-detection failed:", err);
     } finally {
       setIsRedetecting(false);
     }
-  }, [filePath, detectionSettings, setDetectionResult]);
+  }, [detectionSettings, filePath, setDetectionResult]);
 
-  const handleAutoCut = useCallback(async () => {
-    if (!filePath || removedSegments.length === 0) return;
-    setIsCutting(true);
-    try {
-      const outputPath = filePath.replace(/(\.\w+)$/, "_processed$1");
-      setProgress({
-        percent: 10,
-        stage: "cutting",
-        message: "Processing video...",
-      });
-      setView("processing");
+  const handleApplySuggestedCuts = useCallback(() => {
+    applySuggestedCuts();
+    setPreviewEdited(true);
+  }, [applySuggestedCuts]);
 
-      const result = await cutSilence(
-        filePath,
-        removedSegments,
-        outputPath,
-        detectionSettings.mode,
-        detectionSettings.mode === "speed"
-          ? detectionSettings.speedMultiplier
-          : undefined
-      );
-      setProcessedFilePath(result);
-      setProgress({
-        percent: 100,
-        stage: "complete",
-        message: "Video processed successfully!",
-      });
-      setTimeout(() => setView("editor"), 1500);
-    } catch (err) {
-      console.error("Cut failed:", err);
-      setView("editor");
-    } finally {
-      setIsCutting(false);
-    }
-  }, [
-    filePath,
-    removedSegments,
-    detectionSettings,
-    setProgress,
-    setView,
-    setProcessedFilePath,
-  ]);
+  const handleSplitSelected = () => {
+    if (!selectedClip) return;
+    splitClipAtTime(selectedClip.id, currentSourceTime);
+  };
 
-  const videoSrc = processedFilePath || filePath;
-  const duration = videoMetadata?.duration ?? 0;
-  const gapCount = detectionResult?.segments.length ?? 0;
-  const originalDuration = detectionResult?.original_duration ?? duration;
-  const estimatedDuration = detectionResult?.estimated_output_duration ?? duration;
+  const handleDeleteSelected = () => {
+    if (!selectedClip) return;
+    removeClipSegment(selectedClip.id);
+  };
 
   return (
     <div className="flex-1 flex flex-col h-full">
       <div className="flex-1 flex min-h-0">
-        {/* Center: Video + Timeline */}
         <div className="flex-1 flex flex-col min-h-0">
-          {/* Video Preview */}
-          <div className="flex-1 flex items-center justify-center p-8 bg-surface-container-low relative">
-            {/* Floating action bar */}
-            <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-surface-container-highest/70 backdrop-blur-xl px-4 py-2 rounded-full border border-outline-variant/10 shadow-2xl z-10">
-              <button className="p-2 hover:bg-surface-bright rounded-full text-on-surface-variant hover:text-white transition-colors">
-                <Icon name="undo" className="text-xl" />
-              </button>
-              <button className="p-2 hover:bg-surface-bright rounded-full text-on-surface-variant hover:text-white transition-colors">
-                <Icon name="redo" className="text-xl" />
-              </button>
-              <div className="w-px h-4 bg-outline-variant/30 mx-1" />
-              <button className="flex items-center gap-2 px-3 py-1 hover:bg-surface-bright rounded-full text-sm font-medium text-on-surface-variant hover:text-white transition-colors">
-                <Icon name="history" className="text-lg" />
-                Restore Segment
-              </button>
+          <div className="flex-1 flex items-center justify-center p-8 bg-surface-container-low relative min-h-[420px]">
+            <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-surface-container-highest/75 backdrop-blur-xl px-4 py-2 rounded-full border border-outline-variant/10 shadow-2xl z-10">
+              <Button variant="surface" size="sm" onClick={handleApplySuggestedCuts}>
+                <Icon name="auto_fix_high" className="text-base" />
+                Apply Suggested Cuts
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSplitSelected}
+                disabled={!selectedClip}
+              >
+                <Icon name="content_cut" className="text-base" />
+                Split at Playhead
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDeleteSelected}
+                disabled={!selectedClip || activeClips.length <= 1}
+              >
+                <Icon name="delete" className="text-base" />
+                Remove Clip
+              </Button>
             </div>
 
-            {/* Video player */}
-            <div className="h-full aspect-[9/16] bg-surface-container-lowest rounded-xl shadow-[0_0_100px_rgba(186,158,255,0.05)] overflow-hidden relative group border border-outline-variant/10">
-              {videoSrc && (
+            <div className="h-full aspect-[9/16] bg-surface-container-lowest rounded-xl shadow-[0_0_100px_rgba(186,158,255,0.05)] overflow-hidden relative border border-outline-variant/10 flex items-center justify-center">
+              {videoSrc ? (
                 <video
                   ref={videoRef}
-                  src={`asset://localhost/${videoSrc}`}
+                  src={videoSrc}
                   className="w-full h-full object-cover"
                   onTimeUpdate={handleTimeUpdate}
                   onEnded={() => setIsPlaying(false)}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  onLoadedData={() => setMediaError(null)}
+                  onError={() =>
+                    setMediaError(
+                      "No se pudo reproducir el video. Revisé la ruta y el siguiente paso es mostrar el error exacto del códec si vuelve a ocurrir."
+                    )
+                  }
+                  controls={false}
+                  playsInline
                 />
+              ) : (
+                <div className="text-on-surface-variant text-sm px-6 text-center">
+                  Importa un video para comenzar.
+                </div>
               )}
-              {/* Player overlay */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex flex-col justify-end p-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                <div className="flex items-center justify-center gap-8 mb-6">
-                  <button onClick={() => videoRef.current && (videoRef.current.currentTime -= 10)}>
-                    <Icon name="replay_10" className="text-white text-3xl" />
+
+              {mediaError && (
+                <div className="absolute inset-0 bg-black/70 flex items-center justify-center p-6 text-center">
+                  <div>
+                    <Icon name="error" className="text-error text-4xl mb-3" />
+                    <p className="text-sm text-white leading-relaxed">{mediaError}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6">
+                <div className="flex items-center justify-center gap-6 mb-4">
+                  <button
+                    onClick={() => seekSourceTime(currentSourceTime - 10)}
+                    className="text-white/80 hover:text-white transition-colors"
+                  >
+                    <Icon name="replay_10" className="text-3xl" />
                   </button>
                   <button onClick={handlePlayPause}>
                     <Icon
@@ -157,19 +230,22 @@ export function EditorView() {
                       filled
                     />
                   </button>
-                  <button onClick={() => videoRef.current && (videoRef.current.currentTime += 10)}>
-                    <Icon name="forward_10" className="text-white text-3xl" />
+                  <button
+                    onClick={() => seekSourceTime(currentSourceTime + 10)}
+                    className="text-white/80 hover:text-white transition-colors"
+                  >
+                    <Icon name="forward_10" className="text-3xl" />
                   </button>
                 </div>
                 <div className="flex items-center justify-between text-xs font-mono text-white/80">
-                  <span>{formatTime(currentTime)}</span>
-                  <span>{formatTime(duration)}</span>
+                  <span>{formatTime(currentEditedTime)}</span>
+                  <span>{formatTime(previewEdited ? estimatedDuration : duration)}</span>
                 </div>
-                <div className="w-full h-1 bg-surface-container-highest rounded-full mt-2 relative">
+                <div className="w-full h-1 bg-surface-container-highest rounded-full mt-2 relative overflow-hidden">
                   <div
                     className="absolute top-0 left-0 h-full bg-primary rounded-full"
                     style={{
-                      width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`,
+                      width: `${(currentEditedTime / Math.max(previewEdited ? estimatedDuration : duration, 0.01)) * 100}%`,
                     }}
                   />
                 </div>
@@ -177,19 +253,19 @@ export function EditorView() {
             </div>
           </div>
 
-          {/* Timeline */}
           <Timeline
-            duration={duration}
-            currentTime={currentTime}
-            silenceSegments={detectionResult?.segments ?? []}
-            removedSegments={removedSegments}
-            onSeek={(time) => {
-              if (videoRef.current) videoRef.current.currentTime = time;
-            }}
+            duration={previewEdited ? estimatedDuration : duration}
+            currentTime={currentEditedTime}
+            clips={activeClips}
+            selectedClipId={selectedClip?.id ?? null}
+            removedSegmentsCount={gapCount}
+            zoom={timelineZoom}
+            onZoomChange={setTimelineZoom}
+            onSeek={handleSeek}
+            onSelectClip={setSelectedClipId}
           />
         </div>
 
-        {/* Right panel: Settings */}
         <aside className="w-80 border-l border-outline-variant/10 bg-surface-container-high p-6 flex flex-col overflow-y-auto custom-scrollbar">
           <div className="mb-8">
             <h2 className="text-sm font-bold tracking-widest text-on-surface uppercase mb-1">
@@ -208,7 +284,7 @@ export function EditorView() {
               max={0}
               step={1}
               displayValue={`${detectionSettings.noiseThreshold} dB`}
-              onChange={(v) => updateDetectionSettings({ noiseThreshold: v })}
+              onChange={(value) => updateDetectionSettings({ noiseThreshold: value })}
             />
 
             <Slider
@@ -218,19 +294,24 @@ export function EditorView() {
               max={3}
               step={0.1}
               displayValue={`${detectionSettings.minDuration}s`}
-              onChange={(v) => updateDetectionSettings({ minDuration: v })}
+              onChange={(value) => updateDetectionSettings({ minDuration: value })}
             />
 
             <div className="pt-4 space-y-4">
               <Toggle
+                label="Preview Edited Timeline"
+                checked={previewEdited}
+                onChange={setPreviewEdited}
+              />
+              <Toggle
                 label="Fade Out/In"
                 checked={detectionSettings.fadeEnabled}
-                onChange={(v) => updateDetectionSettings({ fadeEnabled: v })}
+                onChange={(value) => updateDetectionSettings({ fadeEnabled: value })}
               />
               <Toggle
                 label="Detect Breath"
                 checked={detectionSettings.detectBreath}
-                onChange={(v) => updateDetectionSettings({ detectBreath: v })}
+                onChange={(value) => updateDetectionSettings({ detectBreath: value })}
               />
               <div className="pt-2">
                 <label className="text-xs font-semibold text-on-surface-variant mb-2 block">
@@ -268,8 +349,8 @@ export function EditorView() {
                   max={6}
                   step={0.5}
                   displayValue={`${detectionSettings.speedMultiplier}x`}
-                  onChange={(v) =>
-                    updateDetectionSettings({ speedMultiplier: v })
+                  onChange={(value) =>
+                    updateDetectionSettings({ speedMultiplier: value })
                   }
                 />
               )}
@@ -280,15 +361,64 @@ export function EditorView() {
               size="sm"
               className="w-full"
               onClick={handleRedetect}
-              disabled={isRedetecting}
+              disabled={isRedetecting || !filePath || filePath.startsWith("blob:")}
             >
               {isRedetecting ? "Re-detecting..." : "Re-detect Silence"}
             </Button>
+
+            {selectedClip && (
+              <div className="p-4 bg-surface-container-highest rounded-lg border border-outline-variant/10 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-bold uppercase tracking-widest text-primary">
+                    Selected Clip
+                  </span>
+                  <span className="text-[10px] font-mono text-on-surface-variant">
+                    {selectedClip.label}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <div className="text-on-surface-variant uppercase tracking-widest text-[10px] mb-1">
+                      Start
+                    </div>
+                    <div className="font-mono text-on-surface">
+                      {formatTime(selectedClip.start)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-on-surface-variant uppercase tracking-widest text-[10px] mb-1">
+                      End
+                    </div>
+                    <div className="font-mono text-on-surface">
+                      {formatTime(selectedClip.end)}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-on-surface-variant uppercase tracking-widest text-[10px] mb-1">
+                    Duration
+                  </div>
+                  <div className="font-mono text-on-surface">
+                    {formatTime(selectedClip.duration)}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Action area */}
-          <div className="mt-auto pt-6 border-t border-outline-variant/10">
-            <div className="p-4 bg-surface-container-highest rounded-lg mb-4 border border-outline-variant/5">
+          <div className="mt-auto pt-6 border-t border-outline-variant/10 space-y-4">
+            <div className="p-4 bg-surface-container-highest rounded-lg border border-outline-variant/5">
+              <div className="flex items-center gap-3 mb-2">
+                <Icon name="movie" className="text-secondary text-xl" />
+                <span className="text-xs font-bold text-on-surface">
+                  Clips: {activeClips.length}
+                </span>
+              </div>
+              <p className="text-[10px] text-on-surface-variant leading-relaxed">
+                Timeline duration goes from {formatTime(duration)} to {formatTime(estimatedDuration)}.
+              </p>
+            </div>
+            <div className="p-4 bg-surface-container-highest rounded-lg border border-outline-variant/5">
               <div className="flex items-center gap-3 mb-2">
                 <Icon name="auto_fix_high" className="text-secondary text-xl" />
                 <span className="text-xs font-bold text-on-surface">
@@ -296,20 +426,17 @@ export function EditorView() {
                 </span>
               </div>
               <p className="text-[10px] text-on-surface-variant leading-relaxed">
-                Applying these settings will reduce video length from{" "}
-                {formatTime(originalDuration)} to {formatTime(estimatedDuration)}.
+                Delete clips or split at the playhead before exporting your final edit.
               </p>
             </div>
             <Button
               variant="primary"
               className="w-full py-3"
-              onClick={handleAutoCut}
-              disabled={isCutting || removedSegments.length === 0}
+              onClick={handleApplySuggestedCuts}
+              disabled={removedSegments.length === 0}
             >
               <Icon name="auto_fix_high" className="text-lg" />
-              {detectionSettings.mode === "speed"
-                ? "Apply Time Warp"
-                : "Auto Cut Silence"}
+              Refresh Clip Timeline
             </Button>
           </div>
         </aside>

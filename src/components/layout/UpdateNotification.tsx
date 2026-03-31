@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { check, Update } from "@tauri-apps/plugin-updater";
+import { isDesktopRuntime } from "../../lib/runtime";
+import { log } from "../../lib/logger";
 import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
 
@@ -17,24 +19,37 @@ export function UpdateNotification() {
   const [dismissed, setDismissed] = useState(false);
 
   const checkForUpdates = useCallback(async () => {
+    if (!isDesktopRuntime()) return;
+
     setState({ status: "checking" });
     try {
       const update = await check();
       if (update) {
+        log.info("[updater]", `Update available: ${update.version}`);
         setState({ status: "available", update });
       } else {
         setState({ status: "uptodate" });
-        // Auto-hide "up to date" after 3s
         setTimeout(() => setState({ status: "idle" }), 3000);
       }
     } catch (err) {
-      console.error("Update check failed:", err);
+      const message = String(err);
+      if (
+        message.includes("valid release JSON") ||
+        message.includes("successful status code")
+      ) {
+        log.debug(
+          "[updater]",
+          "Skipping update notification because latest.json is not available yet."
+        );
+      } else {
+        log.warn("[updater]", "Update check failed:", err);
+      }
       setState({ status: "idle" });
     }
   }, []);
 
-  // Check for updates on mount and every 30 minutes
   useEffect(() => {
+    if (!isDesktopRuntime()) return;
     const timer = setTimeout(checkForUpdates, 3000);
     const interval = setInterval(checkForUpdates, 30 * 60 * 1000);
     return () => {
@@ -57,7 +72,7 @@ export function UpdateNotification() {
             totalBytes = event.data.contentLength ?? 0;
             setState({ status: "downloading", percent: 0 });
             break;
-          case "Progress":
+          case "Progress": {
             downloadedBytes += event.data.chunkLength;
             const percent =
               totalBytes > 0
@@ -65,6 +80,7 @@ export function UpdateNotification() {
                 : 0;
             setState({ status: "downloading", percent });
             break;
+          }
           case "Finished":
             setState({ status: "ready" });
             break;
@@ -73,10 +89,7 @@ export function UpdateNotification() {
 
       setState({ status: "ready" });
     } catch (err) {
-      setState({
-        status: "error",
-        message: String(err),
-      });
+      setState({ status: "error", message: String(err) });
     }
   };
 
@@ -85,11 +98,10 @@ export function UpdateNotification() {
     await relaunch();
   };
 
-  if (state.status === "idle" || dismissed) return null;
+  if (!isDesktopRuntime() || state.status === "idle" || dismissed) return null;
 
   return (
     <div className="fixed bottom-6 right-6 z-[100] w-96 glass-panel rounded-xl shadow-2xl border border-outline-variant/20 overflow-hidden animate-in fade-in slide-in-from-bottom-4">
-      {/* Checking */}
       {state.status === "checking" && (
         <div className="p-4 flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center animate-spin">
@@ -103,7 +115,6 @@ export function UpdateNotification() {
         </div>
       )}
 
-      {/* Up to date */}
       {state.status === "uptodate" && (
         <div className="p-4 flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center">
@@ -115,7 +126,6 @@ export function UpdateNotification() {
         </div>
       )}
 
-      {/* Update available */}
       {state.status === "available" && (
         <div className="p-5">
           <div className="flex items-start justify-between mb-3">
@@ -145,11 +155,7 @@ export function UpdateNotification() {
             </p>
           )}
           <div className="flex gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setDismissed(true)}
-            >
+            <Button variant="ghost" size="sm" onClick={() => setDismissed(true)}>
               Later
             </Button>
             <Button
@@ -164,7 +170,6 @@ export function UpdateNotification() {
         </div>
       )}
 
-      {/* Downloading */}
       {state.status === "downloading" && (
         <div className="p-5">
           <div className="flex items-center gap-3 mb-3">
@@ -189,7 +194,6 @@ export function UpdateNotification() {
         </div>
       )}
 
-      {/* Ready to restart */}
       {state.status === "ready" && (
         <div className="p-5">
           <div className="flex items-center gap-3 mb-3">
@@ -197,20 +201,14 @@ export function UpdateNotification() {
               <Icon name="restart_alt" className="text-primary text-xl" />
             </div>
             <div>
-              <p className="text-sm font-bold text-on-surface">
-                Update ready!
-              </p>
+              <p className="text-sm font-bold text-on-surface">Update ready!</p>
               <p className="text-[10px] text-on-surface-variant">
                 Restart the app to apply the update.
               </p>
             </div>
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setDismissed(true)}
-            >
+            <Button variant="ghost" size="sm" onClick={() => setDismissed(true)}>
               Later
             </Button>
             <Button
@@ -225,7 +223,6 @@ export function UpdateNotification() {
         </div>
       )}
 
-      {/* Error */}
       {state.status === "error" && (
         <div className="p-4 flex items-center gap-3">
           <Icon name="error" className="text-error text-lg" />

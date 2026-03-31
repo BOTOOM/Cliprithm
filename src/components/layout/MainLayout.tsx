@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { TopNavBar } from "./TopNavBar";
 import { SideNavBar } from "./SideNavBar";
 import { UpdateNotification } from "./UpdateNotification";
@@ -7,9 +9,34 @@ import { ProcessingView } from "../processing/ProcessingView";
 import { EditorView } from "../editor/EditorView";
 import { ExportModal } from "../export/ExportModal";
 import { SettingsPanel } from "../editor/SettingsPanel";
+import { isDesktopRuntime } from "../../lib/runtime";
+import type { ProcessingProgress } from "../../types";
 
 export function MainLayout() {
-  const { currentView, showExportModal, activeSideTab } = useProjectStore();
+  const { currentView, showExportModal, activeSideTab, setProgress } =
+    useProjectStore();
+
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    listen<ProcessingProgress>("processing-progress", (event) => {
+      setProgress(event.payload);
+    }).then((dispose) => {
+      if (disposed) {
+        dispose();
+        return;
+      }
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [setProgress]);
 
   const showSettings = activeSideTab === "settings";
 

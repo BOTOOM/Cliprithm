@@ -1,7 +1,8 @@
 use log::{debug, error, info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
 use tauri::{Emitter, Window};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -287,59 +288,227 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
         options.input_path, options.output_path, options.resolution, options.fps
     );
 
-    emit_progress(&window, 0.0, "exporting", "Iniciando exportación...");
+    emit_named_progress(&window, "export-progress", 5.0, "exporting", "Preparando exportación...");
 
-    let mut args: Vec<String> = vec!["-y".into(), "-i".into(), options.input_path.clone()];
+    let metadata = get_video_metadata(options.input_path.clone())?;
+    let mut segments_to_keep = options.segments_to_keep.clone();
+    if segments_to_keep.is_empty() {
+        segments_to_keep.push((0.0, metadata.duration));
+    }
+    segments_to_keep.retain(|(start, end)| end - start >= 0.08);
 
-    if let Some(ref resolution) = options.resolution {
-        let scale = match resolution.as_str() {
-            "1080p" => "scale=-2:1080",
-            "4k" => "scale=-2:2160",
-            _ => "scale=-2:1080",
-        };
-        debug!("[export] Scale filter: {}", scale);
-        args.extend_from_slice(&["-vf".into(), scale.into()]);
+    if segments_to_keep.is_empty() {
+        return Err("No hay clips activos para exportar.".to_string());
     }
 
-    if let Some(fps) = options.fps {
-        debug!("[export] FPS: {}", fps);
-        args.extend_from_slice(&["-r".into(), fps.to_string()]);
-    }
+    let expected_duration: f64 = segments_to_keep
+        .iter()
+        .map(|(start, end)| end - start)
+        .sum();
 
-    args.extend_from_slice(&[
-        "-c:v".into(), "libx264".into(), "-preset".into(), "medium".into(),
-        "-crf".into(), "18".into(), "-c:a".into(), "aac".into(),
-        "-b:a".into(), "192k".into(), options.output_path.clone(),
-    ]);
+    emit_named_progress(
+        &window,
+        "export-progress",
+        12.0,
+        "exporting",
+        "Construyendo timeline final...",
+    );
 
-    emit_progress(&window, 50.0, "encoding", "Codificando video...");
+    let (filter, video_output_label) = build_export_filter(
+        &segments_to_keep,
+        options.resolution.as_deref(),
+        options.fps,
+    );
+
+    let mut args: Vec<String> = vec![
+        "-y".into(),
+        "-i".into(),
+        options.input_path.clone(),
+        "-filter_complex".into(),
+        filter,
+        "-map".into(),
+        video_output_label,
+        "-map".into(),
+        "[aout]".into(),
+        "-c:v".into(),
+        "libx264".into(),
+        "-preset".into(),
+        "medium".into(),
+        "-crf".into(),
+        "18".into(),
+        "-c:a".into(),
+        "aac".into(),
+        "-b:a".into(),
+        "192k".into(),
+        options.output_path.clone(),
+    ];
+
+    emit_named_progress(
+        &window,
+        "export-progress",
+        20.0,
+        "encoding",
+        "Iniciando FFmpeg...",
+    );
 
     info!("[export] Running FFmpeg ({} args)...", args.len());
-    let output = Command::new("ffmpeg")
-        .args(&args)
-        .output()
-        .map_err(|e| { error!("[export] FFmpeg error: {}", e); format!("FFmpeg export error: {}", e) })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        error!("[export] FFmpeg failed:\n{}", stderr);
-        return Err(format!("Export failed: {}", stderr));
-    }
+    run_ffmpeg_with_progress(
+        &window,
+        "export-progress",
+        "encoding",
+        &mut args,
+        expected_duration,
+    )?;
 
     info!("[export] Done — {}", options.output_path);
-    emit_progress(&window, 100.0, "complete", "¡Exportación completa!");
+    emit_named_progress(&window, "export-progress", 100.0, "complete", "¡Exportación completa!");
     Ok(options.output_path)
 }
 
 // --- Internal helpers ---
 
 fn emit_progress(window: &Window, percent: f64, stage: &str, message: &str) {
+    emit_named_progress(window, "processing-progress", percent, stage, message);
+}
+
+fn emit_named_progress(
+    window: &Window,
+    event_name: &str,
+    percent: f64,
+    stage: &str,
+    message: &str,
+) {
     debug!("[progress] {:.0}% [{}] {}", percent, stage, message);
-    window.emit("processing-progress", ProcessingProgress {
+    window.emit(event_name, ProcessingProgress {
         percent,
         stage: stage.to_string(),
         message: message.to_string(),
     }).ok();
+}
+
+fn build_export_filter(
+    segments_to_keep: &[(f64, f64)],
+    resolution: Option<&str>,
+    fps: Option<u32>,
+) -> (String, String) {
+    let mut filter_parts: Vec<String> = Vec::new();
+
+    for (index, (start, end)) in segments_to_keep.iter().enumerate() {
+        filter_parts.push(format!(
+            "[0:v]trim=start={}:end={},setpts=PTS-STARTPTS[v{}];[0:a]atrim=start={}:end={},asetpts=PTS-STARTPTS[a{}]",
+            start, end, index, start, end, index
+        ));
+    }
+
+    let concat_inputs = (0..segments_to_keep.len())
+        .map(|index| format!("[v{}][a{}]", index, index))
+        .collect::<Vec<_>>()
+        .join("");
+
+    filter_parts.push(format!(
+        "{}concat=n={}:v=1:a=1[vcat][aout]",
+        concat_inputs,
+        segments_to_keep.len()
+    ));
+
+    let mut video_output_label = "[vcat]".to_string();
+    let mut transforms: Vec<String> = Vec::new();
+
+    if let Some(resolution) = resolution {
+        transforms.push(match resolution {
+            "1080p" => "scale=-2:1080".to_string(),
+            "4k" => "scale=-2:2160".to_string(),
+            _ => "scale=-2:1080".to_string(),
+        });
+    }
+
+    if let Some(fps) = fps {
+        transforms.push(format!("fps={}", fps));
+    }
+
+    if !transforms.is_empty() {
+        filter_parts.push(format!(
+            "[vcat]{}[vout]",
+            transforms.join(",")
+        ));
+        video_output_label = "[vout]".to_string();
+    }
+
+    (filter_parts.join(";"), video_output_label)
+}
+
+fn run_ffmpeg_with_progress(
+    window: &Window,
+    event_name: &str,
+    stage: &str,
+    args: &[String],
+    expected_duration: f64,
+) -> Result<(), String> {
+    let mut child = Command::new("ffmpeg")
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            error!("[export] FFmpeg error: {}", e);
+            format!("FFmpeg export error: {}", e)
+        })?;
+
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "No se pudo capturar el stderr de FFmpeg".to_string())?;
+
+    let reader = BufReader::new(stderr);
+    let time_re = Regex::new(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)").unwrap();
+    let mut last_percent = 20.0;
+    let mut stderr_lines: Vec<String> = Vec::new();
+
+    for line in reader.lines() {
+        let line = line.unwrap_or_default();
+        debug!("[export] {}", line);
+        stderr_lines.push(line.clone());
+        if stderr_lines.len() > 300 {
+            stderr_lines.remove(0);
+        }
+
+        if let Some(current_seconds) = parse_ffmpeg_progress_seconds(&time_re, &line) {
+            let progress = if expected_duration > 0.0 {
+                20.0 + ((current_seconds / expected_duration) * 75.0)
+            } else {
+                50.0
+            };
+
+            if progress - last_percent >= 1.0 {
+                let clamped = progress.clamp(20.0, 95.0);
+                emit_named_progress(
+                    window,
+                    event_name,
+                    clamped,
+                    stage,
+                    &format!("Codificando video... {:.0}%", clamped),
+                );
+                last_percent = clamped;
+            }
+        }
+    }
+
+    let status = child.wait().map_err(|e| format!("FFmpeg wait error: {}", e))?;
+    if !status.success() {
+        let stderr_tail = stderr_lines.join("\n");
+        error!("[export] FFmpeg failed:\n{}", stderr_tail);
+        return Err(format!("Export failed: {}", stderr_tail));
+    }
+
+    Ok(())
+}
+
+fn parse_ffmpeg_progress_seconds(regex: &Regex, line: &str) -> Option<f64> {
+    let captures = regex.captures(line)?;
+    let hours = captures.get(1)?.as_str().parse::<f64>().ok()?;
+    let minutes = captures.get(2)?.as_str().parse::<f64>().ok()?;
+    let seconds = captures.get(3)?.as_str().parse::<f64>().ok()?;
+    Some((hours * 3600.0) + (minutes * 60.0) + seconds)
 }
 
 fn cut_with_speed(

@@ -1,7 +1,13 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { appDataDir } from "@tauri-apps/api/path";
+import { log } from "../../lib/logger";
+import {
+  extractBrowserVideoMetadata,
+  getFileName,
+} from "../../lib/media";
+import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
 import { getVideoMetadata, detectSilence } from "../../services/tauriCommands";
 import { createProject } from "../../services/database";
@@ -15,16 +21,21 @@ export function EmptyState() {
     setVideoMetadata,
     setView,
     setDetectionResult,
+    setProcessedFilePath,
     setProgress,
     detectionSettings,
   } = useProjectStore();
   const [isDragOver, setIsDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = useCallback(
+  const handleDesktopFile = useCallback(
     async (path: string) => {
       try {
         setError(null);
+        setNotice(null);
+        setProcessedFilePath(null);
         setFilePath(path);
         setView("processing");
         setProgress({
@@ -36,8 +47,7 @@ export function EmptyState() {
         const metadata = await getVideoMetadata(path);
         setVideoMetadata(metadata);
 
-        // Generate thumbnail and save to DB
-        const fileName = path.split("/").pop()?.split("\\").pop() ?? "Untitled";
+        const fileName = getFileName(path);
         let thumbnailPath: string | null = null;
         try {
           const dataDir = await appDataDir();
@@ -50,7 +60,6 @@ export function EmptyState() {
           thumbnailPath = null;
         }
 
-        // Save project to local database
         try {
           await createProject({
             name: fileName,
@@ -66,90 +75,129 @@ export function EmptyState() {
             min_duration: detectionSettings.minDuration,
             mode: detectionSettings.mode,
           });
-        } catch (dbErr) {
-          console.warn("Failed to save project to DB:", dbErr);
+        } catch (dbError) {
+          log.warn("[db]", "Failed to save project:", dbError);
         }
 
         setProgress({
-          percent: 30,
+          percent: 25,
           stage: "analyzing",
           message: "Detecting silence...",
         });
-
         const result = await detectSilence(
           path,
           detectionSettings.noiseThreshold,
           detectionSettings.minDuration
         );
         setDetectionResult(result);
-
-        setProgress({
-          percent: 100,
-          stage: "complete",
-          message: `Found ${result.segments.length} silent segments`,
-        });
-
-        setTimeout(() => setView("editor"), 1500);
+        setView("editor");
       } catch (err) {
         setError(String(err));
         setView("import");
       }
     },
     [
+      detectionSettings,
+      setDetectionResult,
       setFilePath,
+      setProcessedFilePath,
+      setProgress,
       setVideoMetadata,
       setView,
+    ]
+  );
+
+  const handleBrowserFile = useCallback(
+    async (file: File) => {
+      try {
+        setError(null);
+        setNotice(
+          "Modo navegador: puedes probar la UI y el preview local, pero FFmpeg/SQLite/export siguen siendo exclusivos de la app desktop."
+        );
+        const { url, metadata } = await extractBrowserVideoMetadata(file);
+        setProcessedFilePath(null);
+        setFilePath(url);
+        setVideoMetadata(metadata);
+        setDetectionResult(null);
+        setView("editor");
+      } catch (err) {
+        setError(String(err));
+      }
+    },
+    [
       setDetectionResult,
-      setProgress,
-      detectionSettings,
+      setFilePath,
+      setProcessedFilePath,
+      setVideoMetadata,
+      setView,
     ]
   );
 
   const handleBrowse = async () => {
+    if (!isDesktopRuntime()) {
+      fileInputRef.current?.click();
+      return;
+    }
+
     const file = await open({
       multiple: false,
       filters: [
         { name: "Video", extensions: ["mp4", "mov", "mkv", "avi", "webm"] },
       ],
     });
-    if (file) {
-      handleFile(file);
+
+    if (typeof file === "string") {
+      void handleDesktopFile(file);
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault();
     setIsDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      // In Tauri, drag & drop gives us the path
-      const path = (file as unknown as { path?: string }).path;
-      if (path) handleFile(path);
+
+    const file = event.dataTransfer.files[0];
+    if (!file) return;
+
+    const path = (file as unknown as { path?: string }).path;
+    if (path && isDesktopRuntime()) {
+      void handleDesktopFile(path);
+      return;
     }
+
+    void handleBrowserFile(file);
   };
 
   return (
     <div className="flex-1 flex flex-col h-full">
-      {/* Media Sidebar */}
       <div className="flex h-full">
         <div className="w-64 bg-surface-container border-r border-surface-container-high flex flex-col">
           <div className="flex items-center justify-between p-4 pb-0">
             <h2 className="text-on-surface-variant font-medium uppercase tracking-widest text-xs">
               Media Library
             </h2>
-            <Icon
-              name="filter_list"
-              className="text-on-surface-variant text-sm"
-            />
+            <Icon name="filter_list" className="text-on-surface-variant text-sm" />
           </div>
           <MediaLibrary />
         </div>
 
-        {/* Main Drop Zone */}
         <div className="flex-1 flex flex-col items-center justify-center p-12 bg-surface-container-low">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="video/*"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                void handleBrowserFile(file);
+              }
+              event.currentTarget.value = "";
+            }}
+          />
+
           <div
-            onDragOver={(e) => {
-              e.preventDefault();
+            onDragOver={(event) => {
+              event.preventDefault();
               setIsDragOver(true);
             }}
             onDragLeave={() => setIsDragOver(false)}
@@ -172,23 +220,19 @@ export function EmptyState() {
                 Drag & Drop your video here to start removing silence.
               </h1>
               <p className="text-on-surface-variant text-sm mb-10 leading-relaxed px-8">
-                Our engine surgically detects and removes audio gaps to make
-                your content punchy and professional.
+                Our engine surgically detects and removes audio gaps to make your
+                content punchy and professional.
               </p>
               <div className="flex flex-col gap-4 w-full px-12">
-                <Button
-                  variant="primary"
-                  className="w-full py-3"
-                  onClick={handleBrowse}
-                >
+                <Button variant="primary" className="w-full py-3" onClick={handleBrowse}>
                   Browse Files
                 </Button>
               </div>
-              {error && (
-                <p className="mt-4 text-error text-xs">{error}</p>
+              {notice && (
+                <p className="mt-4 text-primary text-xs leading-relaxed">{notice}</p>
               )}
+              {error && <p className="mt-4 text-error text-xs">{error}</p>}
             </div>
-            {/* Status indicators */}
             <div className="absolute bottom-8 flex gap-8">
               {["MP4, MOV, MKV", "Up to 4K 60FPS", "Max 2GB"].map((text) => (
                 <div
@@ -202,7 +246,6 @@ export function EmptyState() {
             </div>
           </div>
 
-          {/* Feature Cards */}
           <div className="mt-12 w-full max-w-4xl grid grid-cols-3 gap-6">
             {[
               {
