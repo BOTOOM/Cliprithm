@@ -99,7 +99,7 @@ export function Timeline({
   }, [isScrubbing, playheadLeft, timelineWidth]);
 
   return (
-    <div className="h-[300px] bg-surface-container border-t border-outline-variant/10 flex flex-col p-4 gap-4">
+    <div className="h-[300px] min-w-0 bg-surface-container border-t border-outline-variant/10 flex flex-col p-4 gap-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4 flex-wrap">
           <span className="text-xs font-bold tracking-widest text-on-surface-variant uppercase">
@@ -142,7 +142,13 @@ export function Timeline({
 
       <div
         ref={scrollRef}
-        className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar rounded-xl bg-surface-container-lowest border border-outline-variant/10"
+        className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden custom-scrollbar rounded-xl bg-surface-container-lowest border border-outline-variant/10"
+        onWheel={(event) => {
+          if (!(event.ctrlKey || event.metaKey)) return;
+          event.preventDefault();
+          const nextZoom = event.deltaY > 0 ? zoom - 2 : zoom + 2;
+          onZoomChange(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom)));
+        }}
       >
         <div
           ref={trackRef}
