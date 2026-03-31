@@ -1,4 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { appDataDir, BaseDirectory } from "@tauri-apps/api/path";
 import { readFile } from "@tauri-apps/plugin-fs";
 import type { VideoMetadata } from "../types";
 import { isDesktopRuntime } from "./runtime";
@@ -31,7 +32,20 @@ export async function createBlobVideoUrl(
   filePath: string,
   mimeType = "video/mp4"
 ): Promise<string> {
-  const bytes = await readFile(filePath);
+  let bytes: Uint8Array;
+
+  if (isDesktopRuntime()) {
+    const dataDir = await appDataDir();
+    if (filePath.startsWith(dataDir)) {
+      const relativePath = filePath.slice(dataDir.length).replace(/^[\\/]+/, "");
+      bytes = await readFile(relativePath, { baseDir: BaseDirectory.AppData });
+    } else {
+      bytes = await readFile(filePath);
+    }
+  } else {
+    bytes = await readFile(filePath);
+  }
+
   const blob = new Blob([bytes], { type: mimeType });
   return URL.createObjectURL(blob);
 }

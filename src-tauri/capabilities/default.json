@@ -35,6 +35,13 @@
     "process:allow-restart",
     "process:allow-exit",
     "log:default",
-    "log:allow-log"
+    "log:allow-log",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APPDATA/previews/*" },
+        { "path": "$APPDATA/thumbnails/*" }
+      ]
+    }
   ]
 }
