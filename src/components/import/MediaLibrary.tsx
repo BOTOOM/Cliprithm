@@ -23,6 +23,7 @@ export function MediaLibrary() {
     setView,
     setProgress,
     setProcessedFilePath,
+    setPreviewFilePath,
     detectionSettings,
   } = useProjectStore();
 
@@ -49,6 +50,7 @@ export function MediaLibrary() {
     async (project: ProjectRecord) => {
       try {
         setProcessedFilePath(project.processed_path);
+        setPreviewFilePath(null);
         setFilePath(project.file_path);
         setView("processing");
         setProgress({
@@ -103,6 +105,7 @@ export function MediaLibrary() {
       setDetectionResult,
       setFilePath,
       setProcessedFilePath,
+      setPreviewFilePath,
       setProgress,
       setVideoMetadata,
       setView,

@@ -27,9 +27,11 @@ interface ProjectState {
   filePath: string | null;
   videoMetadata: VideoMetadata | null;
   processedFilePath: string | null;
+  previewFilePath: string | null;
   setFilePath: (path: string | null) => void;
   setVideoMetadata: (metadata: VideoMetadata | null) => void;
   setProcessedFilePath: (path: string | null) => void;
+  setPreviewFilePath: (path: string | null) => void;
 
   detectionResult: DetectionResult | null;
   setDetectionResult: (result: DetectionResult | null) => void;
@@ -93,9 +95,11 @@ export const useProjectStore = create<ProjectState>((set) => ({
   filePath: null,
   videoMetadata: null,
   processedFilePath: null,
+  previewFilePath: null,
   setFilePath: (path) => set({ filePath: path }),
   setVideoMetadata: (metadata) => set({ videoMetadata: metadata }),
   setProcessedFilePath: (path) => set({ processedFilePath: path }),
+  setPreviewFilePath: (path) => set({ previewFilePath: path }),
 
   detectionResult: null,
   setDetectionResult: (result) =>
@@ -183,6 +187,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
       filePath: null,
       videoMetadata: null,
       processedFilePath: null,
+      previewFilePath: null,
       detectionResult: null,
       removedSegments: [],
       clipSegments: [],

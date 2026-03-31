@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { appDataDir } from "@tauri-apps/api/path";
 import { log } from "../../lib/logger";
 import {
   editedToSourceTime,
@@ -7,9 +8,10 @@ import {
   sourceToEditedTime,
 } from "../../lib/editor";
 import { formatTime } from "../../lib/utils";
-import { resolveMediaSrc } from "../../lib/media";
+import { getFileName, resolveMediaSrc } from "../../lib/media";
+import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
-import { detectSilence } from "../../services/tauriCommands";
+import { detectSilence, generatePreviewProxy } from "../../services/tauriCommands";
 import type { ClipSegment } from "../../types";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
@@ -25,6 +27,8 @@ export function EditorView() {
     detectionSettings,
     updateDetectionSettings,
     setDetectionResult,
+    previewFilePath,
+    setPreviewFilePath,
     removedSegments,
     clipSegments,
     applySuggestedCuts,
@@ -42,6 +46,7 @@ export function EditorView() {
   const [isRedetecting, setIsRedetecting] = useState(false);
   const [previewEdited, setPreviewEdited] = useState(true);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const [isGeneratingProxy, setIsGeneratingProxy] = useState(false);
 
   const duration = videoMetadata?.duration ?? 0;
   const fallbackClip: ClipSegment | null = useMemo(() => {
@@ -66,7 +71,7 @@ export function EditorView() {
 
   const gapCount = removedSegments.length;
   const estimatedDuration = editedDuration || detectionResult?.estimated_output_duration || duration;
-  const videoSrc = resolveMediaSrc(filePath);
+  const videoSrc = resolveMediaSrc(previewFilePath || filePath);
 
   const seekSourceTime = useCallback((nextSourceTime: number) => {
     if (!videoRef.current) return;
@@ -151,6 +156,66 @@ export function EditorView() {
     removeClipSegment(selectedClip.id);
   };
 
+  const handleVideoError = useCallback(async () => {
+    const video = videoRef.current;
+    const errorCode = video?.error?.code ?? 0;
+    const errorLabel =
+      {
+        1: "MEDIA_ERR_ABORTED",
+        2: "MEDIA_ERR_NETWORK",
+        3: "MEDIA_ERR_DECODE",
+        4: "MEDIA_ERR_SRC_NOT_SUPPORTED",
+      }[errorCode] ?? `UNKNOWN_${errorCode}`;
+
+    log.error("[preview]", "Video playback failed", {
+      errorCode,
+      errorLabel,
+      currentSrc: video?.currentSrc,
+      filePath,
+      previewFilePath,
+    });
+
+    if (
+      !isDesktopRuntime() ||
+      !filePath ||
+      filePath.startsWith("blob:") ||
+      previewFilePath ||
+      isGeneratingProxy
+    ) {
+      setMediaError(
+        `No se pudo reproducir el video (${errorLabel}). Revisa el códec o el contenedor del archivo.`
+      );
+      return;
+    }
+
+    try {
+      setIsGeneratingProxy(true);
+      setMediaError(
+        `El WebView no pudo reproducir el archivo original (${errorLabel}). Generando un proxy compatible para el preview...`
+      );
+      const dataDir = await appDataDir();
+      const baseName = getFileName(filePath).replace(/\.[^.]+$/, "");
+      const proxyPath = `${dataDir}/previews/${Date.now()}-${baseName}.mp4`;
+      const result = await generatePreviewProxy(filePath, proxyPath);
+      setPreviewFilePath(result);
+      setMediaError(null);
+    } catch (err) {
+      log.error("[preview]", "Preview proxy generation failed:", err);
+      setMediaError(
+        `No se pudo reproducir el video (${errorLabel}) y también falló el proxy de preview: ${String(
+          err
+        )}`
+      );
+    } finally {
+      setIsGeneratingProxy(false);
+    }
+  }, [
+    filePath,
+    isGeneratingProxy,
+    previewFilePath,
+    setPreviewFilePath,
+  ]);
+
   return (
     <div className="flex-1 flex flex-col h-full">
       <div className="flex-1 flex min-h-0">
@@ -192,11 +257,7 @@ export function EditorView() {
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
                   onLoadedData={() => setMediaError(null)}
-                  onError={() =>
-                    setMediaError(
-                      "No se pudo reproducir el video. Revisé la ruta y el siguiente paso es mostrar el error exacto del códec si vuelve a ocurrir."
-                    )
-                  }
+                  onError={() => void handleVideoError()}
                   controls={false}
                   playsInline
                 />
@@ -209,7 +270,14 @@ export function EditorView() {
               {mediaError && (
                 <div className="absolute inset-0 bg-black/70 flex items-center justify-center p-6 text-center">
                   <div>
-                    <Icon name="error" className="text-error text-4xl mb-3" />
+                    <Icon
+                      name={isGeneratingProxy ? "sync" : "error"}
+                      className={`text-4xl mb-3 ${
+                        isGeneratingProxy
+                          ? "text-primary animate-spin"
+                          : "text-error"
+                      }`}
+                    />
                     <p className="text-sm text-white leading-relaxed">{mediaError}</p>
                   </div>
                 </div>

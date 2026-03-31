@@ -79,6 +79,7 @@ pub fn run() {
             ffmpeg::cut_silence,
             ffmpeg::export_video,
             library::generate_thumbnail,
+            library::generate_preview_proxy,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

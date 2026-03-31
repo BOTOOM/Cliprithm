@@ -60,3 +60,17 @@ export async function exportVideo(options: ExportOptions): Promise<string> {
   log.info("[export]", "Export complete:", result);
   return result;
 }
+
+export async function generatePreviewProxy(
+  videoPath: string,
+  outputPath: string
+): Promise<string> {
+  assertDesktop("La generación del proxy de preview");
+  log.info("[preview]", `Generating preview proxy → ${outputPath}`);
+  const result = await invoke<string>("generate_preview_proxy", {
+    videoPath,
+    outputPath,
+  });
+  log.info("[preview]", "Preview proxy ready:", result);
+  return result;
+}

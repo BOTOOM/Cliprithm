@@ -22,6 +22,7 @@ export function EmptyState() {
     setView,
     setDetectionResult,
     setProcessedFilePath,
+    setPreviewFilePath,
     setProgress,
     detectionSettings,
   } = useProjectStore();
@@ -36,6 +37,7 @@ export function EmptyState() {
         setError(null);
         setNotice(null);
         setProcessedFilePath(null);
+        setPreviewFilePath(null);
         setFilePath(path);
         setView("processing");
         setProgress({
@@ -101,6 +103,7 @@ export function EmptyState() {
       setDetectionResult,
       setFilePath,
       setProcessedFilePath,
+      setPreviewFilePath,
       setProgress,
       setVideoMetadata,
       setView,
@@ -116,6 +119,7 @@ export function EmptyState() {
         );
         const { url, metadata } = await extractBrowserVideoMetadata(file);
         setProcessedFilePath(null);
+        setPreviewFilePath(null);
         setFilePath(url);
         setVideoMetadata(metadata);
         setDetectionResult(null);
@@ -128,6 +132,7 @@ export function EmptyState() {
       setDetectionResult,
       setFilePath,
       setProcessedFilePath,
+      setPreviewFilePath,
       setVideoMetadata,
       setView,
     ]
