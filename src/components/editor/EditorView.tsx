@@ -38,6 +38,8 @@ export function EditorView() {
     setSelectedClipId,
     timelineZoom,
     setTimelineZoom,
+    canUndo,
+    undoLastEdit,
   } = useProjectStore();
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -121,6 +123,33 @@ export function EditorView() {
       }
     };
   }, [previewFilePath]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isUndoShortcut =
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === "z" &&
+        !event.shiftKey;
+      if (!isUndoShortcut || !canUndo) {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      const isTypingTarget =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable;
+      if (isTypingTarget) {
+        return;
+      }
+
+      event.preventDefault();
+      undoLastEdit();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [canUndo, undoLastEdit]);
 
   const seekSourceTime = useCallback((nextSourceTime: number) => {
     if (!videoRef.current) return;
@@ -274,6 +303,10 @@ export function EditorView() {
               <Button variant="surface" size="sm" onClick={handleApplySuggestedCuts}>
                 <Icon name="auto_fix_high" className="text-base" />
                 Apply Suggested Cuts
+              </Button>
+              <Button variant="ghost" size="sm" onClick={undoLastEdit} disabled={!canUndo}>
+                <Icon name="undo" className="text-base" />
+                Undo
               </Button>
               <Button
                 variant="ghost"

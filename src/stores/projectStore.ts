@@ -18,6 +18,56 @@ import type {
 
 type SideTab = "media" | "files" | "settings";
 
+interface ClipHistoryEntry {
+  clipSegments: ClipSegment[];
+  removedSegments: SilenceSegment[];
+  selectedClipId: string | null;
+}
+
+function sameClipSegments(a: ClipSegment[], b: ClipSegment[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (clip, index) =>
+        clip.start === b[index]?.start &&
+        clip.end === b[index]?.end &&
+        clip.duration === b[index]?.duration
+    )
+  );
+}
+
+function pushClipHistory(
+  state: Pick<ProjectState, "clipSegments" | "removedSegments" | "selectedClipId" | "editHistory">,
+  nextClips: ClipSegment[],
+  nextRemovedSegments: SilenceSegment[],
+  nextSelectedClipId: string | null
+): Pick<ProjectState, "clipSegments" | "removedSegments" | "selectedClipId" | "editHistory"> {
+  if (
+    sameClipSegments(state.clipSegments, nextClips) &&
+    state.selectedClipId === nextSelectedClipId
+  ) {
+    return {
+      clipSegments: state.clipSegments,
+      removedSegments: state.removedSegments,
+      selectedClipId: state.selectedClipId,
+      editHistory: state.editHistory,
+    };
+  }
+
+  const snapshot: ClipHistoryEntry = {
+    clipSegments: state.clipSegments,
+    removedSegments: state.removedSegments,
+    selectedClipId: state.selectedClipId,
+  };
+
+  return {
+    clipSegments: nextClips,
+    removedSegments: nextRemovedSegments,
+    selectedClipId: nextSelectedClipId,
+    editHistory: [...state.editHistory, snapshot].slice(-100),
+  };
+}
+
 interface ProjectState {
   currentView: AppView;
   setView: (view: AppView) => void;
@@ -48,6 +98,9 @@ interface ProjectState {
   setSelectedClipId: (clipId: string | null) => void;
   timelineZoom: number;
   setTimelineZoom: (zoom: number) => void;
+  editHistory: ClipHistoryEntry[];
+  canUndo: boolean;
+  undoLastEdit: () => void;
 
   progress: ProcessingProgress;
   setProgress: (progress: ProcessingProgress) => void;
@@ -109,13 +162,15 @@ export const useProjectStore = create<ProjectState>((set) => ({
         ? buildClipSegmentsFromSilence(result.segments, duration)
         : [];
 
-      return {
-        detectionResult: result,
-        removedSegments: result?.segments ?? [],
-        clipSegments,
-        selectedClipId: clipSegments[0]?.id ?? null,
-      };
-    }),
+        return {
+          detectionResult: result,
+          removedSegments: result?.segments ?? [],
+          clipSegments,
+          selectedClipId: clipSegments[0]?.id ?? null,
+          editHistory: [],
+          canUndo: false,
+        };
+      }),
 
   removedSegments: [],
   setRemovedSegments: (segments) => set({ removedSegments: segments }),
@@ -125,35 +180,61 @@ export const useProjectStore = create<ProjectState>((set) => ({
     set(() => ({
       clipSegments: segments,
       selectedClipId: segments[0]?.id ?? null,
+      editHistory: [],
+      canUndo: false,
     })),
   applySuggestedCuts: () =>
     set((state) => {
       const duration =
         state.detectionResult?.original_duration ?? state.videoMetadata?.duration ?? 0;
       const clips = buildClipSegmentsFromSilence(state.removedSegments, duration);
+      const nextSelectedClipId = clips[0]?.id ?? null;
+      const nextState = pushClipHistory(
+        state,
+        clips,
+        state.removedSegments,
+        nextSelectedClipId
+      );
       return {
-        clipSegments: clips,
-        selectedClipId: clips[0]?.id ?? null,
+        ...nextState,
+        canUndo: nextState.editHistory.length > 0,
       };
     }),
   removeClipSegment: (clipId) =>
     set((state) => {
       const duration = state.videoMetadata?.duration ?? 0;
       const clips = removeClipById(state.clipSegments, clipId);
+      const removedSegments = buildSilenceSegmentsFromClips(clips, duration);
+      const nextSelectedClipId = clips[0]?.id ?? null;
+      const nextState = pushClipHistory(
+        state,
+        clips,
+        removedSegments,
+        nextSelectedClipId
+      );
       return {
-        clipSegments: clips,
-        removedSegments: buildSilenceSegmentsFromClips(clips, duration),
-        selectedClipId: clips[0]?.id ?? null,
+        ...nextState,
+        canUndo: nextState.editHistory.length > 0,
       };
     }),
   splitClipAtTime: (clipId, time) =>
     set((state) => {
       const duration = state.videoMetadata?.duration ?? 0;
       const clips = splitClipByTime(state.clipSegments, clipId, time);
+      const removedSegments = buildSilenceSegmentsFromClips(clips, duration);
+      const nextSelectedClipId =
+        clips.find((clip) => time >= clip.start && time <= clip.end)?.id ??
+        clips[0]?.id ??
+        null;
+      const nextState = pushClipHistory(
+        state,
+        clips,
+        removedSegments,
+        nextSelectedClipId
+      );
       return {
-        clipSegments: clips,
-        removedSegments: buildSilenceSegmentsFromClips(clips, duration),
-        selectedClipId: clips.find((clip) => time >= clip.start && time <= clip.end)?.id ?? clips[0]?.id ?? null,
+        ...nextState,
+        canUndo: nextState.editHistory.length > 0,
       };
     }),
   selectedClipId: null,
@@ -161,6 +242,24 @@ export const useProjectStore = create<ProjectState>((set) => ({
   timelineZoom: 10,
   setTimelineZoom: (zoom) =>
     set({ timelineZoom: Math.min(40, Math.max(4, zoom)) }),
+  editHistory: [],
+  canUndo: false,
+  undoLastEdit: () =>
+    set((state) => {
+      const previous = state.editHistory[state.editHistory.length - 1];
+      if (!previous) {
+        return state;
+      }
+
+      const nextHistory = state.editHistory.slice(0, -1);
+      return {
+        clipSegments: previous.clipSegments,
+        removedSegments: previous.removedSegments,
+        selectedClipId: previous.selectedClipId,
+        editHistory: nextHistory,
+        canUndo: nextHistory.length > 0,
+      };
+    }),
 
   progress: defaultProgress,
   setProgress: (progress) => set({ progress }),
@@ -193,6 +292,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
       clipSegments: [],
       selectedClipId: null,
       timelineZoom: 10,
+      editHistory: [],
+      canUndo: false,
       progress: defaultProgress,
       detectionSettings: defaultDetectionSettings,
       exportSettings: defaultExportSettings,
