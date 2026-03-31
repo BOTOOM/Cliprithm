@@ -8,7 +8,7 @@ import {
   sourceToEditedTime,
 } from "../../lib/editor";
 import { formatTime } from "../../lib/utils";
-import { createBlobVideoUrl, getFileName, resolveMediaSrc } from "../../lib/media";
+import { getFileName, resolveMediaSrc } from "../../lib/media";
 import { useI18n } from "../../lib/i18n";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
@@ -62,10 +62,8 @@ export function EditorView() {
   const [isRedetecting, setIsRedetecting] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [isGeneratingSourceProxy, setIsGeneratingSourceProxy] = useState(false);
-  const [sourceProxyBlobUrl, setSourceProxyBlobUrl] = useState<string | null>(null);
-  const [editedPreviewBlobUrl, setEditedPreviewBlobUrl] = useState<string | null>(null);
-  const [isLoadingSourceProxyBlob, setIsLoadingSourceProxyBlob] = useState(false);
-  const [isLoadingEditedPreviewBlob, setIsLoadingEditedPreviewBlob] = useState(false);
+  const [sourceProxySrc, setSourceProxySrc] = useState<string | null>(null);
+  const [editedPreviewSrc, setEditedPreviewSrc] = useState<string | null>(null);
   const [isGeneratingEditedPreview, setIsGeneratingEditedPreview] = useState(false);
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [sourceProxyRetryCount, setSourceProxyRetryCount] = useState(0);
@@ -101,22 +99,21 @@ export function EditorView() {
   const gapCount = removedSegments.length;
   const estimatedDuration = editedDuration || detectionResult?.estimated_output_duration || duration;
   const sourceVideoSrc = previewFilePath
-    ? sourceProxyBlobUrl
+    ? sourceProxySrc
     : resolveMediaSrc(filePath);
   const isUsingEditedSequenceSource =
-    currentView === "editor" && previewMode === "edited" && Boolean(editedPreviewBlobUrl);
+    currentView === "editor" && previewMode === "edited" && Boolean(editedPreviewSrc);
   const videoSrc =
     currentView === "editor" && previewMode === "edited"
-      ? editedPreviewBlobUrl || sourceVideoSrc
+      ? editedPreviewSrc || sourceVideoSrc
       : sourceVideoSrc;
   const isEditedPreviewBuilding =
     isEditedPreviewMode &&
     (isGeneratingEditedPreview ||
-      isLoadingEditedPreviewBlob ||
-      (!editedPreviewBlobUrl && activeClips.length > 0));
+      (!editedPreviewSrc && activeClips.length > 0));
   const isPreviewBusy =
     Boolean(videoSrc) &&
-    (!isVideoReady || isGeneratingSourceProxy || isLoadingSourceProxyBlob);
+    (!isVideoReady || isGeneratingSourceProxy);
   const clipSignature = useMemo(
     () =>
       JSON.stringify(activeClips.map((clip) => ({ start: clip.start, end: clip.end }))),
@@ -140,87 +137,25 @@ export function EditorView() {
     buildingEditedPreviewRef.current = null;
   }, [filePath]);
 
+  // Convert preview proxy path to asset:// URL (supports HTTP Range requests for seeking)
   useEffect(() => {
     if (!previewFilePath || !isDesktopRuntime()) {
-      setSourceProxyBlobUrl(null);
-      setIsLoadingSourceProxyBlob(false);
+      setSourceProxySrc(null);
       return;
     }
+    setSourceProxySrc(resolveMediaSrc(previewFilePath));
+    setMediaError(null);
+  }, [previewFilePath]);
 
-    let active = true;
-    let objectUrl: string | null = null;
-
-    setIsLoadingSourceProxyBlob(true);
-    void createBlobVideoUrl(previewFilePath)
-      .then((url) => {
-        if (!active) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        objectUrl = url;
-        setSourceProxyBlobUrl(url);
-        setMediaError(null);
-      })
-      .catch((error) => {
-        log.error("[preview]", "Failed to load preview blob:", error);
-        if (active) {
-          setMediaError(t("detection.proxyMemoryLoad", { error: String(error) }));
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setIsLoadingSourceProxyBlob(false);
-        }
-      });
-
-    return () => {
-      active = false;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  }, [previewFilePath, t]);
-
+  // Convert edited preview path to asset:// URL (supports HTTP Range requests for seeking)
   useEffect(() => {
     if (!editedPreviewFilePath || !isDesktopRuntime()) {
-      setEditedPreviewBlobUrl(null);
-      setIsLoadingEditedPreviewBlob(false);
+      setEditedPreviewSrc(null);
       return;
     }
-
-    let active = true;
-    let objectUrl: string | null = null;
-
-    setIsLoadingEditedPreviewBlob(true);
-    void createBlobVideoUrl(editedPreviewFilePath)
-      .then((url) => {
-        if (!active) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        objectUrl = url;
-        setEditedPreviewBlobUrl(url);
-        setMediaError(null);
-      })
-      .catch((error) => {
-        log.error("[preview]", "Failed to load edited preview blob:", error);
-        if (active) {
-          setMediaError(t("detection.proxyMemoryLoad", { error: String(error) }));
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setIsLoadingEditedPreviewBlob(false);
-        }
-      });
-
-    return () => {
-      active = false;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  }, [editedPreviewFilePath, t]);
+    setEditedPreviewSrc(resolveMediaSrc(editedPreviewFilePath));
+    setMediaError(null);
+  }, [editedPreviewFilePath]);
 
   useEffect(() => {
     if (
@@ -710,7 +645,7 @@ export function EditorView() {
                 />
               ) : (
                 <div className="text-on-surface-variant text-sm px-6 text-center">
-                  {isLoadingSourceProxyBlob || isLoadingEditedPreviewBlob
+                  {isGeneratingSourceProxy || isGeneratingEditedPreview
                     ? t("detection.proxyLoading")
                     : t("detection.importToBegin")}
                 </div>
