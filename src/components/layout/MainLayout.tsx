@@ -53,7 +53,7 @@ export function MainLayout() {
         <main className="flex-1 bg-surface overflow-hidden">
           {currentView === "import" && <EmptyState />}
           {currentView === "processing" && <ProcessingView />}
-          {currentView === "editor" && <EditorView />}
+          {(currentView === "detection" || currentView === "editor") && <EditorView />}
         </main>
       </div>
       {showExportModal && <ExportModal />}

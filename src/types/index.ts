@@ -1,4 +1,4 @@
-export type AppView = "import" | "processing" | "editor" | "export";
+export type AppView = "import" | "processing" | "detection" | "editor" | "export";
 
 export interface VideoMetadata {
   duration: number;

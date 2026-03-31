@@ -92,7 +92,7 @@ export function EmptyState() {
           detectionSettings.minDuration
         );
         setDetectionResult(result);
-        setView("editor");
+        setView("detection");
       } catch (err) {
         setError(String(err));
         setView("import");

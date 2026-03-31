@@ -7,8 +7,12 @@ export function TopNavBar() {
     useProjectStore();
 
   const showEditorNav = currentView === "editor";
+  const showDetectionNav = currentView === "detection";
   const canExport =
-    isDesktopRuntime() && filePath !== null && clipSegments.length > 0;
+    isDesktopRuntime() &&
+    currentView === "editor" &&
+    filePath !== null &&
+    clipSegments.length > 0;
 
   return (
     <header className="w-full h-14 flex items-center justify-between px-6 bg-surface border-b border-surface-container-high z-50">
@@ -28,6 +32,14 @@ export function TopNavBar() {
                 Library
               </button>
             </nav>
+          </>
+        )}
+        {showDetectionNav && (
+          <>
+            <div className="h-4 w-px bg-outline-variant/30 ml-2" />
+            <span className="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">
+              Detection Review
+            </span>
           </>
         )}
         {currentView === "processing" && (

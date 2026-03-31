@@ -17,10 +17,13 @@ import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 import { Slider } from "../ui/Slider";
 import { Toggle } from "../ui/Toggle";
+import { DetectionTimeline } from "../timeline/DetectionTimeline";
 import { Timeline } from "../timeline/Timeline";
 
 export function EditorView() {
   const {
+    currentView,
+    setView,
     filePath,
     videoMetadata,
     detectionResult,
@@ -53,6 +56,7 @@ export function EditorView() {
   const [isLoadingProxyBlob, setIsLoadingProxyBlob] = useState(false);
 
   const duration = videoMetadata?.duration ?? 0;
+  const isDetectionReview = currentView === "detection";
   const fallbackClip: ClipSegment | null = useMemo(() => {
     if (duration <= 0) return null;
     return {
@@ -66,7 +70,8 @@ export function EditorView() {
 
   const activeClips = clipSegments.length > 0 ? clipSegments : fallbackClip ? [fallbackClip] : [];
   const editedDuration = getTotalClipDuration(activeClips);
-  const currentEditedTime = previewEdited
+  const previewEditedEnabled = currentView === "editor" && previewEdited;
+  const currentEditedTime = previewEditedEnabled
     ? sourceToEditedTime(currentSourceTime, activeClips)
     : currentSourceTime;
 
@@ -160,14 +165,23 @@ export function EditorView() {
 
   const handleSeek = useCallback(
     (timelineTime: number) => {
-      const sourceTime = previewEdited
+      const sourceTime = previewEditedEnabled
         ? editedToSourceTime(timelineTime, activeClips)
         : timelineTime;
       seekSourceTime(sourceTime);
       const clip = findClipAtSourceTime(sourceTime, activeClips);
       setSelectedClipId(clip?.id ?? activeClips[0]?.id ?? null);
     },
-    [activeClips, previewEdited, seekSourceTime, setSelectedClipId]
+    [activeClips, previewEditedEnabled, seekSourceTime, setSelectedClipId]
+  );
+
+  const handleDetectionSeek = useCallback(
+    (timelineTime: number) => {
+      seekSourceTime(timelineTime);
+      const clip = findClipAtSourceTime(timelineTime, activeClips);
+      setSelectedClipId(clip?.id ?? activeClips[0]?.id ?? null);
+    },
+    [activeClips, seekSourceTime, setSelectedClipId]
   );
 
   const handlePlayPause = () => {
@@ -184,13 +198,21 @@ export function EditorView() {
     if (!video) return;
 
     let sourceTime = video.currentTime;
-    if (previewEdited && removedSegments.length > 0) {
-      const gap = removedSegments.find(
-        (segment) => sourceTime >= segment.start && sourceTime < segment.end - 0.05
-      );
-      if (gap) {
-        video.currentTime = gap.end;
-        sourceTime = gap.end;
+    if (previewEditedEnabled && activeClips.length > 0) {
+      const currentClip = findClipAtSourceTime(sourceTime, activeClips);
+      if (!currentClip) {
+        const nextClip = activeClips.find((clip) => clip.start > sourceTime);
+        if (nextClip) {
+          video.currentTime = nextClip.start;
+          sourceTime = nextClip.start;
+        }
+      } else if (sourceTime >= currentClip.end - 0.05) {
+        const currentIndex = activeClips.findIndex((clip) => clip.id === currentClip.id);
+        const nextClip = activeClips[currentIndex + 1];
+        if (nextClip) {
+          video.currentTime = nextClip.start;
+          sourceTime = nextClip.start;
+        }
       }
     }
 
@@ -211,18 +233,20 @@ export function EditorView() {
         detectionSettings.minDuration
       );
       setDetectionResult(result);
-      setPreviewEdited(true);
+      setPreviewEdited(false);
+      setView("detection");
     } catch (err) {
       log.error("[silence]", "Re-detection failed:", err);
     } finally {
       setIsRedetecting(false);
     }
-  }, [detectionSettings, filePath, setDetectionResult]);
+  }, [detectionSettings, filePath, setDetectionResult, setView]);
 
   const handleApplySuggestedCuts = useCallback(() => {
     applySuggestedCuts();
-    setPreviewEdited(true);
-  }, [applySuggestedCuts]);
+    setPreviewEdited(false);
+    setView("editor");
+  }, [applySuggestedCuts, setView]);
 
   const handleSplitSelected = () => {
     if (!selectedClip) return;
@@ -232,6 +256,12 @@ export function EditorView() {
   const handleDeleteSelected = () => {
     if (!selectedClip) return;
     removeClipSegment(selectedClip.id);
+  };
+
+  const handleContinueToEditor = () => {
+    applySuggestedCuts();
+    setPreviewEdited(false);
+    setView("editor");
   };
 
   const handleVideoError = useCallback(async () => {
@@ -299,34 +329,48 @@ export function EditorView() {
       <div className="flex-1 flex min-h-0">
         <div className="flex-1 flex flex-col min-h-0">
           <div className="flex-1 flex items-center justify-center p-8 bg-surface-container-low relative min-h-[420px]">
-            <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-surface-container-highest/75 backdrop-blur-xl px-4 py-2 rounded-full border border-outline-variant/10 shadow-2xl z-10">
-              <Button variant="surface" size="sm" onClick={handleApplySuggestedCuts}>
-                <Icon name="auto_fix_high" className="text-base" />
-                Apply Suggested Cuts
-              </Button>
-              <Button variant="ghost" size="sm" onClick={undoLastEdit} disabled={!canUndo}>
-                <Icon name="undo" className="text-base" />
-                Undo
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleSplitSelected}
-                disabled={!selectedClip}
-              >
-                <Icon name="content_cut" className="text-base" />
-                Split at Playhead
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleDeleteSelected}
-                disabled={!selectedClip || activeClips.length <= 1}
-              >
-                <Icon name="delete" className="text-base" />
-                Remove Clip
-              </Button>
-            </div>
+             <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-surface-container-highest/75 backdrop-blur-xl px-4 py-2 rounded-full border border-outline-variant/10 shadow-2xl z-10">
+               {isDetectionReview ? (
+                 <Button variant="primary" size="sm" onClick={handleContinueToEditor}>
+                   <Icon name="arrow_forward" className="text-base" />
+                   Next: Clip Editor
+                 </Button>
+               ) : (
+                 <>
+                   <Button variant="surface" size="sm" onClick={handleApplySuggestedCuts}>
+                     <Icon name="auto_fix_high" className="text-base" />
+                     Apply Suggested Cuts
+                   </Button>
+                   <Button
+                     variant="ghost"
+                     size="sm"
+                     onClick={undoLastEdit}
+                     disabled={!canUndo}
+                   >
+                     <Icon name="undo" className="text-base" />
+                     Undo
+                   </Button>
+                   <Button
+                     variant="ghost"
+                     size="sm"
+                     onClick={handleSplitSelected}
+                     disabled={!selectedClip}
+                   >
+                     <Icon name="content_cut" className="text-base" />
+                     Split at Playhead
+                   </Button>
+                   <Button
+                     variant="ghost"
+                     size="sm"
+                     onClick={handleDeleteSelected}
+                     disabled={!selectedClip || activeClips.length <= 1}
+                   >
+                     <Icon name="delete" className="text-base" />
+                     Remove Clip
+                   </Button>
+                 </>
+               )}
+             </div>
 
             <div className="h-full aspect-[9/16] bg-surface-container-lowest rounded-xl shadow-[0_0_100px_rgba(186,158,255,0.05)] overflow-hidden relative border border-outline-variant/10 flex items-center justify-center">
               {videoSrc ? (
@@ -390,32 +434,41 @@ export function EditorView() {
                   </button>
                 </div>
                 <div className="flex items-center justify-between text-xs font-mono text-white/80">
-                  <span>{formatTime(currentEditedTime)}</span>
-                  <span>{formatTime(previewEdited ? estimatedDuration : duration)}</span>
-                </div>
-                <div className="w-full h-1 bg-surface-container-highest rounded-full mt-2 relative overflow-hidden">
-                  <div
-                    className="absolute top-0 left-0 h-full bg-primary rounded-full"
-                    style={{
-                      width: `${(currentEditedTime / Math.max(previewEdited ? estimatedDuration : duration, 0.01)) * 100}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+                   <span>{formatTime(currentEditedTime)}</span>
+                   <span>{formatTime(previewEditedEnabled ? estimatedDuration : duration)}</span>
+                 </div>
+                 <div className="w-full h-1 bg-surface-container-highest rounded-full mt-2 relative overflow-hidden">
+                   <div
+                     className="absolute top-0 left-0 h-full bg-primary rounded-full"
+                     style={{
+                       width: `${(currentEditedTime / Math.max(previewEditedEnabled ? estimatedDuration : duration, 0.01)) * 100}%`,
+                     }}
+                   />
+                 </div>
+               </div>
+             </div>
+           </div>
 
-          <Timeline
-            duration={previewEdited ? estimatedDuration : duration}
-            currentTime={currentEditedTime}
-            clips={activeClips}
-            selectedClipId={selectedClip?.id ?? null}
-            removedSegmentsCount={gapCount}
-            zoom={timelineZoom}
-            onZoomChange={setTimelineZoom}
-            onSeek={handleSeek}
-            onSelectClip={setSelectedClipId}
-          />
+          {isDetectionReview ? (
+            <DetectionTimeline
+              duration={duration}
+              currentTime={currentSourceTime}
+              segments={removedSegments}
+              onSeek={handleDetectionSeek}
+            />
+          ) : (
+            <Timeline
+              duration={previewEditedEnabled ? estimatedDuration : duration}
+              currentTime={currentEditedTime}
+              clips={activeClips}
+              selectedClipId={selectedClip?.id ?? null}
+              removedSegmentsCount={gapCount}
+              zoom={timelineZoom}
+              onZoomChange={setTimelineZoom}
+              onSeek={handleSeek}
+              onSelectClip={setSelectedClipId}
+            />
+          )}
         </div>
 
         <aside className="w-80 border-l border-outline-variant/10 bg-surface-container-high p-6 flex flex-col overflow-y-auto custom-scrollbar">
@@ -450,11 +503,13 @@ export function EditorView() {
             />
 
             <div className="pt-4 space-y-4">
-              <Toggle
-                label="Preview Edited Timeline"
-                checked={previewEdited}
-                onChange={setPreviewEdited}
-              />
+               {!isDetectionReview && (
+                 <Toggle
+                   label="Preview Edited Timeline"
+                   checked={previewEdited}
+                   onChange={setPreviewEdited}
+                 />
+               )}
               <Toggle
                 label="Fade Out/In"
                 checked={detectionSettings.fadeEnabled}
@@ -518,7 +573,7 @@ export function EditorView() {
               {isRedetecting ? "Re-detecting..." : "Re-detect Silence"}
             </Button>
 
-            {selectedClip && (
+            {!isDetectionReview && selectedClip && (
               <div className="p-4 bg-surface-container-highest rounded-lg border border-outline-variant/10 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-xs font-bold uppercase tracking-widest text-primary">
@@ -563,11 +618,13 @@ export function EditorView() {
               <div className="flex items-center gap-3 mb-2">
                 <Icon name="movie" className="text-secondary text-xl" />
                 <span className="text-xs font-bold text-on-surface">
-                  Clips: {activeClips.length}
+                  {isDetectionReview ? "Original timeline" : `Clips: ${activeClips.length}`}
                 </span>
               </div>
               <p className="text-[10px] text-on-surface-variant leading-relaxed">
-                Timeline duration goes from {formatTime(duration)} to {formatTime(estimatedDuration)}.
+                {isDetectionReview
+                  ? `Review the detected silence spans before converting them into editable clips.`
+                  : `Timeline duration goes from ${formatTime(duration)} to ${formatTime(estimatedDuration)}.`}
               </p>
             </div>
             <div className="p-4 bg-surface-container-highest rounded-lg border border-outline-variant/5">
@@ -578,18 +635,32 @@ export function EditorView() {
                 </span>
               </div>
               <p className="text-[10px] text-on-surface-variant leading-relaxed">
-                Delete clips or split at the playhead before exporting your final edit.
+                {isDetectionReview
+                  ? "Tune threshold and min duration, re-run detection if needed, then continue to the clip editor."
+                  : "Delete clips or split at the playhead before exporting your final edit."}
               </p>
             </div>
-            <Button
-              variant="primary"
-              className="w-full py-3"
-              onClick={handleApplySuggestedCuts}
-              disabled={removedSegments.length === 0}
-            >
-              <Icon name="auto_fix_high" className="text-lg" />
-              Refresh Clip Timeline
-            </Button>
+            {isDetectionReview ? (
+              <Button
+                variant="primary"
+                className="w-full py-3"
+                onClick={handleContinueToEditor}
+                disabled={removedSegments.length === 0}
+              >
+                <Icon name="arrow_forward" className="text-lg" />
+                Continue to Clip Editor
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                className="w-full py-3"
+                onClick={handleApplySuggestedCuts}
+                disabled={removedSegments.length === 0}
+              >
+                <Icon name="auto_fix_high" className="text-lg" />
+                Refresh Clip Timeline
+              </Button>
+            )}
           </div>
         </aside>
       </div>

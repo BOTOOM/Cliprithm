@@ -79,7 +79,7 @@ export function MediaLibrary() {
             stage: "complete",
             message: `Loaded ${segments.length} cached segments`,
           });
-          setView("editor");
+          setView("detection");
           return;
         }
 
@@ -94,7 +94,7 @@ export function MediaLibrary() {
           project.min_duration || detectionSettings.minDuration
         );
         setDetectionResult(result);
-        setView("editor");
+        setView("detection");
       } catch (err) {
         log.error("[import]", "Failed to open project:", err);
         setView("import");
