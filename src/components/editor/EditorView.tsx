@@ -307,23 +307,29 @@ export function EditorView() {
   }, [canUndo, undoLastEdit]);
 
   const seekVideoTimeSafely = useCallback(
-    (nextVideoTime: number, nextSourceTime: number) => {
+    (
+      nextVideoTime: number,
+      nextSourceTime: number,
+      options?: { resumeAfterSeek?: boolean }
+    ) => {
       const video = videoRef.current;
       if (!video) return;
 
+      const resumeAfterSeek = options?.resumeAfterSeek ?? true;
       const maxVideoTime =
         currentView === "editor" && previewMode === "edited" ? estimatedDuration : duration;
       const boundedVideoTime = Math.max(0, Math.min(maxVideoTime, nextVideoTime));
       const boundedSourceTime = Math.max(0, Math.min(duration, nextSourceTime));
       const wasPlaying = !video.paused;
-      if (wasPlaying) {
+      if (wasPlaying || !resumeAfterSeek) {
         video.pause();
+        setIsPlaying(false);
       }
 
       video.currentTime = boundedVideoTime;
       setCurrentSourceTime(boundedSourceTime);
 
-      if (wasPlaying) {
+      if (resumeAfterSeek && wasPlaying) {
         window.setTimeout(() => {
           void video.play().catch((error) => {
             log.warn("[preview]", "Failed to resume playback after manual seek:", error);
@@ -335,21 +341,21 @@ export function EditorView() {
   );
 
   const seekSourceTimeSafely = useCallback(
-    (nextSourceTime: number) => {
-      seekVideoTimeSafely(nextSourceTime, nextSourceTime);
+    (nextSourceTime: number, options?: { resumeAfterSeek?: boolean }) => {
+      seekVideoTimeSafely(nextSourceTime, nextSourceTime, options);
     },
     [seekVideoTimeSafely]
   );
 
   const seekEditedTimeSafely = useCallback(
-    (nextEditedTime: number) => {
+    (nextEditedTime: number, options?: { resumeAfterSeek?: boolean }) => {
       const sourceTime = editedToSourceTime(nextEditedTime, activeClips);
       if (isUsingEditedSequenceSource) {
-        seekVideoTimeSafely(nextEditedTime, sourceTime);
+        seekVideoTimeSafely(nextEditedTime, sourceTime, options);
         return;
       }
 
-      seekVideoTimeSafely(sourceTime, sourceTime);
+      seekVideoTimeSafely(sourceTime, sourceTime, options);
     },
     [activeClips, isUsingEditedSequenceSource, seekVideoTimeSafely]
   );
@@ -357,7 +363,7 @@ export function EditorView() {
   const handleSeek = useCallback(
     (timelineTime: number) => {
       const sourceTime = editedToSourceTime(timelineTime, activeClips);
-      seekEditedTimeSafely(timelineTime);
+      seekEditedTimeSafely(timelineTime, { resumeAfterSeek: false });
       const clip = findClipAtSourceTime(sourceTime, activeClips);
       setSelectedClipId(clip?.id ?? activeClips[0]?.id ?? null);
     },
@@ -366,7 +372,7 @@ export function EditorView() {
 
   const handleDetectionSeek = useCallback(
     (timelineTime: number) => {
-      seekSourceTimeSafely(timelineTime);
+      seekSourceTimeSafely(timelineTime, { resumeAfterSeek: false });
       const clip = findClipAtSourceTime(timelineTime, activeClips);
       setSelectedClipId(clip?.id ?? activeClips[0]?.id ?? null);
     },
@@ -685,6 +691,7 @@ export function EditorView() {
                   onCanPlay={() => setIsVideoReady(true)}
                   onError={() => void handleVideoError()}
                   controls={false}
+                  preload="auto"
                   playsInline
                 />
               ) : (
