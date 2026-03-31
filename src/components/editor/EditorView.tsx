@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { appDataDir } from "@tauri-apps/api/path";
 import { log } from "../../lib/logger";
 import {
@@ -8,7 +8,7 @@ import {
   sourceToEditedTime,
 } from "../../lib/editor";
 import { formatTime } from "../../lib/utils";
-import { getFileName, resolveMediaSrc } from "../../lib/media";
+import { createBlobVideoUrl, getFileName, resolveMediaSrc } from "../../lib/media";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
 import { detectSilence, generatePreviewProxy } from "../../services/tauriCommands";
@@ -47,6 +47,8 @@ export function EditorView() {
   const [previewEdited, setPreviewEdited] = useState(true);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [isGeneratingProxy, setIsGeneratingProxy] = useState(false);
+  const [proxyBlobUrl, setProxyBlobUrl] = useState<string | null>(null);
+  const [isLoadingProxyBlob, setIsLoadingProxyBlob] = useState(false);
 
   const duration = videoMetadata?.duration ?? 0;
   const fallbackClip: ClipSegment | null = useMemo(() => {
@@ -71,7 +73,54 @@ export function EditorView() {
 
   const gapCount = removedSegments.length;
   const estimatedDuration = editedDuration || detectionResult?.estimated_output_duration || duration;
-  const videoSrc = resolveMediaSrc(previewFilePath || filePath);
+  const videoSrc = previewFilePath
+    ? proxyBlobUrl
+    : resolveMediaSrc(filePath);
+
+  useEffect(() => {
+    if (!previewFilePath || !isDesktopRuntime()) {
+      setProxyBlobUrl(null);
+      setIsLoadingProxyBlob(false);
+      return;
+    }
+
+    let active = true;
+    let objectUrl: string | null = null;
+
+    setIsLoadingProxyBlob(true);
+    void createBlobVideoUrl(previewFilePath)
+      .then((url) => {
+        if (!active) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        objectUrl = url;
+        setProxyBlobUrl(url);
+        setMediaError(null);
+      })
+      .catch((error) => {
+        log.error("[preview]", "Failed to load preview blob:", error);
+        if (active) {
+          setMediaError(
+            `Se generó un proxy, pero no se pudo cargar en memoria para el preview: ${String(
+              error
+            )}`
+          );
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoadingProxyBlob(false);
+        }
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [previewFilePath]);
 
   const seekSourceTime = useCallback((nextSourceTime: number) => {
     if (!videoRef.current) return;
@@ -263,7 +312,9 @@ export function EditorView() {
                 />
               ) : (
                 <div className="text-on-surface-variant text-sm px-6 text-center">
-                  Importa un video para comenzar.
+                  {isLoadingProxyBlob
+                    ? "Cargando proxy de preview..."
+                    : "Importa un video para comenzar."}
                 </div>
               )}
 
