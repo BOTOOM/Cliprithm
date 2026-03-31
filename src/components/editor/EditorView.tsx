@@ -71,6 +71,8 @@ export function EditorView() {
   const [sourceProxyRetryCount, setSourceProxyRetryCount] = useState(0);
   const [editedPreviewRetryCount, setEditedPreviewRetryCount] = useState(0);
   const lastDetectedSignatureRef = useRef<string | null>(null);
+  const lastBuiltEditedPreviewRef = useRef<string | null>(null);
+  const buildingEditedPreviewRef = useRef<string | null>(null);
 
   const duration = videoMetadata?.duration ?? 0;
   const isDetectionReview = currentView === "detection";
@@ -107,15 +109,14 @@ export function EditorView() {
     currentView === "editor" && previewMode === "edited"
       ? editedPreviewBlobUrl || sourceVideoSrc
       : sourceVideoSrc;
+  const isEditedPreviewBuilding =
+    isEditedPreviewMode &&
+    (isGeneratingEditedPreview ||
+      isLoadingEditedPreviewBlob ||
+      (!editedPreviewBlobUrl && activeClips.length > 0));
   const isPreviewBusy =
     Boolean(videoSrc) &&
-    (!isVideoReady ||
-      isGeneratingSourceProxy ||
-      isLoadingSourceProxyBlob ||
-      (isEditedPreviewMode &&
-        (isGeneratingEditedPreview ||
-          isLoadingEditedPreviewBlob ||
-          (!editedPreviewBlobUrl && activeClips.length > 0))));
+    (!isVideoReady || isGeneratingSourceProxy || isLoadingSourceProxyBlob);
   const clipSignature = useMemo(
     () =>
       JSON.stringify(activeClips.map((clip) => ({ start: clip.start, end: clip.end }))),
@@ -135,6 +136,8 @@ export function EditorView() {
   useEffect(() => {
     setSourceProxyRetryCount(0);
     setEditedPreviewRetryCount(0);
+    lastBuiltEditedPreviewRef.current = null;
+    buildingEditedPreviewRef.current = null;
   }, [filePath]);
 
   useEffect(() => {
@@ -230,10 +233,19 @@ export function EditorView() {
       return;
     }
 
+    const previewBuildKey = `${filePath}::${clipSignature}`;
+    if (
+      buildingEditedPreviewRef.current === previewBuildKey ||
+      lastBuiltEditedPreviewRef.current === previewBuildKey
+    ) {
+      return;
+    }
+
     let active = true;
     const timeout = window.setTimeout(() => {
       void (async () => {
         try {
+          buildingEditedPreviewRef.current = previewBuildKey;
           setIsGeneratingEditedPreview(true);
           const dataDir = await appDataDir();
           const baseName = getFileName(filePath).replace(/\.[^.]+$/, "");
@@ -248,6 +260,7 @@ export function EditorView() {
           }
           setEditedPreviewFilePath(result);
           setEditedPreviewRetryCount(0);
+          lastBuiltEditedPreviewRef.current = previewBuildKey;
           setMediaError(null);
         } catch (error) {
           log.error("[preview]", "Failed to generate edited sequence preview:", error);
@@ -258,6 +271,9 @@ export function EditorView() {
             }));
           }
         } finally {
+          if (buildingEditedPreviewRef.current === previewBuildKey) {
+            buildingEditedPreviewRef.current = null;
+          }
           if (active) {
             setIsGeneratingEditedPreview(false);
           }
@@ -270,13 +286,11 @@ export function EditorView() {
       window.clearTimeout(timeout);
     };
   }, [
-    activeClips,
     clipSignature,
     currentView,
     filePath,
     previewMode,
     setEditedPreviewFilePath,
-    t,
   ]);
 
   useEffect(() => {
@@ -714,6 +728,25 @@ export function EditorView() {
                       }`}
                     />
                     <p className="text-sm text-white leading-relaxed">{mediaError}</p>
+                  </div>
+                </div>
+              )}
+
+              {isEditedPreviewBuilding && !mediaError && (
+                <div className="absolute inset-x-4 top-4 z-10 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <Icon
+                      name="progress_activity"
+                      className="text-primary text-xl animate-spin mt-0.5"
+                    />
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        {t("detection.updatingEditedPreviewTitle")}
+                      </p>
+                      <p className="text-xs text-white/70 leading-relaxed">
+                        {t("detection.updatingEditedPreviewDescription")}
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
