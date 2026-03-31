@@ -8,11 +8,12 @@ export function ProcessingView() {
   const percent = Math.round(progress.percent);
   const fileName = filePath?.split("/").pop() ?? "unknown";
   const cutsDetected = detectionResult?.segments.length ?? 0;
-
-  // SVG circle math
-  const radius = 37.5;
-  const circumference = 2 * Math.PI * radius;
-  const dashoffset = circumference - (percent / 100) * circumference;
+  const normalizedPercent = Math.min(100, Math.max(0, percent));
+  const progressAngle = (normalizedPercent / 100) * 360;
+  const orbitAngle = (normalizedPercent / 100) * Math.PI * 2 - Math.PI / 2;
+  const orbitRadius = 104;
+  const orbitX = Math.cos(orbitAngle) * orbitRadius;
+  const orbitY = Math.sin(orbitAngle) * orbitRadius;
 
   return (
     <div className="flex-1 relative flex flex-col items-center justify-center p-8 overflow-hidden h-full">
@@ -57,25 +58,15 @@ export function ProcessingView() {
       <div className="relative z-20 flex flex-col items-center">
         {/* Circular progress */}
         <div className="relative w-64 h-64 mb-10 flex items-center justify-center">
-          <div className="absolute inset-0 rounded-full border-4 border-surface-container-highest" />
-          <svg
-            className="absolute inset-0 w-full h-full -rotate-90 transform"
-            viewBox="0 0 100 100"
+          <div
+            className="absolute inset-0 rounded-full"
+            style={{
+              background: `conic-gradient(from -90deg, var(--color-primary) 0deg ${progressAngle}deg, var(--color-surface-container-highest) ${progressAngle}deg 360deg)`,
+              padding: "4px",
+            }}
           >
-            <circle
-              className="text-primary"
-              cx="50"
-              cy="50"
-              fill="transparent"
-              r={radius}
-              stroke="currentColor"
-              strokeDasharray={circumference}
-              strokeDashoffset={dashoffset}
-              strokeLinecap="round"
-              strokeWidth="4"
-              style={{ transition: "stroke-dashoffset 0.5s ease" }}
-            />
-          </svg>
+            <div className="w-full h-full rounded-full bg-surface" />
+          </div>
           {/* Inner core */}
           <div className="w-48 h-48 rounded-full glass-panel flex flex-col items-center justify-center border border-outline-variant/20 shadow-2xl">
             <div className="text-6xl font-extrabold tracking-tighter text-on-surface mb-0">
@@ -87,7 +78,12 @@ export function ProcessingView() {
             </div>
           </div>
           {/* Orbital dot */}
-          <div className="absolute top-[5%] right-[22%] w-3 h-3 bg-primary-fixed rounded-full shadow-[0_0_20px_#ae8dff]" />
+          <div
+            className="absolute left-1/2 top-1/2 w-3 h-3 bg-primary-fixed rounded-full shadow-[0_0_20px_#ae8dff] transition-transform duration-500"
+            style={{
+              transform: `translate(calc(-50% + ${orbitX}px), calc(-50% + ${orbitY}px))`,
+            }}
+          />
         </div>
 
         {/* Text feedback */}
