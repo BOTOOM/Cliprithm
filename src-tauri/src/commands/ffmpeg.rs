@@ -1,3 +1,4 @@
+use log::{debug, error, info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
@@ -43,24 +44,30 @@ pub struct ExportOptions {
     pub segments_to_keep: Vec<(f64, f64)>,
     pub resolution: Option<String>,
     pub fps: Option<u32>,
-    pub mode: String, // "cut" or "speed"
+    pub mode: String,
     pub speed_multiplier: Option<f64>,
 }
 
 #[tauri::command]
 pub fn check_ffmpeg() -> Result<String, String> {
+    debug!("[ffmpeg] Checking FFmpeg availability...");
     let output = Command::new("ffmpeg")
         .arg("-version")
         .output()
-        .map_err(|e| format!("FFmpeg not found: {}", e))?;
+        .map_err(|e| {
+            error!("[ffmpeg] FFmpeg not found: {}", e);
+            format!("FFmpeg not found: {}", e)
+        })?;
 
     let version = String::from_utf8_lossy(&output.stdout);
     let first_line = version.lines().next().unwrap_or("unknown").to_string();
+    info!("[ffmpeg] FFmpeg found: {}", first_line);
     Ok(first_line)
 }
 
 #[tauri::command]
 pub fn get_video_metadata(file_path: String) -> Result<VideoMetadata, String> {
+    info!("[ffprobe] Getting metadata for: {}", file_path);
     let output = Command::new("ffprobe")
         .args([
             "-v", "quiet",
@@ -70,15 +77,22 @@ pub fn get_video_metadata(file_path: String) -> Result<VideoMetadata, String> {
             &file_path,
         ])
         .output()
-        .map_err(|e| format!("ffprobe error: {}", e))?;
+        .map_err(|e| {
+            error!("[ffprobe] Failed to run ffprobe: {}", e);
+            format!("ffprobe error: {}", e)
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        error!("[ffprobe] ffprobe exited with error: {}", stderr);
         return Err(format!("ffprobe failed: {}", stderr));
     }
 
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("Failed to parse ffprobe output: {}", e))?;
+        .map_err(|e| {
+            error!("[ffprobe] Failed to parse JSON output: {}", e);
+            format!("Failed to parse ffprobe output: {}", e)
+        })?;
 
     let streams = json["streams"].as_array().ok_or("No streams found")?;
 
@@ -101,9 +115,7 @@ pub fn get_video_metadata(file_path: String) -> Result<VideoMetadata, String> {
     let width = video_stream["width"].as_u64().unwrap_or(0) as u32;
     let height = video_stream["height"].as_u64().unwrap_or(0) as u32;
 
-    let fps_str = video_stream["r_frame_rate"]
-        .as_str()
-        .unwrap_or("30/1");
+    let fps_str = video_stream["r_frame_rate"].as_str().unwrap_or("30/1");
     let fps = parse_frame_rate(fps_str);
 
     let codec = video_stream["codec_name"]
@@ -116,15 +128,16 @@ pub fn get_video_metadata(file_path: String) -> Result<VideoMetadata, String> {
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(0);
 
-    Ok(VideoMetadata {
-        duration,
-        width,
-        height,
-        fps,
-        codec,
-        file_size,
-        has_audio,
-    })
+    if !has_audio {
+        warn!("[ffprobe] Video has no audio stream: {}", file_path);
+    }
+
+    info!(
+        "[ffprobe] OK — {}x{} | {:.2}fps | {:.1}s | codec:{} | audio:{}",
+        width, height, fps, duration, codec, has_audio
+    );
+
+    Ok(VideoMetadata { duration, width, height, fps, codec, file_size, has_audio })
 }
 
 #[tauri::command]
@@ -134,50 +147,50 @@ pub async fn detect_silence(
     noise_threshold: f64,
     min_duration: f64,
 ) -> Result<DetectionResult, String> {
+    info!(
+        "[silence] Starting — file={} threshold={}dB min_dur={}s",
+        file_path, noise_threshold, min_duration
+    );
+
     let threshold_str = format!("{}dB", noise_threshold);
     let duration_str = format!("{}", min_duration);
 
-    window
-        .emit(
-            "processing-progress",
-            ProcessingProgress {
-                percent: 0.0,
-                stage: "analyzing".to_string(),
-                message: "Starting silence detection...".to_string(),
-            },
-        )
-        .ok();
+    emit_progress(&window, 0.0, "analyzing", "Iniciando detección de silencios...");
 
     let output = Command::new("ffmpeg")
         .args([
             "-i", &file_path,
-            "-af",
-            &format!("silencedetect=noise={}:d={}", threshold_str, duration_str),
+            "-af", &format!("silencedetect=noise={}:d={}", threshold_str, duration_str),
             "-f", "null",
             "-",
         ])
         .output()
-        .map_err(|e| format!("FFmpeg error: {}", e))?;
+        .map_err(|e| {
+            error!("[silence] Failed to run FFmpeg: {}", e);
+            format!("FFmpeg error: {}", e)
+        })?;
 
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let preview_start = stderr.len().saturating_sub(500);
+    debug!("[silence] FFmpeg stderr tail: ...{}", &stderr[preview_start..]);
+
+    emit_progress(&window, 50.0, "analyzing", "Analizando output de FFmpeg...");
 
     let segments = parse_silence_output(&stderr);
-
-    // Get total duration
     let metadata = get_video_metadata(file_path.clone())?;
     let total_silence: f64 = segments.iter().map(|s| s.duration).sum();
     let estimated_output = metadata.duration - total_silence;
 
-    window
-        .emit(
-            "processing-progress",
-            ProcessingProgress {
-                percent: 100.0,
-                stage: "complete".to_string(),
-                message: format!("Found {} silent segments", segments.len()),
-            },
-        )
-        .ok();
+    info!(
+        "[silence] Done — {} segments | silence:{:.1}s | output~{:.1}s",
+        segments.len(), total_silence, estimated_output
+    );
+    for (i, seg) in segments.iter().enumerate() {
+        debug!("[silence]   [{}] {:.3}s → {:.3}s ({:.3}s)", i, seg.start, seg.end, seg.duration);
+    }
+
+    emit_progress(&window, 100.0, "complete",
+        &format!("Encontrados {} segmentos de silencio", segments.len()));
 
     Ok(DetectionResult {
         segments,
@@ -196,39 +209,34 @@ pub async fn cut_silence(
     mode: String,
     speed_multiplier: Option<f64>,
 ) -> Result<String, String> {
+    info!(
+        "[cut] Starting — mode={} segments={} output={}",
+        mode, segments_to_remove.len(), output_path
+    );
+
     let metadata = get_video_metadata(file_path.clone())?;
     let total_duration = metadata.duration;
 
     if mode == "speed" {
-        return cut_with_speed(
-            &window,
-            &file_path,
-            &segments_to_remove,
-            &output_path,
-            speed_multiplier.unwrap_or(2.0),
-            total_duration,
-        );
+        let speed = speed_multiplier.unwrap_or(2.0);
+        info!("[cut] Time-warp mode — {}x", speed);
+        return cut_with_speed(&window, &file_path, &segments_to_remove, &output_path, speed, total_duration);
     }
 
-    // Build segments to keep (inverse of silence segments)
     let segments_to_keep = invert_segments(&segments_to_remove, total_duration);
 
     if segments_to_keep.is_empty() {
+        error!("[cut] No non-silent segments found");
         return Err("No non-silent segments found".to_string());
     }
 
-    window
-        .emit(
-            "processing-progress",
-            ProcessingProgress {
-                percent: 10.0,
-                stage: "cutting".to_string(),
-                message: "Preparing segments...".to_string(),
-            },
-        )
-        .ok();
+    info!("[cut] Keeping {} segments", segments_to_keep.len());
+    for (i, (s, e)) in segments_to_keep.iter().enumerate() {
+        debug!("[cut]   keep[{}] {:.3}s → {:.3}s", i, s, e);
+    }
 
-    // Create a complex filter for concatenation
+    emit_progress(&window, 10.0, "cutting", "Preparando segmentos...");
+
     let mut filter_parts: Vec<String> = Vec::new();
     let num_segments = segments_to_keep.len();
 
@@ -246,140 +254,93 @@ pub async fn cut_silence(
 
     let filter = format!(
         "{};{}concat=n={}:v=1:a=1[outv][outa]",
-        filter_parts.join(";"),
-        concat_inputs,
-        num_segments
+        filter_parts.join(";"), concat_inputs, num_segments
     );
 
-    window
-        .emit(
-            "processing-progress",
-            ProcessingProgress {
-                percent: 30.0,
-                stage: "cutting".to_string(),
-                message: "Cutting and stitching segments...".to_string(),
-            },
-        )
-        .ok();
+    debug!("[cut] Filter complex: {} chars", filter.len());
+    emit_progress(&window, 30.0, "cutting", "Cortando y uniendo segmentos...");
 
+    info!("[cut] Running FFmpeg...");
     let output = Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-i", &file_path,
-            "-filter_complex", &filter,
-            "-map", "[outv]",
-            "-map", "[outa]",
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "18",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            &output_path,
-        ])
+        .args(["-y", "-i", &file_path, "-filter_complex", &filter,
+               "-map", "[outv]", "-map", "[outa]",
+               "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+               "-c:a", "aac", "-b:a", "192k", &output_path])
         .output()
-        .map_err(|e| format!("FFmpeg cut error: {}", e))?;
+        .map_err(|e| { error!("[cut] FFmpeg error: {}", e); format!("FFmpeg cut error: {}", e) })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        error!("[cut] FFmpeg failed:\n{}", stderr);
         return Err(format!("FFmpeg cut failed: {}", stderr));
     }
 
-    window
-        .emit(
-            "processing-progress",
-            ProcessingProgress {
-                percent: 100.0,
-                stage: "complete".to_string(),
-                message: "Video processing complete!".to_string(),
-            },
-        )
-        .ok();
-
+    info!("[cut] Done — {}", output_path);
+    emit_progress(&window, 100.0, "complete", "¡Procesamiento completo!");
     Ok(output_path)
 }
 
 #[tauri::command]
-pub async fn export_video(
-    window: Window,
-    options: ExportOptions,
-) -> Result<String, String> {
-    window
-        .emit(
-            "export-progress",
-            ProcessingProgress {
-                percent: 0.0,
-                stage: "exporting".to_string(),
-                message: "Starting export...".to_string(),
-            },
-        )
-        .ok();
+pub async fn export_video(window: Window, options: ExportOptions) -> Result<String, String> {
+    info!(
+        "[export] Starting — input={} output={} res={:?} fps={:?}",
+        options.input_path, options.output_path, options.resolution, options.fps
+    );
 
-    let mut args: Vec<String> = vec![
-        "-y".to_string(),
-        "-i".to_string(),
-        options.input_path.clone(),
-    ];
+    emit_progress(&window, 0.0, "exporting", "Iniciando exportación...");
 
-    // Apply resolution if specified
+    let mut args: Vec<String> = vec!["-y".into(), "-i".into(), options.input_path.clone()];
+
     if let Some(ref resolution) = options.resolution {
         let scale = match resolution.as_str() {
             "1080p" => "scale=-2:1080",
             "4k" => "scale=-2:2160",
             _ => "scale=-2:1080",
         };
-        args.extend_from_slice(&["-vf".to_string(), scale.to_string()]);
+        debug!("[export] Scale filter: {}", scale);
+        args.extend_from_slice(&["-vf".into(), scale.into()]);
     }
 
-    // Apply FPS if specified
     if let Some(fps) = options.fps {
-        args.extend_from_slice(&["-r".to_string(), fps.to_string()]);
+        debug!("[export] FPS: {}", fps);
+        args.extend_from_slice(&["-r".into(), fps.to_string()]);
     }
 
     args.extend_from_slice(&[
-        "-c:v".to_string(), "libx264".to_string(),
-        "-preset".to_string(), "medium".to_string(),
-        "-crf".to_string(), "18".to_string(),
-        "-c:a".to_string(), "aac".to_string(),
-        "-b:a".to_string(), "192k".to_string(),
-        options.output_path.clone(),
+        "-c:v".into(), "libx264".into(), "-preset".into(), "medium".into(),
+        "-crf".into(), "18".into(), "-c:a".into(), "aac".into(),
+        "-b:a".into(), "192k".into(), options.output_path.clone(),
     ]);
 
-    window
-        .emit(
-            "export-progress",
-            ProcessingProgress {
-                percent: 50.0,
-                stage: "encoding".to_string(),
-                message: "Encoding video...".to_string(),
-            },
-        )
-        .ok();
+    emit_progress(&window, 50.0, "encoding", "Codificando video...");
 
+    info!("[export] Running FFmpeg ({} args)...", args.len());
     let output = Command::new("ffmpeg")
         .args(&args)
         .output()
-        .map_err(|e| format!("FFmpeg export error: {}", e))?;
+        .map_err(|e| { error!("[export] FFmpeg error: {}", e); format!("FFmpeg export error: {}", e) })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        error!("[export] FFmpeg failed:\n{}", stderr);
         return Err(format!("Export failed: {}", stderr));
     }
 
-    window
-        .emit(
-            "export-progress",
-            ProcessingProgress {
-                percent: 100.0,
-                stage: "complete".to_string(),
-                message: "Export complete!".to_string(),
-            },
-        )
-        .ok();
-
+    info!("[export] Done — {}", options.output_path);
+    emit_progress(&window, 100.0, "complete", "¡Exportación completa!");
     Ok(options.output_path)
 }
 
 // --- Internal helpers ---
+
+fn emit_progress(window: &Window, percent: f64, stage: &str, message: &str) {
+    debug!("[progress] {:.0}% [{}] {}", percent, stage, message);
+    window.emit("processing-progress", ProcessingProgress {
+        percent,
+        stage: stage.to_string(),
+        message: message.to_string(),
+    }).ok();
+}
 
 fn cut_with_speed(
     window: &Window,
@@ -389,9 +350,9 @@ fn cut_with_speed(
     speed: f64,
     total_duration: f64,
 ) -> Result<String, String> {
-    // Build a complex filter that speeds up silent parts
     let segments = build_speed_segments(silence_segments, total_duration);
     let num_segments = segments.len();
+    info!("[timewarp] {} segments at {}x", num_segments, speed);
 
     let mut filter_parts: Vec<String> = Vec::new();
 
@@ -400,22 +361,23 @@ fn cut_with_speed(
             let atempo = if speed <= 2.0 {
                 format!("atempo={}", speed)
             } else {
-                // Chain multiple atempo filters for speeds > 2x
                 let mut chain = Vec::new();
                 let mut remaining = speed;
                 while remaining > 2.0 {
                     chain.push("atempo=2.0".to_string());
                     remaining /= 2.0;
                 }
-                chain.push(format!("atempo={}", remaining));
+                chain.push(format!("atempo={:.4}", remaining));
                 chain.join(",")
             };
             let setpts = format!("PTS-STARTPTS,setpts=PTS/{}", speed);
+            debug!("[timewarp]   silence[{}] {:.3}→{:.3}s | atempo={}", i, start, end, atempo);
             filter_parts.push(format!(
                 "[0:v]trim=start={}:end={},setpts={} [v{}];[0:a]atrim=start={}:end={},asetpts=PTS-STARTPTS,{} [a{}]",
                 start, end, setpts, i, start, end, atempo, i
             ));
         } else {
+            debug!("[timewarp]   speech[{}] {:.3}→{:.3}s", i, start, end);
             filter_parts.push(format!(
                 "[0:v]trim=start={}:end={},setpts=PTS-STARTPTS[v{}];[0:a]atrim=start={}:end={},asetpts=PTS-STARTPTS[a{}]",
                 start, end, i, start, end, i
@@ -430,62 +392,33 @@ fn cut_with_speed(
 
     let filter = format!(
         "{};{}concat=n={}:v=1:a=1[outv][outa]",
-        filter_parts.join(";"),
-        concat_inputs,
-        num_segments
+        filter_parts.join(";"), concat_inputs, num_segments
     );
 
-    window
-        .emit(
-            "processing-progress",
-            ProcessingProgress {
-                percent: 30.0,
-                stage: "time-warp".to_string(),
-                message: format!("Applying {}x speed to silent segments...", speed),
-            },
-        )
-        .ok();
+    emit_progress(window, 30.0, "time-warp",
+        &format!("Aplicando {}x de velocidad a los silencios...", speed));
 
+    info!("[timewarp] Running FFmpeg...");
     let output = Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-i", file_path,
-            "-filter_complex", &filter,
-            "-map", "[outv]",
-            "-map", "[outa]",
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "18",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            output_path,
-        ])
+        .args(["-y", "-i", file_path, "-filter_complex", &filter,
+               "-map", "[outv]", "-map", "[outa]",
+               "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+               "-c:a", "aac", "-b:a", "192k", output_path])
         .output()
-        .map_err(|e| format!("FFmpeg time-warp error: {}", e))?;
+        .map_err(|e| { error!("[timewarp] FFmpeg error: {}", e); format!("FFmpeg time-warp error: {}", e) })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        error!("[timewarp] FFmpeg failed:\n{}", stderr);
         return Err(format!("Time-warp failed: {}", stderr));
     }
 
-    window
-        .emit(
-            "processing-progress",
-            ProcessingProgress {
-                percent: 100.0,
-                stage: "complete".to_string(),
-                message: "Time-warp processing complete!".to_string(),
-            },
-        )
-        .ok();
-
+    info!("[timewarp] Done — {}", output_path);
+    emit_progress(window, 100.0, "complete", "¡Time-warp completo!");
     Ok(output_path.to_string())
 }
 
-fn build_speed_segments(
-    silence_segments: &[SilenceSegment],
-    total_duration: f64,
-) -> Vec<(f64, f64, bool)> {
+fn build_speed_segments(silence_segments: &[SilenceSegment], total_duration: f64) -> Vec<(f64, f64, bool)> {
     let mut result: Vec<(f64, f64, bool)> = Vec::new();
     let mut current_pos = 0.0;
 
@@ -505,29 +438,26 @@ fn build_speed_segments(
 }
 
 fn parse_silence_output(stderr: &str) -> Vec<SilenceSegment> {
-    let start_re =
-        Regex::new(r"silence_start:\s*(-?[\d.]+)").unwrap();
-    let end_re =
-        Regex::new(r"silence_end:\s*(-?[\d.]+)\s*\|\s*silence_duration:\s*(-?[\d.]+)").unwrap();
+    let start_re = Regex::new(r"silence_start:\s*(-?[\d.]+)").unwrap();
+    let end_re = Regex::new(r"silence_end:\s*(-?[\d.]+)\s*\|\s*silence_duration:\s*(-?[\d.]+)").unwrap();
 
     let starts: Vec<f64> = start_re
         .captures_iter(stderr)
         .filter_map(|cap| cap[1].parse().ok())
         .collect();
 
+    debug!("[parse] {} silence_start markers", starts.len());
+
     let mut segments: Vec<SilenceSegment> = Vec::new();
 
     for (i, cap) in end_re.captures_iter(stderr).enumerate() {
         if let (Ok(end), Ok(duration)) = (cap[1].parse::<f64>(), cap[2].parse::<f64>()) {
             let start = if i < starts.len() { starts[i] } else { end - duration };
-            segments.push(SilenceSegment {
-                start,
-                end,
-                duration,
-            });
+            segments.push(SilenceSegment { start, end, duration });
         }
     }
 
+    debug!("[parse] {} complete segments", segments.len());
     segments
 }
 

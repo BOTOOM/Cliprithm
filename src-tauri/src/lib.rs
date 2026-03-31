@@ -2,6 +2,7 @@ mod commands;
 
 use commands::ffmpeg;
 use commands::library;
+use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -44,6 +45,22 @@ pub fn run() {
     ];
 
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                // En dev: logs en consola y en archivo
+                // En release: solo archivo (sin spam en consola)
+                .targets([
+                    Target::new(TargetKind::Stdout),
+                    Target::new(TargetKind::LogDir { file_name: Some("silencut".into()) }),
+                    Target::new(TargetKind::Webview),
+                ])
+                .level(if cfg!(debug_assertions) {
+                    log::LevelFilter::Debug
+                } else {
+                    log::LevelFilter::Warn
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())

@@ -1,4 +1,5 @@
 import Database from "@tauri-apps/plugin-sql";
+import { log } from "../lib/logger";
 
 export interface ProjectRecord {
   id: number;
@@ -25,21 +26,27 @@ let db: Database | null = null;
 
 async function getDb(): Promise<Database> {
   if (!db) {
+    log.info("[db]", "Opening SQLite database: silencut.db");
     db = await Database.load("sqlite:silencut.db");
+    log.info("[db]", "Database opened OK");
   }
   return db;
 }
 
 export async function getAllProjects(): Promise<ProjectRecord[]> {
+  log.debug("[db]", "getAllProjects()");
   const database = await getDb();
-  return database.select<ProjectRecord[]>(
+  const rows = await database.select<ProjectRecord[]>(
     "SELECT * FROM projects ORDER BY updated_at DESC"
   );
+  log.debug("[db]", `getAllProjects → ${rows.length} records`);
+  return rows;
 }
 
 export async function getProjectById(
   id: number
 ): Promise<ProjectRecord | null> {
+  log.debug("[db]", `getProjectById(${id})`);
   const database = await getDb();
   const results = await database.select<ProjectRecord[]>(
     "SELECT * FROM projects WHERE id = $1",
@@ -54,6 +61,7 @@ export async function createProject(
     "id" | "created_at" | "updated_at" | "processed_path" | "status" | "silence_segments"
   >
 ): Promise<number> {
+  log.info("[db]", `createProject: ${data.name} (${data.file_path})`);
   const database = await getDb();
   const result = await database.execute(
     `INSERT INTO projects (name, file_path, thumbnail_path, duration, width, height, fps, codec, file_size, noise_threshold, min_duration, mode)
@@ -73,7 +81,9 @@ export async function createProject(
       data.mode,
     ]
   );
-  return result.lastInsertId ?? 0;
+  const newId = result.lastInsertId ?? 0;
+  log.info("[db]", `createProject → id=${newId}`);
+  return newId;
 }
 
 export async function updateProject(
