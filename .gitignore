@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Rust build artifacts (can be 5-8GB)
+src-tauri/target/
+
+# Tauri generated files
+src-tauri/gen/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
