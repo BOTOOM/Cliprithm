@@ -9,6 +9,7 @@ import {
 } from "../../lib/editor";
 import { formatTime } from "../../lib/utils";
 import { createBlobVideoUrl, getFileName, resolveMediaSrc } from "../../lib/media";
+import { useI18n } from "../../lib/i18n";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
 import { detectSilence, generatePreviewProxy } from "../../services/tauriCommands";
@@ -22,6 +23,7 @@ import { DetectionTimeline } from "../timeline/DetectionTimeline";
 import { Timeline } from "../timeline/Timeline";
 
 export function EditorView() {
+  const { t } = useI18n();
   const {
     currentView,
     setView,
@@ -56,6 +58,7 @@ export function EditorView() {
   const [proxyBlobUrl, setProxyBlobUrl] = useState<string | null>(null);
   const [isLoadingProxyBlob, setIsLoadingProxyBlob] = useState(false);
   const [isVideoReady, setIsVideoReady] = useState(false);
+  const [proxyRetryCount, setProxyRetryCount] = useState(0);
   const lastDetectedSignatureRef = useRef<string | null>(null);
 
   const duration = videoMetadata?.duration ?? 0;
@@ -64,19 +67,20 @@ export function EditorView() {
     if (duration <= 0) return null;
     return {
       id: "full-video",
-      label: "Full Video",
+      label: t("detection.fullVideo"),
       start: 0,
       end: duration,
       duration,
     };
-  }, [duration]);
+  }, [duration, t]);
 
   const activeClips = clipSegments.length > 0 ? clipSegments : fallbackClip ? [fallbackClip] : [];
   const editedDuration = getTotalClipDuration(activeClips);
   const previewEditedEnabled = currentView === "editor" && previewEdited;
-  const currentEditedTime = previewEditedEnabled
-    ? sourceToEditedTime(currentSourceTime, activeClips)
-    : currentSourceTime;
+  const currentEditedTime =
+    currentView === "editor"
+      ? sourceToEditedTime(currentSourceTime, activeClips)
+      : currentSourceTime;
 
   const selectedClip =
     activeClips.find((clip) => clip.id === selectedClipId) ?? activeClips[0] ?? null;
@@ -98,6 +102,10 @@ export function EditorView() {
   useEffect(() => {
     setIsVideoReady(false);
   }, [videoSrc]);
+
+  useEffect(() => {
+    setProxyRetryCount(0);
+  }, [filePath]);
 
   useEffect(() => {
     if (!previewFilePath || !isDesktopRuntime()) {
@@ -124,9 +132,7 @@ export function EditorView() {
         log.error("[preview]", "Failed to load preview blob:", error);
         if (active) {
           setMediaError(
-            `Se generó un proxy, pero no se pudo cargar en memoria para el preview: ${String(
-              error
-            )}`
+            t("detection.proxyMemoryLoad", { error: String(error) })
           );
         }
       })
@@ -171,32 +177,51 @@ export function EditorView() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [canUndo, undoLastEdit]);
 
-  const seekSourceTime = useCallback((nextSourceTime: number) => {
-    if (!videoRef.current) return;
-    const bounded = Math.max(0, Math.min(duration, nextSourceTime));
-    videoRef.current.currentTime = bounded;
-    setCurrentSourceTime(bounded);
-  }, [duration]);
+  const seekSourceTimeSafely = useCallback(
+    (nextSourceTime: number) => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      const bounded = Math.max(0, Math.min(duration, nextSourceTime));
+      const wasPlaying = !video.paused;
+      if (wasPlaying) {
+        video.pause();
+      }
+
+      video.currentTime = bounded;
+      setCurrentSourceTime(bounded);
+
+      if (wasPlaying) {
+        window.setTimeout(() => {
+          void video.play().catch((error) => {
+            log.warn("[preview]", "Failed to resume playback after manual seek:", error);
+          });
+        }, 40);
+      }
+    },
+    [duration]
+  );
 
   const handleSeek = useCallback(
     (timelineTime: number) => {
-      const sourceTime = previewEditedEnabled
-        ? editedToSourceTime(timelineTime, activeClips)
-        : timelineTime;
-      seekSourceTime(sourceTime);
+      const sourceTime =
+        currentView === "editor"
+          ? editedToSourceTime(timelineTime, activeClips)
+          : timelineTime;
+      seekSourceTimeSafely(sourceTime);
       const clip = findClipAtSourceTime(sourceTime, activeClips);
       setSelectedClipId(clip?.id ?? activeClips[0]?.id ?? null);
     },
-    [activeClips, previewEditedEnabled, seekSourceTime, setSelectedClipId]
+    [activeClips, currentView, seekSourceTimeSafely, setSelectedClipId]
   );
 
   const handleDetectionSeek = useCallback(
     (timelineTime: number) => {
-      seekSourceTime(timelineTime);
+      seekSourceTimeSafely(timelineTime);
       const clip = findClipAtSourceTime(timelineTime, activeClips);
       setSelectedClipId(clip?.id ?? activeClips[0]?.id ?? null);
     },
-    [activeClips, seekSourceTime, setSelectedClipId]
+    [activeClips, seekSourceTimeSafely, setSelectedClipId]
   );
 
   const handlePlayPause = () => {
@@ -305,6 +330,15 @@ export function EditorView() {
     setView("editor");
   };
 
+  const jumpBy = (deltaSeconds: number) => {
+    const baseTime = currentView === "editor" ? currentEditedTime : currentSourceTime;
+    const maxTime = currentView === "editor" ? estimatedDuration : duration;
+    const nextTime = Math.max(0, Math.min(maxTime, baseTime + deltaSeconds));
+    const sourceTime =
+      currentView === "editor" ? editedToSourceTime(nextTime, activeClips) : nextTime;
+    seekSourceTimeSafely(sourceTime);
+  };
+
   const handleVideoError = useCallback(async () => {
     const video = videoRef.current;
     const errorCode = video?.error?.code ?? 0;
@@ -328,20 +362,34 @@ export function EditorView() {
       !isDesktopRuntime() ||
       !filePath ||
       filePath.startsWith("blob:") ||
-      previewFilePath ||
       isGeneratingProxy
     ) {
-      setMediaError(
-        `No se pudo reproducir el video (${errorLabel}). Revisa el códec o el contenedor del archivo.`
-      );
+      if (previewFilePath && proxyRetryCount < 1 && filePath) {
+        try {
+          setIsGeneratingProxy(true);
+          setMediaError(t("detection.proxyFailed", { errorLabel }));
+          const dataDir = await appDataDir();
+          const baseName = getFileName(filePath).replace(/\.[^.]+$/, "");
+          const retryPath = `${dataDir}/previews/${Date.now()}-${baseName}-retry.mp4`;
+          const result = await generatePreviewProxy(filePath, retryPath);
+          setProxyRetryCount((count) => count + 1);
+          setPreviewFilePath(result);
+          setMediaError(null);
+          return;
+        } catch (err) {
+          log.error("[preview]", "Retry preview proxy generation failed:", err);
+        } finally {
+          setIsGeneratingProxy(false);
+        }
+      }
+
+      setMediaError(t("detection.cannotPlay", { errorLabel }));
       return;
     }
 
     try {
       setIsGeneratingProxy(true);
-      setMediaError(
-        `El WebView no pudo reproducir el archivo original (${errorLabel}). Generando un proxy compatible para el preview...`
-      );
+      setMediaError(t("detection.cannotPlayOriginal", { errorLabel }));
       const dataDir = await appDataDir();
       const baseName = getFileName(filePath).replace(/\.[^.]+$/, "");
       const proxyPath = `${dataDir}/previews/${Date.now()}-${baseName}.mp4`;
@@ -350,19 +398,17 @@ export function EditorView() {
       setMediaError(null);
     } catch (err) {
       log.error("[preview]", "Preview proxy generation failed:", err);
-      setMediaError(
-        `No se pudo reproducir el video (${errorLabel}) y también falló el proxy de preview: ${String(
-          err
-        )}`
-      );
+      setMediaError(t("detection.cannotPlayWithProxy", { errorLabel, error: String(err) }));
     } finally {
       setIsGeneratingProxy(false);
     }
   }, [
     filePath,
     isGeneratingProxy,
+    proxyRetryCount,
     previewFilePath,
     setPreviewFilePath,
+    t,
   ]);
 
   return (
@@ -374,11 +420,10 @@ export function EditorView() {
               <div className="max-w-sm">
                 <Icon name="progress_activity" className="text-4xl text-primary animate-spin mb-4" />
                 <h3 className="text-lg font-semibold text-white mb-2">
-                  Cargando preview del video...
+                  {t("detection.loadingPreviewTitle")}
                 </h3>
                 <p className="text-sm text-white/70 leading-relaxed">
-                  Espera un momento. El sistema todavia esta preparando el video y la
-                  timeline para que puedas interactuar sin errores.
+                  {t("detection.loadingPreviewDescription")}
                 </p>
               </div>
             </div>
@@ -388,41 +433,41 @@ export function EditorView() {
                {isDetectionReview ? (
                  <Button variant="primary" size="sm" onClick={handleContinueToEditor}>
                    <Icon name="arrow_forward" className="text-base" />
-                   Next: Clip Editor
+                   {t("detection.nextEditor")}
                  </Button>
                ) : (
                  <>
                    <Button variant="surface" size="sm" onClick={handleApplySuggestedCuts}>
                      <Icon name="auto_fix_high" className="text-base" />
-                     Apply Suggested Cuts
+                     {t("detection.applySuggestedCuts")}
                    </Button>
                    <Button
                      variant="ghost"
                      size="sm"
                      onClick={undoLastEdit}
                      disabled={!canUndo}
-                   >
-                     <Icon name="undo" className="text-base" />
-                     Undo
-                   </Button>
+                    >
+                      <Icon name="undo" className="text-base" />
+                      {t("detection.undo")}
+                    </Button>
                    <Button
                      variant="ghost"
                      size="sm"
                      onClick={handleSplitSelected}
                      disabled={!selectedClip}
-                   >
-                     <Icon name="content_cut" className="text-base" />
-                     Split at Playhead
-                   </Button>
+                    >
+                      <Icon name="content_cut" className="text-base" />
+                      {t("detection.splitAtPlayhead")}
+                    </Button>
                    <Button
                      variant="ghost"
                      size="sm"
                      onClick={handleDeleteSelected}
                      disabled={!selectedClip || activeClips.length <= 1}
-                   >
-                     <Icon name="delete" className="text-base" />
-                     Remove Clip
-                   </Button>
+                    >
+                      <Icon name="delete" className="text-base" />
+                      {t("detection.removeClip")}
+                    </Button>
                  </>
                )}
              </div>
@@ -450,8 +495,8 @@ export function EditorView() {
               ) : (
                 <div className="text-on-surface-variant text-sm px-6 text-center">
                   {isLoadingProxyBlob
-                    ? "Cargando proxy de preview..."
-                    : "Importa un video para comenzar."}
+                    ? t("detection.proxyLoading")
+                    : t("detection.importToBegin")}
                 </div>
               )}
 
@@ -473,10 +518,10 @@ export function EditorView() {
 
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6">
                 <div className="flex items-center justify-center gap-6 mb-4">
-                  <button
-                    onClick={() => seekSourceTime(currentSourceTime - 10)}
-                    className="text-white/80 hover:text-white transition-colors"
-                  >
+                   <button
+                     onClick={() => jumpBy(-10)}
+                     className="text-white/80 hover:text-white transition-colors"
+                   >
                     <Icon name="replay_10" className="text-3xl" />
                   </button>
                   <button onClick={handlePlayPause}>
@@ -486,22 +531,22 @@ export function EditorView() {
                       filled
                     />
                   </button>
-                  <button
-                    onClick={() => seekSourceTime(currentSourceTime + 10)}
-                    className="text-white/80 hover:text-white transition-colors"
-                  >
+                   <button
+                     onClick={() => jumpBy(10)}
+                     className="text-white/80 hover:text-white transition-colors"
+                   >
                     <Icon name="forward_10" className="text-3xl" />
                   </button>
                 </div>
                 <div className="flex items-center justify-between text-xs font-mono text-white/80">
                    <span>{formatTime(currentEditedTime)}</span>
-                   <span>{formatTime(previewEditedEnabled ? estimatedDuration : duration)}</span>
+                  <span>{formatTime(currentView === "editor" ? estimatedDuration : duration)}</span>
                  </div>
                  <div className="w-full h-1 bg-surface-container-highest rounded-full mt-2 relative overflow-hidden">
                    <div
                      className="absolute top-0 left-0 h-full bg-primary rounded-full"
                      style={{
-                       width: `${(currentEditedTime / Math.max(previewEditedEnabled ? estimatedDuration : duration, 0.01)) * 100}%`,
+                       width: `${(currentEditedTime / Math.max(currentView === "editor" ? estimatedDuration : duration, 0.01)) * 100}%`,
                      }}
                    />
                  </div>
@@ -518,7 +563,7 @@ export function EditorView() {
             />
           ) : (
             <Timeline
-              duration={previewEditedEnabled ? estimatedDuration : duration}
+              duration={estimatedDuration}
               currentTime={currentEditedTime}
               clips={activeClips}
               selectedClipId={selectedClip?.id ?? null}
@@ -543,7 +588,7 @@ export function EditorView() {
 
           <div className="space-y-8 flex-1">
             <Slider
-              label="Threshold (dB)"
+              label={t("detection.threshold")}
               value={detectionSettings.noiseThreshold}
               min={-60}
               max={0}
@@ -554,7 +599,7 @@ export function EditorView() {
             />
 
             <Slider
-              label="Min Duration (s)"
+              label={t("detection.minDuration")}
               value={detectionSettings.minDuration}
               min={0.1}
               max={3}
@@ -565,32 +610,32 @@ export function EditorView() {
             />
 
             <div className="pt-4 space-y-4">
-               {!isDetectionReview && (
+                  {!isDetectionReview && (
                  <Toggle
-                   label="Preview Edited Timeline"
+                   label={t("detection.previewEdited")}
                    checked={previewEdited}
                    onChange={setPreviewEdited}
-                   tooltip="Intenta simular la reproduccion ya editada saltando los silencios detectados. Puede ser mas exigente para el reproductor."
+                   tooltip={t("detection.previewEditedTooltip")}
                  />
                )}
                <Toggle
-                 label="Fade Out/In"
+                 label={t("detection.fade")}
                  checked={detectionSettings.fadeEnabled}
                  onChange={(value) => updateDetectionSettings({ fadeEnabled: value })}
-                 tooltip="Suaviza la entrada y salida entre cortes para que el cambio entre clips se sienta menos brusco."
+                 tooltip={t("detection.fadeTooltip")}
                />
                <Toggle
-                 label="Detect Breath"
+                 label={t("detection.detectBreath")}
                  checked={detectionSettings.detectBreath}
                  onChange={(value) => updateDetectionSettings({ detectBreath: value })}
-                 tooltip="Reserva pausas respiradas con mas cuidado. En este MVP afecta el criterio futuro de deteccion, no el export ya generado."
+                 tooltip={t("detection.detectBreathTooltip")}
                />
                <div className="pt-2">
                  <div className="flex items-center gap-2 mb-2">
                    <label className="text-xs font-semibold text-on-surface-variant">
-                     Mode
+                     {t("detection.mode")}
                    </label>
-                   <Tooltip content="Cut Silence removes detected gaps. Time Warp keeps them but speeds them up instead of deleting them." />
+                   <Tooltip content={t("detection.modeTooltip")} />
                  </div>
                  <div className="flex gap-2">
                   <button
@@ -600,10 +645,10 @@ export function EditorView() {
                           ? "bg-primary text-on-primary"
                           : "bg-surface-container-highest text-on-surface-variant"
                      }`}
-                     title="Remove detected silent ranges entirely from the final edit."
+                     title={t("detection.cutSilence")}
                    >
-                     Cut Silence
-                   </button>
+                     {t("detection.cutSilence")}
+                    </button>
                   <button
                     onClick={() => updateDetectionSettings({ mode: "speed" })}
                     className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${
@@ -611,10 +656,10 @@ export function EditorView() {
                           ? "bg-primary text-on-primary"
                           : "bg-surface-container-highest text-on-surface-variant"
                      }`}
-                     title="Keep silent ranges but speed them up instead of removing them."
+                     title={t("detection.timeWarp")}
                    >
-                     Time Warp
-                   </button>
+                     {t("detection.timeWarp")}
+                    </button>
                 </div>
               </div>
 
@@ -640,14 +685,14 @@ export function EditorView() {
               onClick={handleRedetect}
               disabled={isRedetecting || !filePath || filePath.startsWith("blob:")}
             >
-              {isRedetecting ? "Re-detecting..." : "Re-detect Silence"}
+              {isRedetecting ? t("detection.reDetecting") : t("detection.reDetect")}
             </Button>
 
             {!isDetectionReview && selectedClip && (
               <div className="p-4 bg-surface-container-highest rounded-lg border border-outline-variant/10 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-xs font-bold uppercase tracking-widest text-primary">
-                    Selected Clip
+                    {t("detection.selectedClip")}
                   </span>
                   <span className="text-[10px] font-mono text-on-surface-variant">
                     {selectedClip.label}
@@ -655,26 +700,26 @@ export function EditorView() {
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <div className="text-on-surface-variant uppercase tracking-widest text-[10px] mb-1">
-                      Start
-                    </div>
+                      <div className="text-on-surface-variant uppercase tracking-widest text-[10px] mb-1">
+                        {t("detection.start")}
+                      </div>
                     <div className="font-mono text-on-surface">
                       {formatTime(selectedClip.start)}
                     </div>
                   </div>
                   <div>
-                    <div className="text-on-surface-variant uppercase tracking-widest text-[10px] mb-1">
-                      End
-                    </div>
+                      <div className="text-on-surface-variant uppercase tracking-widest text-[10px] mb-1">
+                        {t("detection.end")}
+                      </div>
                     <div className="font-mono text-on-surface">
                       {formatTime(selectedClip.end)}
                     </div>
                   </div>
                 </div>
                 <div>
-                  <div className="text-on-surface-variant uppercase tracking-widest text-[10px] mb-1">
-                    Duration
-                  </div>
+                    <div className="text-on-surface-variant uppercase tracking-widest text-[10px] mb-1">
+                      {t("detection.duration")}
+                    </div>
                   <div className="font-mono text-on-surface">
                     {formatTime(selectedClip.duration)}
                   </div>
@@ -688,26 +733,31 @@ export function EditorView() {
               <div className="flex items-center gap-3 mb-2">
                 <Icon name="movie" className="text-secondary text-xl" />
                 <span className="text-xs font-bold text-on-surface">
-                  {isDetectionReview ? "Original timeline" : `Clips: ${activeClips.length}`}
+                  {isDetectionReview
+                    ? t("detection.originalTimeline")
+                    : t("detection.clips", { count: activeClips.length })}
                 </span>
               </div>
               <p className="text-[10px] text-on-surface-variant leading-relaxed">
                 {isDetectionReview
-                  ? `Review the detected silence spans before converting them into editable clips.`
-                  : `Timeline duration goes from ${formatTime(duration)} to ${formatTime(estimatedDuration)}.`}
+                  ? t("detection.originalTimelineDescription")
+                  : t("detection.clipsDescription", {
+                      source: formatTime(duration),
+                      edited: formatTime(estimatedDuration),
+                    })}
               </p>
             </div>
             <div className="p-4 bg-surface-container-highest rounded-lg border border-outline-variant/5">
               <div className="flex items-center gap-3 mb-2">
                 <Icon name="auto_fix_high" className="text-secondary text-xl" />
                 <span className="text-xs font-bold text-on-surface">
-                  Detected: {gapCount} Gaps
+                  {t("detection.detectedGaps", { count: gapCount })}
                 </span>
               </div>
               <p className="text-[10px] text-on-surface-variant leading-relaxed">
                 {isDetectionReview
-                  ? "Tune threshold and min duration, re-run detection if needed, then continue to the clip editor."
-                  : "Delete clips or split at the playhead before exporting your final edit."}
+                  ? t("detection.detectedGapsDescription")
+                  : t("detection.gapsDescription")}
               </p>
             </div>
             {isDetectionReview ? (
@@ -718,7 +768,7 @@ export function EditorView() {
                 disabled={removedSegments.length === 0}
               >
                 <Icon name="arrow_forward" className="text-lg" />
-                Continue to Clip Editor
+                {t("detection.continueEditor")}
               </Button>
             ) : (
               <Button
@@ -728,7 +778,7 @@ export function EditorView() {
                 disabled={removedSegments.length === 0}
               >
                 <Icon name="auto_fix_high" className="text-lg" />
-                Refresh Clip Timeline
+                {t("detection.refreshTimeline")}
               </Button>
             )}
           </div>

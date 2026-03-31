@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import type { SilenceSegment } from "../../types";
+import { useI18n } from "../../lib/i18n";
 import { formatTime } from "../../lib/utils";
 
 interface DetectionTimelineProps {
@@ -23,6 +24,7 @@ export function DetectionTimeline({
   segments,
   onSeek,
 }: DetectionTimelineProps) {
+  const { t } = useI18n();
   const trackRef = useRef<HTMLDivElement>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const safeDuration = Math.max(duration, 0.01);
@@ -46,18 +48,18 @@ export function DetectionTimeline({
     <div className="h-[280px] bg-surface-container border-t border-outline-variant/10 flex flex-col p-4 gap-4">
       <div className="flex items-center gap-4 flex-wrap">
         <span className="text-xs font-bold tracking-widest text-on-surface-variant uppercase">
-          Timeline
+          {t("detection.timeline")}
         </span>
         <div className="flex items-center gap-2 px-2 py-1 bg-surface-container-high rounded border border-outline-variant/10">
           <span className="w-2 h-2 bg-secondary rounded-full" />
           <span className="text-[10px] font-medium text-secondary">
-            Audio active
+            {t("detection.audioActive")}
           </span>
         </div>
         <div className="flex items-center gap-2 px-2 py-1 bg-surface-container-high rounded border border-outline-variant/10">
           <span className="w-2 h-2 bg-error-dim rounded-full" />
           <span className="text-[10px] font-medium text-error-dim">
-            Silence ({segments.length})
+            {t("detection.silence", { count: segments.length })}
           </span>
         </div>
       </div>

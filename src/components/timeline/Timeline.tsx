@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClipSegment } from "../../types";
+import { useI18n } from "../../lib/i18n";
 import { formatTime } from "../../lib/utils";
 import { Icon } from "../ui/Icon";
 
@@ -39,6 +40,7 @@ export function Timeline({
   onSeek,
   onSelectClip,
 }: TimelineProps) {
+  const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -91,11 +93,12 @@ export function Timeline({
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
+    if (isScrubbing) return;
 
     const targetLeft = playheadLeft - container.clientWidth / 2;
     const maxScroll = Math.max(0, timelineWidth - container.clientWidth);
     const nextScroll = Math.max(0, Math.min(maxScroll, targetLeft));
-    container.scrollTo({ left: nextScroll, behavior: isScrubbing ? "auto" : "smooth" });
+    container.scrollTo({ left: nextScroll, behavior: "smooth" });
   }, [isScrubbing, playheadLeft, timelineWidth]);
 
   return (
@@ -103,18 +106,18 @@ export function Timeline({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4 flex-wrap">
           <span className="text-xs font-bold tracking-widest text-on-surface-variant uppercase">
-            Timeline
+            {t("timeline.timeline")}
           </span>
           <div className="flex items-center gap-2 px-2 py-1 bg-surface-container-high rounded border border-outline-variant/10">
             <span className="w-2 h-2 bg-secondary rounded-full" />
             <span className="text-[10px] font-medium text-secondary">
-              Active clips: {clips.length}
+              {t("timeline.activeClips", { count: clips.length })}
             </span>
           </div>
           <div className="flex items-center gap-2 px-2 py-1 bg-surface-container-high rounded border border-outline-variant/10">
             <span className="w-2 h-2 bg-error-dim rounded-full" />
             <span className="text-[10px] font-medium text-error-dim">
-              Silences removed: {removedSegmentsCount}
+              {t("timeline.silencesRemoved", { count: removedSegmentsCount })}
             </span>
           </div>
         </div>
