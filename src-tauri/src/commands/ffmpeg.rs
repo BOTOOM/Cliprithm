@@ -49,6 +49,12 @@ pub struct ExportOptions {
     pub speed_multiplier: Option<f64>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PreviewSegment {
+    pub start: f64,
+    pub end: f64,
+}
+
 #[tauri::command]
 pub fn check_ffmpeg() -> Result<String, String> {
     debug!("[ffmpeg] Checking FFmpeg availability...");
@@ -365,6 +371,102 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
     Ok(options.output_path)
 }
 
+#[tauri::command]
+pub fn generate_sequence_preview(
+    input_path: String,
+    output_path: String,
+    segments_to_keep: Vec<PreviewSegment>,
+) -> Result<String, String> {
+    info!(
+        "[preview-sequence] Starting — input={} clips={} output={}",
+        input_path,
+        segments_to_keep.len(),
+        output_path
+    );
+
+    if segments_to_keep.is_empty() {
+        return Err("No active clips available to build the edited preview.".to_string());
+    }
+
+    if let Some(parent) = std::path::Path::new(&output_path).parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create edited preview directory: {}", e))?;
+    }
+
+    let keep_ranges = segments_to_keep
+        .into_iter()
+        .filter_map(|segment| {
+            let duration = segment.end - segment.start;
+            (duration >= 0.08).then_some((segment.start, segment.end))
+        })
+        .collect::<Vec<_>>();
+
+    if keep_ranges.is_empty() {
+        return Err("No valid clips available to build the edited preview.".to_string());
+    }
+
+    let transforms = vec![
+        "scale=-2:720".to_string(),
+        "format=yuv420p".to_string(),
+        "setsar=1".to_string(),
+    ];
+    let (filter, video_output_label) = build_concat_filter(&keep_ranges, &transforms);
+
+    let output = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-i",
+            &input_path,
+            "-filter_complex",
+            &filter,
+            "-map",
+            &video_output_label,
+            "-map",
+            "[aout]",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "28",
+            "-profile:v",
+            "baseline",
+            "-level",
+            "4.0",
+            "-g",
+            "15",
+            "-keyint_min",
+            "15",
+            "-sc_threshold",
+            "0",
+            "-pix_fmt",
+            "yuv420p",
+            "-tune",
+            "fastdecode",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-movflags",
+            "+faststart",
+            &output_path,
+        ])
+        .output()
+        .map_err(|e| {
+            error!("[preview-sequence] FFmpeg error: {}", e);
+            format!("FFmpeg edited preview error: {}", e)
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        error!("[preview-sequence] FFmpeg failed:\n{}", stderr);
+        return Err(format!("Edited preview generation failed: {}", stderr));
+    }
+
+    info!("[preview-sequence] Done — {}", output_path);
+    Ok(output_path)
+}
+
 // --- Internal helpers ---
 
 fn emit_progress(window: &Window, percent: f64, stage: &str, message: &str) {
@@ -391,6 +493,27 @@ fn build_export_filter(
     resolution: Option<&str>,
     fps: Option<u32>,
 ) -> (String, String) {
+    let mut transforms: Vec<String> = Vec::new();
+
+    if let Some(resolution) = resolution {
+        transforms.push(match resolution {
+            "1080p" => "scale=-2:1080".to_string(),
+            "4k" => "scale=-2:2160".to_string(),
+            _ => "scale=-2:1080".to_string(),
+        });
+    }
+
+    if let Some(fps) = fps {
+        transforms.push(format!("fps={}", fps));
+    }
+
+    build_concat_filter(segments_to_keep, &transforms)
+}
+
+fn build_concat_filter(
+    segments_to_keep: &[(f64, f64)],
+    transforms: &[String],
+) -> (String, String) {
     let mut filter_parts: Vec<String> = Vec::new();
 
     for (index, (start, end)) in segments_to_keep.iter().enumerate() {
@@ -412,25 +535,9 @@ fn build_export_filter(
     ));
 
     let mut video_output_label = "[vcat]".to_string();
-    let mut transforms: Vec<String> = Vec::new();
-
-    if let Some(resolution) = resolution {
-        transforms.push(match resolution {
-            "1080p" => "scale=-2:1080".to_string(),
-            "4k" => "scale=-2:2160".to_string(),
-            _ => "scale=-2:1080".to_string(),
-        });
-    }
-
-    if let Some(fps) = fps {
-        transforms.push(format!("fps={}", fps));
-    }
 
     if !transforms.is_empty() {
-        filter_parts.push(format!(
-            "[vcat]{}[vout]",
-            transforms.join(",")
-        ));
+        filter_parts.push(format!("[vcat]{}[vout]", transforms.join(",")));
         video_output_label = "[vout]".to_string();
     }
 

@@ -78,6 +78,7 @@ pub fn run() {
             ffmpeg::detect_silence,
             ffmpeg::cut_silence,
             ffmpeg::export_video,
+            ffmpeg::generate_sequence_preview,
             library::generate_thumbnail,
             library::generate_preview_proxy,
         ])

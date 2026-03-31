@@ -12,7 +12,11 @@ import { createBlobVideoUrl, getFileName, resolveMediaSrc } from "../../lib/medi
 import { useI18n } from "../../lib/i18n";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
-import { detectSilence, generatePreviewProxy } from "../../services/tauriCommands";
+import {
+  detectSilence,
+  generateEditedSequencePreview,
+  generatePreviewProxy,
+} from "../../services/tauriCommands";
 import type { ClipSegment } from "../../types";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
@@ -35,6 +39,10 @@ export function EditorView() {
     setDetectionResult,
     previewFilePath,
     setPreviewFilePath,
+    editedPreviewFilePath,
+    setEditedPreviewFilePath,
+    previewMode,
+    setPreviewMode,
     removedSegments,
     clipSegments,
     applySuggestedCuts,
@@ -52,13 +60,16 @@ export function EditorView() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentSourceTime, setCurrentSourceTime] = useState(0);
   const [isRedetecting, setIsRedetecting] = useState(false);
-  const [previewEdited, setPreviewEdited] = useState(true);
   const [mediaError, setMediaError] = useState<string | null>(null);
-  const [isGeneratingProxy, setIsGeneratingProxy] = useState(false);
-  const [proxyBlobUrl, setProxyBlobUrl] = useState<string | null>(null);
-  const [isLoadingProxyBlob, setIsLoadingProxyBlob] = useState(false);
+  const [isGeneratingSourceProxy, setIsGeneratingSourceProxy] = useState(false);
+  const [sourceProxyBlobUrl, setSourceProxyBlobUrl] = useState<string | null>(null);
+  const [editedPreviewBlobUrl, setEditedPreviewBlobUrl] = useState<string | null>(null);
+  const [isLoadingSourceProxyBlob, setIsLoadingSourceProxyBlob] = useState(false);
+  const [isLoadingEditedPreviewBlob, setIsLoadingEditedPreviewBlob] = useState(false);
+  const [isGeneratingEditedPreview, setIsGeneratingEditedPreview] = useState(false);
   const [isVideoReady, setIsVideoReady] = useState(false);
-  const [proxyRetryCount, setProxyRetryCount] = useState(0);
+  const [sourceProxyRetryCount, setSourceProxyRetryCount] = useState(0);
+  const [editedPreviewRetryCount, setEditedPreviewRetryCount] = useState(0);
   const lastDetectedSignatureRef = useRef<string | null>(null);
 
   const duration = videoMetadata?.duration ?? 0;
@@ -76,7 +87,7 @@ export function EditorView() {
 
   const activeClips = clipSegments.length > 0 ? clipSegments : fallbackClip ? [fallbackClip] : [];
   const editedDuration = getTotalClipDuration(activeClips);
-  const previewEditedEnabled = currentView === "editor" && previewEdited;
+  const isEditedPreviewMode = currentView === "editor" && previewMode === "edited";
   const currentEditedTime =
     currentView === "editor"
       ? sourceToEditedTime(currentSourceTime, activeClips)
@@ -87,11 +98,29 @@ export function EditorView() {
 
   const gapCount = removedSegments.length;
   const estimatedDuration = editedDuration || detectionResult?.estimated_output_duration || duration;
-  const videoSrc = previewFilePath
-    ? proxyBlobUrl
+  const sourceVideoSrc = previewFilePath
+    ? sourceProxyBlobUrl
     : resolveMediaSrc(filePath);
+  const isUsingEditedSequenceSource =
+    currentView === "editor" && previewMode === "edited" && Boolean(editedPreviewBlobUrl);
+  const videoSrc =
+    currentView === "editor" && previewMode === "edited"
+      ? editedPreviewBlobUrl || sourceVideoSrc
+      : sourceVideoSrc;
   const isPreviewBusy =
-    Boolean(videoSrc) && (!isVideoReady || isGeneratingProxy || isLoadingProxyBlob);
+    Boolean(videoSrc) &&
+    (!isVideoReady ||
+      isGeneratingSourceProxy ||
+      isLoadingSourceProxyBlob ||
+      (isEditedPreviewMode &&
+        (isGeneratingEditedPreview ||
+          isLoadingEditedPreviewBlob ||
+          (!editedPreviewBlobUrl && activeClips.length > 0))));
+  const clipSignature = useMemo(
+    () =>
+      JSON.stringify(activeClips.map((clip) => ({ start: clip.start, end: clip.end }))),
+    [activeClips]
+  );
 
   const detectionSignature = JSON.stringify({
     noiseThreshold: detectionSettings.noiseThreshold,
@@ -104,20 +133,21 @@ export function EditorView() {
   }, [videoSrc]);
 
   useEffect(() => {
-    setProxyRetryCount(0);
+    setSourceProxyRetryCount(0);
+    setEditedPreviewRetryCount(0);
   }, [filePath]);
 
   useEffect(() => {
     if (!previewFilePath || !isDesktopRuntime()) {
-      setProxyBlobUrl(null);
-      setIsLoadingProxyBlob(false);
+      setSourceProxyBlobUrl(null);
+      setIsLoadingSourceProxyBlob(false);
       return;
     }
 
     let active = true;
     let objectUrl: string | null = null;
 
-    setIsLoadingProxyBlob(true);
+    setIsLoadingSourceProxyBlob(true);
     void createBlobVideoUrl(previewFilePath)
       .then((url) => {
         if (!active) {
@@ -125,20 +155,18 @@ export function EditorView() {
           return;
         }
         objectUrl = url;
-        setProxyBlobUrl(url);
+        setSourceProxyBlobUrl(url);
         setMediaError(null);
       })
       .catch((error) => {
         log.error("[preview]", "Failed to load preview blob:", error);
         if (active) {
-          setMediaError(
-            t("detection.proxyMemoryLoad", { error: String(error) })
-          );
+          setMediaError(t("detection.proxyMemoryLoad", { error: String(error) }));
         }
       })
       .finally(() => {
         if (active) {
-          setIsLoadingProxyBlob(false);
+          setIsLoadingSourceProxyBlob(false);
         }
       });
 
@@ -148,7 +176,108 @@ export function EditorView() {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [previewFilePath]);
+  }, [previewFilePath, t]);
+
+  useEffect(() => {
+    if (!editedPreviewFilePath || !isDesktopRuntime()) {
+      setEditedPreviewBlobUrl(null);
+      setIsLoadingEditedPreviewBlob(false);
+      return;
+    }
+
+    let active = true;
+    let objectUrl: string | null = null;
+
+    setIsLoadingEditedPreviewBlob(true);
+    void createBlobVideoUrl(editedPreviewFilePath)
+      .then((url) => {
+        if (!active) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        objectUrl = url;
+        setEditedPreviewBlobUrl(url);
+        setMediaError(null);
+      })
+      .catch((error) => {
+        log.error("[preview]", "Failed to load edited preview blob:", error);
+        if (active) {
+          setMediaError(t("detection.proxyMemoryLoad", { error: String(error) }));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoadingEditedPreviewBlob(false);
+        }
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [editedPreviewFilePath, t]);
+
+  useEffect(() => {
+    if (
+      currentView !== "editor" ||
+      previewMode !== "edited" ||
+      !filePath ||
+      filePath.startsWith("blob:") ||
+      activeClips.length === 0
+    ) {
+      return;
+    }
+
+    let active = true;
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        try {
+          setIsGeneratingEditedPreview(true);
+          const dataDir = await appDataDir();
+          const baseName = getFileName(filePath).replace(/\.[^.]+$/, "");
+          const outputPath = `${dataDir}/previews/${Date.now()}-${baseName}-sequence.mp4`;
+          const result = await generateEditedSequencePreview(
+            filePath,
+            outputPath,
+            activeClips.map((clip) => ({ start: clip.start, end: clip.end }))
+          );
+          if (!active) {
+            return;
+          }
+          setEditedPreviewFilePath(result);
+          setEditedPreviewRetryCount(0);
+          setMediaError(null);
+        } catch (error) {
+          log.error("[preview]", "Failed to generate edited sequence preview:", error);
+          if (active) {
+            setMediaError(t("detection.cannotPlayWithProxy", {
+              errorLabel: "SEQUENCE_PREVIEW",
+              error: String(error),
+            }));
+          }
+        } finally {
+          if (active) {
+            setIsGeneratingEditedPreview(false);
+          }
+        }
+      })();
+    }, 350);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+    };
+  }, [
+    activeClips,
+    clipSignature,
+    currentView,
+    filePath,
+    previewMode,
+    setEditedPreviewFilePath,
+    t,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -177,19 +306,22 @@ export function EditorView() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [canUndo, undoLastEdit]);
 
-  const seekSourceTimeSafely = useCallback(
-    (nextSourceTime: number) => {
+  const seekVideoTimeSafely = useCallback(
+    (nextVideoTime: number, nextSourceTime: number) => {
       const video = videoRef.current;
       if (!video) return;
 
-      const bounded = Math.max(0, Math.min(duration, nextSourceTime));
+      const maxVideoTime =
+        currentView === "editor" && previewMode === "edited" ? estimatedDuration : duration;
+      const boundedVideoTime = Math.max(0, Math.min(maxVideoTime, nextVideoTime));
+      const boundedSourceTime = Math.max(0, Math.min(duration, nextSourceTime));
       const wasPlaying = !video.paused;
       if (wasPlaying) {
         video.pause();
       }
 
-      video.currentTime = bounded;
-      setCurrentSourceTime(bounded);
+      video.currentTime = boundedVideoTime;
+      setCurrentSourceTime(boundedSourceTime);
 
       if (wasPlaying) {
         window.setTimeout(() => {
@@ -199,20 +331,37 @@ export function EditorView() {
         }, 40);
       }
     },
-    [duration]
+    [currentView, duration, estimatedDuration, previewMode]
+  );
+
+  const seekSourceTimeSafely = useCallback(
+    (nextSourceTime: number) => {
+      seekVideoTimeSafely(nextSourceTime, nextSourceTime);
+    },
+    [seekVideoTimeSafely]
+  );
+
+  const seekEditedTimeSafely = useCallback(
+    (nextEditedTime: number) => {
+      const sourceTime = editedToSourceTime(nextEditedTime, activeClips);
+      if (isUsingEditedSequenceSource) {
+        seekVideoTimeSafely(nextEditedTime, sourceTime);
+        return;
+      }
+
+      seekVideoTimeSafely(sourceTime, sourceTime);
+    },
+    [activeClips, isUsingEditedSequenceSource, seekVideoTimeSafely]
   );
 
   const handleSeek = useCallback(
     (timelineTime: number) => {
-      const sourceTime =
-        currentView === "editor"
-          ? editedToSourceTime(timelineTime, activeClips)
-          : timelineTime;
-      seekSourceTimeSafely(sourceTime);
+      const sourceTime = editedToSourceTime(timelineTime, activeClips);
+      seekEditedTimeSafely(timelineTime);
       const clip = findClipAtSourceTime(sourceTime, activeClips);
       setSelectedClipId(clip?.id ?? activeClips[0]?.id ?? null);
     },
-    [activeClips, currentView, seekSourceTimeSafely, setSelectedClipId]
+    [activeClips, seekEditedTimeSafely, setSelectedClipId]
   );
 
   const handleDetectionSeek = useCallback(
@@ -237,24 +386,10 @@ export function EditorView() {
     const video = videoRef.current;
     if (!video) return;
 
-    let sourceTime = video.currentTime;
-    if (previewEditedEnabled && activeClips.length > 0) {
-      const currentClip = findClipAtSourceTime(sourceTime, activeClips);
-      if (!currentClip) {
-        const nextClip = activeClips.find((clip) => clip.start > sourceTime);
-        if (nextClip) {
-          video.currentTime = nextClip.start;
-          sourceTime = nextClip.start;
-        }
-      } else if (sourceTime >= currentClip.end - 0.05) {
-        const currentIndex = activeClips.findIndex((clip) => clip.id === currentClip.id);
-        const nextClip = activeClips[currentIndex + 1];
-        if (nextClip) {
-          video.currentTime = nextClip.start;
-          sourceTime = nextClip.start;
-        }
-      }
-    }
+    const sourceTime =
+      isUsingEditedSequenceSource
+        ? editedToSourceTime(video.currentTime, activeClips)
+        : video.currentTime;
 
     setCurrentSourceTime(sourceTime);
     const currentClip = findClipAtSourceTime(sourceTime, activeClips);
@@ -278,14 +413,14 @@ export function EditorView() {
         minDuration: detectionSettings.minDuration,
         detectBreath: detectionSettings.detectBreath,
       });
-      setPreviewEdited(false);
+      setPreviewMode("source");
       setView("detection");
     } catch (err) {
       log.error("[silence]", "Re-detection failed:", err);
     } finally {
       setIsRedetecting(false);
     }
-  }, [detectionSettings, filePath, setDetectionResult, setView]);
+  }, [detectionSettings, filePath, setDetectionResult, setPreviewMode, setView]);
 
   useEffect(() => {
     if (!isDetectionReview || !filePath || filePath.startsWith("blob:")) {
@@ -310,9 +445,9 @@ export function EditorView() {
 
   const handleApplySuggestedCuts = useCallback(() => {
     applySuggestedCuts();
-    setPreviewEdited(false);
+    setPreviewMode("edited");
     setView("editor");
-  }, [applySuggestedCuts, setView]);
+  }, [applySuggestedCuts, setPreviewMode, setView]);
 
   const handleSplitSelected = () => {
     if (!selectedClip) return;
@@ -326,7 +461,7 @@ export function EditorView() {
 
   const handleContinueToEditor = () => {
     applySuggestedCuts();
-    setPreviewEdited(false);
+    setPreviewMode("edited");
     setView("editor");
   };
 
@@ -334,9 +469,12 @@ export function EditorView() {
     const baseTime = currentView === "editor" ? currentEditedTime : currentSourceTime;
     const maxTime = currentView === "editor" ? estimatedDuration : duration;
     const nextTime = Math.max(0, Math.min(maxTime, baseTime + deltaSeconds));
-    const sourceTime =
-      currentView === "editor" ? editedToSourceTime(nextTime, activeClips) : nextTime;
-    seekSourceTimeSafely(sourceTime);
+    if (currentView === "editor") {
+      seekEditedTimeSafely(nextTime);
+      return;
+    }
+
+    seekSourceTimeSafely(nextTime);
   };
 
   const handleVideoError = useCallback(async () => {
@@ -356,30 +494,66 @@ export function EditorView() {
       currentSrc: video?.currentSrc,
       filePath,
       previewFilePath,
+      editedPreviewFilePath,
+      previewMode,
     });
+
+    if (
+      currentView === "editor" &&
+      previewMode === "edited" &&
+      editedPreviewFilePath &&
+      filePath &&
+      !filePath.startsWith("blob:")
+    ) {
+      if (editedPreviewRetryCount < 1) {
+        try {
+          setIsGeneratingEditedPreview(true);
+          setMediaError(t("detection.proxyFailed", { errorLabel }));
+          const dataDir = await appDataDir();
+          const baseName = getFileName(filePath).replace(/\.[^.]+$/, "");
+          const retryPath = `${dataDir}/previews/${Date.now()}-${baseName}-sequence-retry.mp4`;
+          const result = await generateEditedSequencePreview(
+            filePath,
+            retryPath,
+            activeClips.map((clip) => ({ start: clip.start, end: clip.end }))
+          );
+          setEditedPreviewRetryCount((count) => count + 1);
+          setEditedPreviewFilePath(result);
+          setMediaError(null);
+          return;
+        } catch (err) {
+          log.error("[preview]", "Retry edited preview generation failed:", err);
+        } finally {
+          setIsGeneratingEditedPreview(false);
+        }
+      }
+
+      setMediaError(t("detection.cannotPlay", { errorLabel }));
+      return;
+    }
 
     if (
       !isDesktopRuntime() ||
       !filePath ||
       filePath.startsWith("blob:") ||
-      isGeneratingProxy
+      isGeneratingSourceProxy
     ) {
-      if (previewFilePath && proxyRetryCount < 1 && filePath) {
+      if (previewFilePath && sourceProxyRetryCount < 1 && filePath) {
         try {
-          setIsGeneratingProxy(true);
+          setIsGeneratingSourceProxy(true);
           setMediaError(t("detection.proxyFailed", { errorLabel }));
           const dataDir = await appDataDir();
           const baseName = getFileName(filePath).replace(/\.[^.]+$/, "");
           const retryPath = `${dataDir}/previews/${Date.now()}-${baseName}-retry.mp4`;
           const result = await generatePreviewProxy(filePath, retryPath);
-          setProxyRetryCount((count) => count + 1);
+          setSourceProxyRetryCount((count) => count + 1);
           setPreviewFilePath(result);
           setMediaError(null);
           return;
         } catch (err) {
           log.error("[preview]", "Retry preview proxy generation failed:", err);
         } finally {
-          setIsGeneratingProxy(false);
+          setIsGeneratingSourceProxy(false);
         }
       }
 
@@ -388,7 +562,7 @@ export function EditorView() {
     }
 
     try {
-      setIsGeneratingProxy(true);
+      setIsGeneratingSourceProxy(true);
       setMediaError(t("detection.cannotPlayOriginal", { errorLabel }));
       const dataDir = await appDataDir();
       const baseName = getFileName(filePath).replace(/\.[^.]+$/, "");
@@ -400,14 +574,20 @@ export function EditorView() {
       log.error("[preview]", "Preview proxy generation failed:", err);
       setMediaError(t("detection.cannotPlayWithProxy", { errorLabel, error: String(err) }));
     } finally {
-      setIsGeneratingProxy(false);
+      setIsGeneratingSourceProxy(false);
     }
   }, [
+    activeClips,
+    currentView,
+    editedPreviewFilePath,
+    editedPreviewRetryCount,
     filePath,
-    isGeneratingProxy,
-    proxyRetryCount,
+    isGeneratingSourceProxy,
+    previewMode,
     previewFilePath,
+    setEditedPreviewFilePath,
     setPreviewFilePath,
+    sourceProxyRetryCount,
     t,
   ]);
 
@@ -420,10 +600,14 @@ export function EditorView() {
               <div className="max-w-sm">
                 <Icon name="progress_activity" className="text-4xl text-primary animate-spin mb-4" />
                 <h3 className="text-lg font-semibold text-white mb-2">
-                  {t("detection.loadingPreviewTitle")}
+                  {isEditedPreviewMode
+                    ? t("detection.updatingEditedPreviewTitle")
+                    : t("detection.loadingPreviewTitle")}
                 </h3>
                 <p className="text-sm text-white/70 leading-relaxed">
-                  {t("detection.loadingPreviewDescription")}
+                  {isEditedPreviewMode
+                    ? t("detection.updatingEditedPreviewDescription")
+                    : t("detection.loadingPreviewDescription")}
                 </p>
               </div>
             </div>
@@ -484,6 +668,17 @@ export function EditorView() {
                   onPause={() => setIsPlaying(false)}
                   onLoadStart={() => setIsVideoReady(false)}
                   onLoadedData={() => {
+                    if (videoRef.current) {
+                      const targetTime =
+                        isUsingEditedSequenceSource
+                          ? currentEditedTime
+                          : currentView === "editor"
+                            ? editedToSourceTime(currentEditedTime, activeClips)
+                            : currentSourceTime;
+                      if (Math.abs(videoRef.current.currentTime - targetTime) > 0.15) {
+                        videoRef.current.currentTime = targetTime;
+                      }
+                    }
                     setMediaError(null);
                     setIsVideoReady(true);
                   }}
@@ -494,7 +689,7 @@ export function EditorView() {
                 />
               ) : (
                 <div className="text-on-surface-variant text-sm px-6 text-center">
-                  {isLoadingProxyBlob
+                  {isLoadingSourceProxyBlob || isLoadingEditedPreviewBlob
                     ? t("detection.proxyLoading")
                     : t("detection.importToBegin")}
                 </div>
@@ -504,9 +699,9 @@ export function EditorView() {
                 <div className="absolute inset-0 bg-black/70 flex items-center justify-center p-6 text-center">
                   <div>
                     <Icon
-                      name={isGeneratingProxy ? "sync" : "error"}
+                      name={isGeneratingSourceProxy || isGeneratingEditedPreview ? "sync" : "error"}
                       className={`text-4xl mb-3 ${
-                        isGeneratingProxy
+                        isGeneratingSourceProxy || isGeneratingEditedPreview
                           ? "text-primary animate-spin"
                           : "text-error"
                       }`}
@@ -579,10 +774,12 @@ export function EditorView() {
         <aside className="w-80 border-l border-outline-variant/10 bg-surface-container-high p-6 flex flex-col overflow-y-auto custom-scrollbar">
           <div className="mb-8">
             <h2 className="text-sm font-bold tracking-widest text-on-surface uppercase mb-1">
-              Silence Detection
+              {t("app.detectionReview")}
             </h2>
             <p className="text-xs text-on-surface-variant">
-              Automatically identify and remove dead air from your footage.
+              {isDetectionReview
+                ? t("detection.detectedGapsDescription")
+                : t("detection.gapsDescription")}
             </p>
           </div>
 
@@ -593,7 +790,7 @@ export function EditorView() {
               min={-60}
               max={0}
               step={1}
-              tooltip="Controla cuan bajo debe caer el audio para considerarlo silencio. Valores mas cercanos a 0 detectan mas pausas; valores mas bajos son mas conservadores."
+              tooltip={t("detection.thresholdTooltip")}
               displayValue={`${detectionSettings.noiseThreshold} dB`}
               onChange={(value) => updateDetectionSettings({ noiseThreshold: value })}
             />
@@ -604,23 +801,53 @@ export function EditorView() {
               min={0.1}
               max={3}
               step={0.1}
-              tooltip="Ignora pausas muy cortas. Subir este valor evita cortar micro-pausas; bajarlo detecta silencios mas pequenos."
+              tooltip={t("detection.minDurationTooltip")}
               displayValue={`${detectionSettings.minDuration}s`}
               onChange={(value) => updateDetectionSettings({ minDuration: value })}
             />
 
             <div className="pt-4 space-y-4">
-                  {!isDetectionReview && (
-                 <Toggle
-                   label={t("detection.previewEdited")}
-                   checked={previewEdited}
-                   onChange={setPreviewEdited}
-                   tooltip={t("detection.previewEditedTooltip")}
-                 />
-               )}
-               <Toggle
-                 label={t("detection.fade")}
-                 checked={detectionSettings.fadeEnabled}
+              {!isDetectionReview && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-semibold text-on-surface-variant">
+                      {t("detection.previewModeLabel")}
+                    </label>
+                    <Tooltip
+                      content={
+                        previewMode === "edited"
+                          ? t("detection.editedPreviewTooltip")
+                          : t("detection.sourcePreviewTooltip")
+                      }
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setPreviewMode("edited")}
+                      className={`py-2 text-xs font-bold rounded-md transition-all ${
+                        previewMode === "edited"
+                          ? "bg-primary text-on-primary"
+                          : "bg-surface-container-highest text-on-surface-variant"
+                      }`}
+                    >
+                      {t("detection.editedPreview")}
+                    </button>
+                    <button
+                      onClick={() => setPreviewMode("source")}
+                      className={`py-2 text-xs font-bold rounded-md transition-all ${
+                        previewMode === "source"
+                          ? "bg-primary text-on-primary"
+                          : "bg-surface-container-highest text-on-surface-variant"
+                      }`}
+                    >
+                      {t("detection.sourcePreview")}
+                    </button>
+                  </div>
+                </div>
+              )}
+                <Toggle
+                  label={t("detection.fade")}
+                  checked={detectionSettings.fadeEnabled}
                  onChange={(value) => updateDetectionSettings({ fadeEnabled: value })}
                  tooltip={t("detection.fadeTooltip")}
                />

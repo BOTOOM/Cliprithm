@@ -1,4 +1,5 @@
 export type AppView = "import" | "processing" | "detection" | "editor" | "export";
+export type PreviewMode = "source" | "edited";
 
 export interface VideoMetadata {
   duration: number;

@@ -74,3 +74,22 @@ export async function generatePreviewProxy(
   log.info("[preview]", "Preview proxy ready:", result);
   return result;
 }
+
+export async function generateEditedSequencePreview(
+  inputPath: string,
+  outputPath: string,
+  segmentsToKeep: Array<{ start: number; end: number }>
+): Promise<string> {
+  assertDesktop("La generación del preview editado");
+  log.info(
+    "[preview]",
+    `Generating edited sequence preview → ${outputPath} | clips:${segmentsToKeep.length}`
+  );
+  const result = await invoke<string>("generate_sequence_preview", {
+    inputPath,
+    outputPath,
+    segmentsToKeep,
+  });
+  log.info("[preview]", "Edited sequence preview ready:", result);
+  return result;
+}

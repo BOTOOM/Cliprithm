@@ -85,9 +85,13 @@ const translations = {
       minDuration: "Min Duration (s)",
       minDurationTooltip:
         "Ignores very short pauses. Raising it avoids cutting micro-pauses; lowering it detects smaller silent gaps.",
-      previewEdited: "Preview Edited Timeline",
-      previewEditedTooltip:
-        "Attempts to simulate the edited playback by skipping detected silence ranges. This can be more demanding on the preview player.",
+      previewModeLabel: "Preview Mode",
+      editedPreview: "Edited Preview",
+      editedPreviewTooltip:
+        "Plays the assembled sequence using only active clips, so the monitor matches the final cut more closely.",
+      sourcePreview: "Source Preview",
+      sourcePreviewTooltip:
+        "Shows the original file with all silence intact so you can compare against the edited sequence.",
       fade: "Fade Out/In",
       fadeTooltip:
         "Softens the transition between cuts so adjacent clips feel less abrupt.",
@@ -124,6 +128,9 @@ const translations = {
       removeClip: "Remove Clip",
       importToBegin: "Import a video to get started.",
       proxyLoading: "Loading preview proxy...",
+      updatingEditedPreviewTitle: "Updating edited preview...",
+      updatingEditedPreviewDescription:
+        "The sequence preview is being rebuilt from your current clips so playback matches the latest timeline.",
       fullVideo: "Full Video",
       proxyMemoryLoad:
         "A preview proxy was generated, but it could not be loaded into memory: {{error}}",
@@ -268,9 +275,13 @@ const translations = {
       minDuration: "Duracion minima (s)",
       minDurationTooltip:
         "Ignora pausas muy cortas. Subir este valor evita cortar micro-pausas; bajarlo detecta huecos mas pequenos.",
-      previewEdited: "Preview de timeline editada",
-      previewEditedTooltip:
-        "Intenta simular la reproduccion editada saltando los rangos de silencio detectados. Puede exigir mas al reproductor.",
+      previewModeLabel: "Modo de preview",
+      editedPreview: "Preview editado",
+      editedPreviewTooltip:
+        "Reproduce la secuencia ensamblada usando solo los clips activos para que el monitor se parezca al corte final.",
+      sourcePreview: "Preview original",
+      sourcePreviewTooltip:
+        "Muestra el archivo original con todos los silencios para compararlo contra la secuencia editada.",
       fade: "Fade out/in",
       fadeTooltip:
         "Suaviza la entrada y salida entre cortes para que el cambio entre clips se sienta menos brusco.",
@@ -307,6 +318,9 @@ const translations = {
       removeClip: "Eliminar clip",
       importToBegin: "Importa un video para comenzar.",
       proxyLoading: "Cargando proxy de preview...",
+      updatingEditedPreviewTitle: "Actualizando preview editado...",
+      updatingEditedPreviewDescription:
+        "La secuencia se esta reconstruyendo a partir de tus clips actuales para que la reproduccion refleje la timeline mas reciente.",
       fullVideo: "Video completo",
       proxyMemoryLoad:
         "Se genero un proxy de preview, pero no se pudo cargar en memoria: {{error}}",

@@ -12,6 +12,7 @@ import type {
   DetectionSettings,
   ExportSettings,
   ProcessingProgress,
+  PreviewMode,
   SilenceSegment,
   VideoMetadata,
 } from "../types";
@@ -78,10 +79,14 @@ interface ProjectState {
   videoMetadata: VideoMetadata | null;
   processedFilePath: string | null;
   previewFilePath: string | null;
+  editedPreviewFilePath: string | null;
+  previewMode: PreviewMode;
   setFilePath: (path: string | null) => void;
   setVideoMetadata: (metadata: VideoMetadata | null) => void;
   setProcessedFilePath: (path: string | null) => void;
   setPreviewFilePath: (path: string | null) => void;
+  setEditedPreviewFilePath: (path: string | null) => void;
+  setPreviewMode: (mode: PreviewMode) => void;
 
   detectionResult: DetectionResult | null;
   setDetectionResult: (result: DetectionResult | null) => void;
@@ -149,10 +154,20 @@ export const useProjectStore = create<ProjectState>((set) => ({
   videoMetadata: null,
   processedFilePath: null,
   previewFilePath: null,
-  setFilePath: (path) => set({ filePath: path }),
+  editedPreviewFilePath: null,
+  previewMode: "source",
+  setFilePath: (path) =>
+    set({
+      filePath: path,
+      previewFilePath: null,
+      editedPreviewFilePath: null,
+      previewMode: "source",
+    }),
   setVideoMetadata: (metadata) => set({ videoMetadata: metadata }),
   setProcessedFilePath: (path) => set({ processedFilePath: path }),
   setPreviewFilePath: (path) => set({ previewFilePath: path }),
+  setEditedPreviewFilePath: (path) => set({ editedPreviewFilePath: path }),
+  setPreviewMode: (mode) => set({ previewMode: mode }),
 
   detectionResult: null,
   setDetectionResult: (result) =>
@@ -167,6 +182,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
           removedSegments: result?.segments ?? [],
           clipSegments,
           selectedClipId: clipSegments[0]?.id ?? null,
+          editedPreviewFilePath: null,
+          previewMode: "source",
           editHistory: [],
           canUndo: false,
         };
@@ -180,6 +197,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
     set(() => ({
       clipSegments: segments,
       selectedClipId: segments[0]?.id ?? null,
+      editedPreviewFilePath: null,
       editHistory: [],
       canUndo: false,
     })),
@@ -287,6 +305,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
       videoMetadata: null,
       processedFilePath: null,
       previewFilePath: null,
+      editedPreviewFilePath: null,
+      previewMode: "source",
       detectionResult: null,
       removedSegments: [],
       clipSegments: [],
