@@ -61,10 +61,12 @@ async fn handle_connection(mut stream: tokio::net::TcpStream) {
         return;
     }
 
-    if method != "GET" {
+    if method != "GET" && method != "HEAD" {
         send_error(&mut stream, 405, "Method Not Allowed").await;
         return;
     }
+
+    let is_head = method == "HEAD";
 
     let query_params = parse_query_string(url);
     let file_path = match query_params.get("path") {
@@ -99,10 +101,10 @@ async fn handle_connection(mut stream: tokio::net::TcpStream) {
 
     match range {
         Some((start, end)) => {
-            serve_range(&mut stream, &path, start, end, file_size, &content_type).await;
+            serve_range(&mut stream, &path, start, end, file_size, &content_type, is_head).await;
         }
         None => {
-            serve_full(&mut stream, &path, file_size, &content_type).await;
+            serve_full(&mut stream, &path, file_size, &content_type, is_head).await;
         }
     }
 }
@@ -114,6 +116,7 @@ async fn serve_range(
     end: u64,
     total: u64,
     content_type: &str,
+    head_only: bool,
 ) {
     let content_length = end - start + 1;
     let header = format!(
@@ -131,6 +134,10 @@ async fn serve_range(
     );
 
     if stream.write_all(header.as_bytes()).await.is_err() {
+        return;
+    }
+
+    if head_only {
         return;
     }
 
@@ -166,6 +173,7 @@ async fn serve_full(
     path: &PathBuf,
     file_size: u64,
     content_type: &str,
+    head_only: bool,
 ) {
     let header = format!(
         "HTTP/1.1 200 OK\r\n\
@@ -181,6 +189,10 @@ async fn serve_full(
     );
 
     if stream.write_all(header.as_bytes()).await.is_err() {
+        return;
+    }
+
+    if head_only {
         return;
     }
 
