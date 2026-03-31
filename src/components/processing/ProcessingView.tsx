@@ -1,7 +1,9 @@
 import { useProjectStore } from "../../stores/projectStore";
+import { useI18n } from "../../lib/i18n";
 import { Icon } from "../ui/Icon";
 
 export function ProcessingView() {
+  const { t } = useI18n();
   const { progress, filePath, detectionSettings, detectionResult } =
     useProjectStore();
 
@@ -14,6 +16,12 @@ export function ProcessingView() {
   const orbitRadius = 104;
   const orbitX = Math.cos(orbitAngle) * orbitRadius;
   const orbitY = Math.sin(orbitAngle) * orbitRadius;
+  const progressTitle =
+    progress.stage === "metadata"
+      ? t("mediaLibrary.loadingProject")
+      : progress.stage === "analyzing"
+        ? t("processing.defaultMessage")
+        : progress.message || t("processing.defaultMessage");
 
   return (
     <div className="flex-1 relative flex flex-col items-center justify-center p-8 overflow-hidden h-full">
@@ -27,12 +35,12 @@ export function ProcessingView() {
               if (isSilence || isSilence2) {
                 return i === 8 || i === 20 ? (
                   <div
-                    key={i}
-                    className="h-4 flex-1 mx-1 bg-error-container/40 flex items-center justify-center border-x border-error-dim/50 self-center"
-                  >
-                    <span className="text-[8px] uppercase font-bold tracking-tighter text-error-dim">
-                      Silence Removed
-                    </span>
+                      key={i}
+                      className="h-4 flex-1 mx-1 bg-error-container/40 flex items-center justify-center border-x border-error-dim/50 self-center"
+                    >
+                      <span className="text-[8px] uppercase font-bold tracking-tighter text-error-dim">
+                        {t("processing.silenceRemoved")}
+                      </span>
                   </div>
                 ) : null;
               }
@@ -74,7 +82,7 @@ export function ProcessingView() {
               <span className="text-2xl text-primary">%</span>
             </div>
             <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
-              Complete
+              {t("processing.complete")}
             </div>
           </div>
           {/* Orbital dot */}
@@ -89,20 +97,20 @@ export function ProcessingView() {
         {/* Text feedback */}
         <div className="text-center space-y-3">
           <h2 className="text-2xl font-bold text-on-surface tracking-tight">
-            {progress.message || "Analyzing video for silence..."}
+             {progressTitle}
           </h2>
           <div className="flex items-center justify-center gap-6">
             <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high rounded-full border border-outline-variant/10">
               <Icon name="timer" className="text-sm text-primary" />
               <span className="text-xs font-medium text-on-surface-variant">
-                Stage:{" "}
+                {t("processing.stage")}:{" "}
                 <span className="text-on-surface">{progress.stage}</span>
               </span>
             </div>
             <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high rounded-full border border-outline-variant/10">
               <Icon name="cut" className="text-sm text-secondary" />
               <span className="text-xs font-medium text-on-surface-variant">
-                Cuts detected:{" "}
+                 {t("processing.cutsDetected")}:{" "}
                 <span className="text-on-surface">{cutsDetected}</span>
               </span>
             </div>
@@ -122,27 +130,27 @@ export function ProcessingView() {
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4 w-full max-w-4xl px-8">
         <div className="flex-1 glass-panel p-4 rounded-xl border border-outline-variant/10">
           <div className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">
-            Source File
+            {t("processing.sourceFile")}
           </div>
           <div className="text-sm font-medium truncate">{fileName}</div>
         </div>
         <div className="flex-none w-48 glass-panel p-4 rounded-xl border border-outline-variant/10">
           <div className="text-[10px] font-bold text-secondary uppercase tracking-widest mb-1">
-            Decibel Floor
+            {t("processing.decibelFloor")}
           </div>
           <div className="text-sm font-medium">
-            {detectionSettings.noiseThreshold}dB Sensitivity
+            {detectionSettings.noiseThreshold}dB {t("processing.sensitivity")}
           </div>
         </div>
         <div className="flex-none w-48 glass-panel p-4 rounded-xl border border-outline-variant/10">
           <div className="text-[10px] font-bold text-tertiary uppercase tracking-widest mb-1">
             {detectionSettings.mode === "speed"
-              ? "Speed Multiplier"
-              : "Min Duration"}
+              ? t("processing.speedMultiplier")
+              : t("processing.minDuration")}
           </div>
           <div className="text-sm font-medium">
             {detectionSettings.mode === "speed"
-              ? `${detectionSettings.speedMultiplier}x Skip Speed`
+              ? `${detectionSettings.speedMultiplier}x ${t("processing.skipSpeed")}`
               : `${detectionSettings.minDuration}s`}
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { Icon } from "../ui/Icon";
+import { useI18n } from "../../lib/i18n";
 import { useProjectStore } from "../../stores/projectStore";
 
 type SideTab = "media" | "files" | "settings";
@@ -9,14 +10,14 @@ interface SideNavItem {
   label: string;
 }
 
-const navItems: SideNavItem[] = [
-  { id: "media", icon: "video_library", label: "Media\nLibrary" },
-  { id: "files", icon: "folder_open", label: "Project\nFiles" },
-  { id: "settings", icon: "settings", label: "Settings" },
-];
-
 export function SideNavBar() {
+  const { language, setLanguage, t } = useI18n();
   const { activeSideTab, setActiveSideTab } = useProjectStore();
+  const navItems: SideNavItem[] = [
+    { id: "media", icon: "video_library", label: t("app.mediaLibrary") },
+    { id: "files", icon: "folder_open", label: t("app.projectFiles") },
+    { id: "settings", icon: "settings", label: t("app.settings") },
+  ];
 
   return (
     <aside className="w-20 flex flex-col items-center py-6 bg-surface-container z-40">
@@ -40,6 +41,31 @@ export function SideNavBar() {
             </button>
           );
         })}
+      </div>
+      <div className="mt-auto w-full px-2 pt-6">
+        <div className="rounded-xl bg-surface-container-high p-2 border border-outline-variant/10">
+          <div className="text-[8px] uppercase tracking-widest text-center text-on-surface-variant mb-2">
+            {t("app.language")}
+          </div>
+          <div className="grid gap-1">
+            {(["en", "es"] as const).map((option) => {
+              const isActive = language === option;
+              return (
+                <button
+                  key={option}
+                  onClick={() => setLanguage(option)}
+                  className={`text-[10px] font-semibold rounded-md py-1.5 transition-colors ${
+                    isActive
+                      ? "bg-primary text-on-primary"
+                      : "text-on-surface-variant hover:bg-surface-container-highest hover:text-white"
+                  }`}
+                >
+                  {option === "en" ? t("app.english") : t("app.spanish")}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </aside>
   );

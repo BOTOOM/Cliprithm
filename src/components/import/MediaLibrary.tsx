@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { log } from "../../lib/logger";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { resolveMediaSrc } from "../../lib/media";
+import { useI18n } from "../../lib/i18n";
 import { Icon } from "../ui/Icon";
 import {
   getAllProjects,
@@ -13,6 +14,7 @@ import { getVideoMetadata, detectSilence } from "../../services/tauriCommands";
 import { formatTime, formatFileSize } from "../../lib/utils";
 
 export function MediaLibrary() {
+  const { t } = useI18n();
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -56,7 +58,7 @@ export function MediaLibrary() {
         setProgress({
           percent: 10,
           stage: "metadata",
-          message: "Loading project...",
+          message: t("mediaLibrary.loadingProject"),
         });
 
         const metadata = await getVideoMetadata(project.file_path);
@@ -77,7 +79,7 @@ export function MediaLibrary() {
           setProgress({
             percent: 100,
             stage: "complete",
-            message: `Loaded ${segments.length} cached segments`,
+            message: t("mediaLibrary.loadedCachedSegments", { count: segments.length }),
           });
           setView("detection");
           return;
@@ -86,7 +88,7 @@ export function MediaLibrary() {
         setProgress({
           percent: 25,
           stage: "analyzing",
-          message: "Detecting silence...",
+          message: t("mediaLibrary.detectingSilence"),
         });
         const result = await detectSilence(
           project.file_path,
@@ -128,7 +130,7 @@ export function MediaLibrary() {
           <Icon name="desktop_windows" className="text-outline text-xl" />
         </div>
         <p className="text-xs text-on-surface-variant leading-relaxed">
-          Media Library, SQLite y auto-updates solo corren dentro de la app de escritorio.
+          {t("mediaLibrary.desktopOnly")}
         </p>
       </div>
     );
@@ -152,7 +154,7 @@ export function MediaLibrary() {
           <Icon name="cloud_off" className="text-outline text-xl" />
         </div>
         <p className="text-xs text-on-surface-variant">
-          No media imported yet. Start a new project to see files here.
+          {t("mediaLibrary.empty")}
         </p>
       </div>
     );
@@ -162,10 +164,10 @@ export function MediaLibrary() {
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between p-4 pb-2">
         <h3 className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
-          Recent Projects
+          {t("mediaLibrary.recentProjects")}
         </h3>
         <span className="text-[10px] text-on-surface-variant/60">
-          {projects.length} files
+          {projects.length} {t("mediaLibrary.files")}
         </span>
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar px-2 space-y-1.5">
@@ -207,9 +209,9 @@ export function MediaLibrary() {
                   {project.status === "processed" && (
                     <>
                       <span className="text-[9px] text-on-surface-variant/40">•</span>
-                      <span className="text-[9px] text-primary font-medium">
-                        Processed
-                      </span>
+                        <span className="text-[9px] text-primary font-medium">
+                         {t("mediaLibrary.processed")}
+                        </span>
                     </>
                   )}
                 </div>

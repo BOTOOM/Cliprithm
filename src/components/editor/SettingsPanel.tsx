@@ -1,9 +1,11 @@
 import { useCaptionsStore, PROVIDER_INFO } from "../../stores/captionsStore";
+import { useI18n } from "../../lib/i18n";
 import { Icon } from "../ui/Icon";
 import { Toggle } from "../ui/Toggle";
 import type { CaptionProvider } from "../../types";
 
 export function SettingsPanel() {
+  const { t } = useI18n();
   const {
     enabled,
     provider,
@@ -27,19 +29,19 @@ export function SettingsPanel() {
   return (
     <div className="flex-1 flex flex-col h-full p-6 overflow-y-auto custom-scrollbar">
       <h2 className="text-sm font-bold tracking-widest text-on-surface uppercase mb-6">
-        Settings
+        {t("settingsPanel.settings")}
       </h2>
 
       {/* Captions Section */}
       <section className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-xs font-bold text-on-surface uppercase tracking-wider">
-              Captions Beta
-            </h3>
-            <p className="text-[10px] text-on-surface-variant mt-1">
-              Generate transcription and captions from your video audio.
-            </p>
+              <h3 className="text-xs font-bold text-on-surface uppercase tracking-wider">
+                {t("settingsPanel.captionsBeta")}
+              </h3>
+              <p className="text-[10px] text-on-surface-variant mt-1">
+                {t("settingsPanel.captionsDescription")}
+              </p>
           </div>
           <Toggle label="" checked={enabled} onChange={setEnabled} />
         </div>
@@ -49,7 +51,7 @@ export function SettingsPanel() {
             {/* Provider Selection */}
             <div className="space-y-3">
               <label className="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">
-                Provider
+                  {t("settingsPanel.provider")}
               </label>
               <div className="space-y-2">
                 {(Object.keys(PROVIDER_INFO) as CaptionProvider[]).map((p) => {
@@ -93,17 +95,17 @@ export function SettingsPanel() {
             {providerInfo.requiresKey && (
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">
-                  API Key
+                  {t("settingsPanel.apiKey")}
                 </label>
                 <input
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={`Enter your ${providerInfo.label} API key...`}
+                   placeholder={t("settingsPanel.enterApiKey", { provider: providerInfo.label })}
                   className="w-full bg-surface-container-lowest border-0 rounded-md focus:ring-1 focus:ring-primary text-on-surface py-2 px-3 text-xs placeholder-on-surface-variant/40"
                 />
                 <p className="text-[9px] text-on-surface-variant/60">
-                  Your key is stored locally and never sent to our servers.
+                  {t("settingsPanel.keyStoredLocally")}
                 </p>
               </div>
             )}
@@ -112,7 +114,7 @@ export function SettingsPanel() {
             {provider === "ollama" && (
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">
-                  Ollama URL
+                  {t("settingsPanel.ollamaUrl")}
                 </label>
                 <input
                   type="text"
@@ -126,7 +128,7 @@ export function SettingsPanel() {
             {provider === "lmstudio" && (
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">
-                  LM Studio URL
+                  {t("settingsPanel.lmStudioUrl")}
                 </label>
                 <input
                   type="text"
@@ -140,7 +142,7 @@ export function SettingsPanel() {
             {/* Model Selection */}
             <div className="space-y-2">
               <label className="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">
-                Model
+                  {t("settingsPanel.model")}
               </label>
               <div className="flex flex-col gap-1.5">
                 {providerInfo.models.map((m) => (
@@ -170,14 +172,12 @@ export function SettingsPanel() {
                       name="info"
                       className="text-sm text-primary-fixed mt-0.5"
                     />
-                    <p className="text-[10px] text-on-surface-variant leading-relaxed">
-                      <strong className="text-on-surface">
-                        Recommended for low-resource machines:
-                      </strong>{" "}
-                      Use <code className="text-primary">whisper:base</code> or{" "}
-                      <code className="text-primary">whisper:small</code>. These
-                      models require ~1-2GB RAM and work on most machines.
-                    </p>
+                      <p className="text-[10px] text-on-surface-variant leading-relaxed">
+                        <strong className="text-on-surface">
+                         {t("settingsPanel.recommended")}
+                        </strong>{" "}
+                        {t("settingsPanel.localModelRecommendation")}
+                     </p>
                   </div>
                 </div>
               )}
@@ -186,16 +186,15 @@ export function SettingsPanel() {
             {/* Output Options */}
             <div className="space-y-3 pt-4 border-t border-outline-variant/10">
               <label className="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">
-                Output
+                {t("settingsPanel.output")}
               </label>
               <Toggle
-                label="Burn-in captions on export"
+                label={t("settingsPanel.burnIn")}
                 checked={burnIn}
                 onChange={setBurnIn}
               />
               <p className="text-[9px] text-on-surface-variant/60">
-                Generated captions will be exported as both SRT and WebVTT
-                files. Enable burn-in to embed them directly in the video.
+                {t("settingsPanel.outputDescription")}
               </p>
             </div>
           </>

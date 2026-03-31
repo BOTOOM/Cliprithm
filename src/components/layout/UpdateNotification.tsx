@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { check, Update } from "@tauri-apps/plugin-updater";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { log } from "../../lib/logger";
+import { useI18n } from "../../lib/i18n";
 import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
 
@@ -15,6 +16,7 @@ type UpdateState =
   | { status: "uptodate" };
 
 export function UpdateNotification() {
+  const { t } = useI18n();
   const [state, setState] = useState<UpdateState>({ status: "idle" });
   const [dismissed, setDismissed] = useState(false);
 
@@ -108,9 +110,9 @@ export function UpdateNotification() {
             <Icon name="sync" className="text-primary text-lg" />
           </div>
           <div>
-            <p className="text-xs font-bold text-on-surface">
-              Checking for updates...
-            </p>
+              <p className="text-xs font-bold text-on-surface">
+               {t("updates.checking")}
+              </p>
           </div>
         </div>
       )}
@@ -121,7 +123,7 @@ export function UpdateNotification() {
             <Icon name="check_circle" className="text-primary text-lg" />
           </div>
           <p className="text-xs font-medium text-on-surface-variant">
-            You're running the latest version!
+            {t("updates.latestVersion")}
           </p>
         </div>
       )}
@@ -134,12 +136,12 @@ export function UpdateNotification() {
                 <Icon name="system_update" className="text-primary text-xl" />
               </div>
               <div>
-                <p className="text-sm font-bold text-on-surface">
-                  Update Available
-                </p>
-                <p className="text-[10px] text-on-surface-variant">
-                  Version {state.update.version}
-                </p>
+                 <p className="text-sm font-bold text-on-surface">
+                   {t("updates.available")}
+                 </p>
+                 <p className="text-[10px] text-on-surface-variant">
+                   {t("updates.version", { version: state.update.version })}
+                 </p>
               </div>
             </div>
             <button
@@ -156,7 +158,7 @@ export function UpdateNotification() {
           )}
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={() => setDismissed(true)}>
-              Later
+               {t("updates.later")}
             </Button>
             <Button
               variant="primary"
@@ -164,7 +166,7 @@ export function UpdateNotification() {
               className="flex-1"
               onClick={handleDownloadAndInstall}
             >
-              Download & Install
+               {t("updates.downloadInstall")}
             </Button>
           </div>
         </div>
@@ -178,10 +180,10 @@ export function UpdateNotification() {
             </div>
             <div>
               <p className="text-sm font-bold text-on-surface">
-                Downloading update...
+                 {t("updates.downloading")}
               </p>
               <p className="text-[10px] text-on-surface-variant">
-                {state.percent}% complete
+                 {t("updates.percentComplete", { percent: state.percent })}
               </p>
             </div>
           </div>
@@ -201,15 +203,15 @@ export function UpdateNotification() {
               <Icon name="restart_alt" className="text-primary text-xl" />
             </div>
             <div>
-              <p className="text-sm font-bold text-on-surface">Update ready!</p>
-              <p className="text-[10px] text-on-surface-variant">
-                Restart the app to apply the update.
-              </p>
+               <p className="text-sm font-bold text-on-surface">{t("updates.ready")}</p>
+               <p className="text-[10px] text-on-surface-variant">
+                 {t("updates.restartToApply")}
+               </p>
             </div>
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={() => setDismissed(true)}>
-              Later
+               {t("updates.later")}
             </Button>
             <Button
               variant="primary"
@@ -217,7 +219,7 @@ export function UpdateNotification() {
               className="flex-1"
               onClick={handleRestart}
             >
-              Restart Now
+               {t("updates.restartNow")}
             </Button>
           </div>
         </div>
@@ -227,7 +229,7 @@ export function UpdateNotification() {
         <div className="p-4 flex items-center gap-3">
           <Icon name="error" className="text-error text-lg" />
           <div className="flex-1">
-            <p className="text-xs font-bold text-error">Update failed</p>
+            <p className="text-xs font-bold text-error">{t("updates.failed")}</p>
             <p className="text-[10px] text-on-surface-variant truncate">
               {state.message}
             </p>

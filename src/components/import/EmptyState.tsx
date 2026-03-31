@@ -7,6 +7,7 @@ import {
   extractBrowserVideoMetadata,
   getFileName,
 } from "../../lib/media";
+import { useI18n } from "../../lib/i18n";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
 import { getVideoMetadata, detectSilence } from "../../services/tauriCommands";
@@ -16,6 +17,7 @@ import { Button } from "../ui/Button";
 import { MediaLibrary } from "./MediaLibrary";
 
 export function EmptyState() {
+  const { t, tList } = useI18n();
   const {
     setFilePath,
     setVideoMetadata,
@@ -84,7 +86,7 @@ export function EmptyState() {
         setProgress({
           percent: 25,
           stage: "analyzing",
-          message: "Detecting silence...",
+          message: t("mediaLibrary.detectingSilence"),
         });
         const result = await detectSilence(
           path,
@@ -115,7 +117,7 @@ export function EmptyState() {
       try {
         setError(null);
         setNotice(
-          "Modo navegador: puedes probar la UI y el preview local, pero FFmpeg/SQLite/export siguen siendo exclusivos de la app desktop."
+          t("importView.browserNotice")
         );
         const { url, metadata } = await extractBrowserVideoMetadata(file);
         setProcessedFilePath(null);
@@ -177,9 +179,9 @@ export function EmptyState() {
       <div className="flex h-full">
         <div className="w-64 bg-surface-container border-r border-surface-container-high flex flex-col">
           <div className="flex items-center justify-between p-4 pb-0">
-            <h2 className="text-on-surface-variant font-medium uppercase tracking-widest text-xs">
-              Media Library
-            </h2>
+              <h2 className="text-on-surface-variant font-medium uppercase tracking-widest text-xs">
+              {t("importView.mediaLibrary")}
+              </h2>
             <Icon name="filter_list" className="text-on-surface-variant text-sm" />
           </div>
           <MediaLibrary />
@@ -222,15 +224,14 @@ export function EmptyState() {
                 />
               </div>
               <h1 className="text-2xl font-bold text-on-surface mb-3 tracking-tight">
-                Drag & Drop your video here to start removing silence.
+                {t("importView.dragDropTitle")}
               </h1>
               <p className="text-on-surface-variant text-sm mb-10 leading-relaxed px-8">
-                Our engine surgically detects and removes audio gaps to make your
-                content punchy and professional.
+                {t("importView.dragDropDescription")}
               </p>
               <div className="flex flex-col gap-4 w-full px-12">
                 <Button variant="primary" className="w-full py-3" onClick={handleBrowse}>
-                  Browse Files
+                  {t("importView.browseFiles")}
                 </Button>
               </div>
               {notice && (
@@ -239,7 +240,7 @@ export function EmptyState() {
               {error && <p className="mt-4 text-error text-xs">{error}</p>}
             </div>
             <div className="absolute bottom-8 flex gap-8">
-              {["MP4, MOV, MKV", "Up to 4K 60FPS", "Max 2GB"].map((text) => (
+              {tList("importView.specs").map((text) => (
                 <div
                   key={text}
                   className="flex items-center gap-2 text-[10px] text-on-surface-variant/60 font-medium uppercase tracking-widest"
@@ -256,20 +257,20 @@ export function EmptyState() {
               {
                 icon: "auto_fix_high",
                 color: "text-primary-dim",
-                title: "Smart Cut",
-                desc: "Automatically identifies pauses based on decibel thresholds and breath analysis.",
+                title: t("importView.smartCut"),
+                desc: t("importView.smartCutDescription"),
               },
               {
                 icon: "speed",
                 color: "text-secondary",
-                title: "Time Warp",
-                desc: "Accelerate dead air instead of cutting it for a more natural conversational flow.",
+                title: t("importView.timeWarp"),
+                desc: t("importView.timeWarpDescription"),
               },
               {
                 icon: "closed_caption",
                 color: "text-tertiary",
-                title: "Captions Beta",
-                desc: "Generate transcription and captions simultaneously as you process the video.",
+                title: t("importView.captions"),
+                desc: t("importView.captionsDescription"),
               },
             ].map((card) => (
               <div
