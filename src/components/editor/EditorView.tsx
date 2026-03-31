@@ -17,6 +17,7 @@ import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 import { Slider } from "../ui/Slider";
 import { Toggle } from "../ui/Toggle";
+import { Tooltip } from "../ui/Tooltip";
 import { DetectionTimeline } from "../timeline/DetectionTimeline";
 import { Timeline } from "../timeline/Timeline";
 
@@ -54,6 +55,8 @@ export function EditorView() {
   const [isGeneratingProxy, setIsGeneratingProxy] = useState(false);
   const [proxyBlobUrl, setProxyBlobUrl] = useState<string | null>(null);
   const [isLoadingProxyBlob, setIsLoadingProxyBlob] = useState(false);
+  const [isVideoReady, setIsVideoReady] = useState(false);
+  const lastDetectedSignatureRef = useRef<string | null>(null);
 
   const duration = videoMetadata?.duration ?? 0;
   const isDetectionReview = currentView === "detection";
@@ -83,6 +86,18 @@ export function EditorView() {
   const videoSrc = previewFilePath
     ? proxyBlobUrl
     : resolveMediaSrc(filePath);
+  const isPreviewBusy =
+    Boolean(videoSrc) && (!isVideoReady || isGeneratingProxy || isLoadingProxyBlob);
+
+  const detectionSignature = JSON.stringify({
+    noiseThreshold: detectionSettings.noiseThreshold,
+    minDuration: detectionSettings.minDuration,
+    detectBreath: detectionSettings.detectBreath,
+  });
+
+  useEffect(() => {
+    setIsVideoReady(false);
+  }, [videoSrc]);
 
   useEffect(() => {
     if (!previewFilePath || !isDesktopRuntime()) {
@@ -233,6 +248,11 @@ export function EditorView() {
         detectionSettings.minDuration
       );
       setDetectionResult(result);
+      lastDetectedSignatureRef.current = JSON.stringify({
+        noiseThreshold: detectionSettings.noiseThreshold,
+        minDuration: detectionSettings.minDuration,
+        detectBreath: detectionSettings.detectBreath,
+      });
       setPreviewEdited(false);
       setView("detection");
     } catch (err) {
@@ -241,6 +261,27 @@ export function EditorView() {
       setIsRedetecting(false);
     }
   }, [detectionSettings, filePath, setDetectionResult, setView]);
+
+  useEffect(() => {
+    if (!isDetectionReview || !filePath || filePath.startsWith("blob:")) {
+      return;
+    }
+
+    if (lastDetectedSignatureRef.current === null) {
+      lastDetectedSignatureRef.current = detectionSignature;
+      return;
+    }
+
+    if (lastDetectedSignatureRef.current === detectionSignature) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void handleRedetect();
+    }, 450);
+
+    return () => window.clearTimeout(timeout);
+  }, [detectionSignature, filePath, handleRedetect, isDetectionReview]);
 
   const handleApplySuggestedCuts = useCallback(() => {
     applySuggestedCuts();
@@ -325,9 +366,23 @@ export function EditorView() {
   ]);
 
   return (
-    <div className="flex-1 flex flex-col h-full">
-      <div className="flex-1 flex min-h-0">
-        <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex-1 flex flex-col h-full min-w-0">
+      <div className="flex-1 flex min-h-0 min-w-0">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 relative">
+          {isPreviewBusy && (
+            <div className="absolute inset-0 z-30 bg-black/55 backdrop-blur-sm flex items-center justify-center p-6 text-center">
+              <div className="max-w-sm">
+                <Icon name="progress_activity" className="text-4xl text-primary animate-spin mb-4" />
+                <h3 className="text-lg font-semibold text-white mb-2">
+                  Cargando preview del video...
+                </h3>
+                <p className="text-sm text-white/70 leading-relaxed">
+                  Espera un momento. El sistema todavia esta preparando el video y la
+                  timeline para que puedas interactuar sin errores.
+                </p>
+              </div>
+            </div>
+          )}
           <div className="flex-1 flex items-center justify-center p-8 bg-surface-container-low relative min-h-[420px]">
              <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-surface-container-highest/75 backdrop-blur-xl px-4 py-2 rounded-full border border-outline-variant/10 shadow-2xl z-10">
                {isDetectionReview ? (
@@ -382,7 +437,12 @@ export function EditorView() {
                   onEnded={() => setIsPlaying(false)}
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
-                  onLoadedData={() => setMediaError(null)}
+                  onLoadStart={() => setIsVideoReady(false)}
+                  onLoadedData={() => {
+                    setMediaError(null);
+                    setIsVideoReady(true);
+                  }}
+                  onCanPlay={() => setIsVideoReady(true)}
                   onError={() => void handleVideoError()}
                   controls={false}
                   playsInline
@@ -488,6 +548,7 @@ export function EditorView() {
               min={-60}
               max={0}
               step={1}
+              tooltip="Controla cuan bajo debe caer el audio para considerarlo silencio. Valores mas cercanos a 0 detectan mas pausas; valores mas bajos son mas conservadores."
               displayValue={`${detectionSettings.noiseThreshold} dB`}
               onChange={(value) => updateDetectionSettings({ noiseThreshold: value })}
             />
@@ -498,6 +559,7 @@ export function EditorView() {
               min={0.1}
               max={3}
               step={0.1}
+              tooltip="Ignora pausas muy cortas. Subir este valor evita cortar micro-pausas; bajarlo detecta silencios mas pequenos."
               displayValue={`${detectionSettings.minDuration}s`}
               onChange={(value) => updateDetectionSettings({ minDuration: value })}
             />
@@ -508,43 +570,51 @@ export function EditorView() {
                    label="Preview Edited Timeline"
                    checked={previewEdited}
                    onChange={setPreviewEdited}
+                   tooltip="Intenta simular la reproduccion ya editada saltando los silencios detectados. Puede ser mas exigente para el reproductor."
                  />
                )}
-              <Toggle
-                label="Fade Out/In"
-                checked={detectionSettings.fadeEnabled}
-                onChange={(value) => updateDetectionSettings({ fadeEnabled: value })}
-              />
-              <Toggle
-                label="Detect Breath"
-                checked={detectionSettings.detectBreath}
-                onChange={(value) => updateDetectionSettings({ detectBreath: value })}
-              />
-              <div className="pt-2">
-                <label className="text-xs font-semibold text-on-surface-variant mb-2 block">
-                  Mode
-                </label>
-                <div className="flex gap-2">
+               <Toggle
+                 label="Fade Out/In"
+                 checked={detectionSettings.fadeEnabled}
+                 onChange={(value) => updateDetectionSettings({ fadeEnabled: value })}
+                 tooltip="Suaviza la entrada y salida entre cortes para que el cambio entre clips se sienta menos brusco."
+               />
+               <Toggle
+                 label="Detect Breath"
+                 checked={detectionSettings.detectBreath}
+                 onChange={(value) => updateDetectionSettings({ detectBreath: value })}
+                 tooltip="Reserva pausas respiradas con mas cuidado. En este MVP afecta el criterio futuro de deteccion, no el export ya generado."
+               />
+               <div className="pt-2">
+                 <div className="flex items-center gap-2 mb-2">
+                   <label className="text-xs font-semibold text-on-surface-variant">
+                     Mode
+                   </label>
+                   <Tooltip content="Cut Silence removes detected gaps. Time Warp keeps them but speeds them up instead of deleting them." />
+                 </div>
+                 <div className="flex gap-2">
                   <button
                     onClick={() => updateDetectionSettings({ mode: "cut" })}
                     className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${
-                      detectionSettings.mode === "cut"
-                        ? "bg-primary text-on-primary"
-                        : "bg-surface-container-highest text-on-surface-variant"
-                    }`}
-                  >
-                    Cut Silence
-                  </button>
+                        detectionSettings.mode === "cut"
+                          ? "bg-primary text-on-primary"
+                          : "bg-surface-container-highest text-on-surface-variant"
+                     }`}
+                     title="Remove detected silent ranges entirely from the final edit."
+                   >
+                     Cut Silence
+                   </button>
                   <button
                     onClick={() => updateDetectionSettings({ mode: "speed" })}
                     className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${
-                      detectionSettings.mode === "speed"
-                        ? "bg-primary text-on-primary"
-                        : "bg-surface-container-highest text-on-surface-variant"
-                    }`}
-                  >
-                    Time Warp
-                  </button>
+                        detectionSettings.mode === "speed"
+                          ? "bg-primary text-on-primary"
+                          : "bg-surface-container-highest text-on-surface-variant"
+                     }`}
+                     title="Keep silent ranges but speed them up instead of removing them."
+                   >
+                     Time Warp
+                   </button>
                 </div>
               </div>
 

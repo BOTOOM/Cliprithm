@@ -1,9 +1,12 @@
+import { Tooltip } from "./Tooltip";
+
 interface SliderProps {
   value: number;
   min: number;
   max: number;
   step?: number;
   label: string;
+  tooltip?: string;
   displayValue: string;
   onChange: (value: number) => void;
 }
@@ -14,6 +17,7 @@ export function Slider({
   max,
   step = 1,
   label,
+  tooltip,
   displayValue,
   onChange,
 }: SliderProps) {
@@ -22,9 +26,12 @@ export function Slider({
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <label className="text-xs font-semibold text-on-surface-variant">
-          {label}
-        </label>
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-semibold text-on-surface-variant">
+            {label}
+          </label>
+          {tooltip ? <Tooltip content={tooltip} /> : null}
+        </div>
         <span className="text-xs font-mono text-primary">{displayValue}</span>
       </div>
       <div className="relative h-1 w-full">
