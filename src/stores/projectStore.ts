@@ -75,6 +75,9 @@ interface ProjectState {
   activeSideTab: SideTab;
   setActiveSideTab: (tab: SideTab) => void;
 
+  mediaServerPort: number;
+  setMediaServerPort: (port: number) => void;
+
   filePath: string | null;
   videoMetadata: VideoMetadata | null;
   processedFilePath: string | null;
@@ -149,6 +152,9 @@ export const useProjectStore = create<ProjectState>((set) => ({
   setView: (view) => set({ currentView: view }),
   activeSideTab: "media",
   setActiveSideTab: (tab) => set({ activeSideTab: tab }),
+
+  mediaServerPort: 0,
+  setMediaServerPort: (port) => set({ mediaServerPort: port }),
 
   filePath: null,
   videoMetadata: null,

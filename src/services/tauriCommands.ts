@@ -93,3 +93,8 @@ export async function generateEditedSequencePreview(
   log.info("[preview]", "Edited sequence preview ready:", result);
   return result;
 }
+
+export async function getMediaServerPort(): Promise<number> {
+  assertDesktop("Media server");
+  return invoke<number>("get_media_server_port");
+}

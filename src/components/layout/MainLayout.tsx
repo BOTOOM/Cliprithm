@@ -10,11 +10,21 @@ import { EditorView } from "../editor/EditorView";
 import { ExportModal } from "../export/ExportModal";
 import { SettingsPanel } from "../editor/SettingsPanel";
 import { isDesktopRuntime } from "../../lib/runtime";
+import { getMediaServerPort } from "../../services/tauriCommands";
 import type { ProcessingProgress } from "../../types";
 
 export function MainLayout() {
-  const { currentView, showExportModal, activeSideTab, setProgress } =
+  const { currentView, showExportModal, activeSideTab, setProgress, setMediaServerPort } =
     useProjectStore();
+
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
+
+    // Fetch the local HTTP media server port on startup
+    void getMediaServerPort().then((port) => {
+      setMediaServerPort(port);
+    });
+  }, [setMediaServerPort]);
 
   useEffect(() => {
     if (!isDesktopRuntime()) return;

@@ -23,6 +23,15 @@ export function resolveMediaSrc(pathOrUrl?: string | null): string {
   return pathOrUrl;
 }
 
+/**
+ * Build an HTTP URL to stream a video file through the local media server.
+ * Supports Range requests for proper seeking in all WebViews.
+ */
+export function mediaServerUrl(port: number, filePath: string): string {
+  if (!port || !filePath) return "";
+  return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(filePath)}`;
+}
+
 export function getFileName(pathOrUrl?: string | null): string {
   if (!pathOrUrl) return "Untitled";
   return pathOrUrl.split("/").pop()?.split("\\").pop() ?? "Untitled";

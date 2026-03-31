@@ -2,6 +2,7 @@ mod commands;
 
 use commands::ffmpeg;
 use commands::library;
+use commands::media_server;
 use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
@@ -44,11 +45,13 @@ pub fn run() {
         },
     ];
 
+    // Start the local HTTP media server for video streaming
+    let media_port = media_server::start();
+
     tauri::Builder::default()
+        .manage(media_server::MediaServerPort(media_port))
         .plugin(
             tauri_plugin_log::Builder::new()
-                // En dev: logs en consola y en archivo
-                // En release: solo archivo (sin spam en consola)
                 .targets([
                     Target::new(TargetKind::Stdout),
                     Target::new(TargetKind::LogDir { file_name: Some("silencut".into()) }),
@@ -81,6 +84,7 @@ pub fn run() {
             ffmpeg::generate_sequence_preview,
             library::generate_thumbnail,
             library::generate_preview_proxy,
+            media_server::get_media_server_port,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

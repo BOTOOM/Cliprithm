@@ -8,13 +8,12 @@ import {
   sourceToEditedTime,
 } from "../../lib/editor";
 import { formatTime } from "../../lib/utils";
-import { getFileName, resolveMediaSrc } from "../../lib/media";
+import { getFileName, mediaServerUrl } from "../../lib/media";
 import { useI18n } from "../../lib/i18n";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
 import {
   detectSilence,
-  generateEditedSequencePreview,
   generatePreviewProxy,
 } from "../../services/tauriCommands";
 import type { ClipSegment } from "../../types";
@@ -39,10 +38,9 @@ export function EditorView() {
     setDetectionResult,
     previewFilePath,
     setPreviewFilePath,
-    editedPreviewFilePath,
-    setEditedPreviewFilePath,
     previewMode,
     setPreviewMode,
+    mediaServerPort,
     removedSegments,
     clipSegments,
     applySuggestedCuts,
@@ -62,15 +60,9 @@ export function EditorView() {
   const [isRedetecting, setIsRedetecting] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [isGeneratingSourceProxy, setIsGeneratingSourceProxy] = useState(false);
-  const [sourceProxySrc, setSourceProxySrc] = useState<string | null>(null);
-  const [editedPreviewSrc, setEditedPreviewSrc] = useState<string | null>(null);
-  const [isGeneratingEditedPreview, setIsGeneratingEditedPreview] = useState(false);
   const [isVideoReady, setIsVideoReady] = useState(false);
-  const [sourceProxyRetryCount, setSourceProxyRetryCount] = useState(0);
-  const [editedPreviewRetryCount, setEditedPreviewRetryCount] = useState(0);
+  const [proxyRetryCount, setProxyRetryCount] = useState(0);
   const lastDetectedSignatureRef = useRef<string | null>(null);
-  const lastBuiltEditedPreviewRef = useRef<string | null>(null);
-  const buildingEditedPreviewRef = useRef<string | null>(null);
 
   const duration = videoMetadata?.duration ?? 0;
   const isDetectionReview = currentView === "detection";
@@ -98,27 +90,17 @@ export function EditorView() {
 
   const gapCount = removedSegments.length;
   const estimatedDuration = editedDuration || detectionResult?.estimated_output_duration || duration;
-  const sourceVideoSrc = previewFilePath
-    ? sourceProxySrc
-    : resolveMediaSrc(filePath);
-  const isUsingEditedSequenceSource =
-    currentView === "editor" && previewMode === "edited" && Boolean(editedPreviewSrc);
-  const videoSrc =
-    currentView === "editor" && previewMode === "edited"
-      ? editedPreviewSrc || sourceVideoSrc
-      : sourceVideoSrc;
-  const isEditedPreviewBuilding =
-    isEditedPreviewMode &&
-    (isGeneratingEditedPreview ||
-      (!editedPreviewSrc && activeClips.length > 0));
+
+  // Video source: use local HTTP server for streaming with Range request support
+  const videoSrc = useMemo(() => {
+    if (!mediaServerPort) return "";
+    const path = previewFilePath || filePath;
+    if (!path || path.startsWith("blob:")) return "";
+    return mediaServerUrl(mediaServerPort, path);
+  }, [mediaServerPort, previewFilePath, filePath]);
+
   const isPreviewBusy =
-    Boolean(videoSrc) &&
-    (!isVideoReady || isGeneratingSourceProxy);
-  const clipSignature = useMemo(
-    () =>
-      JSON.stringify(activeClips.map((clip) => ({ start: clip.start, end: clip.end }))),
-    [activeClips]
-  );
+    Boolean(videoSrc) && (!isVideoReady || isGeneratingSourceProxy);
 
   const detectionSignature = JSON.stringify({
     noiseThreshold: detectionSettings.noiseThreshold,
@@ -131,103 +113,10 @@ export function EditorView() {
   }, [videoSrc]);
 
   useEffect(() => {
-    setSourceProxyRetryCount(0);
-    setEditedPreviewRetryCount(0);
-    lastBuiltEditedPreviewRef.current = null;
-    buildingEditedPreviewRef.current = null;
+    setProxyRetryCount(0);
   }, [filePath]);
 
-  // Convert preview proxy path to asset:// URL (supports HTTP Range requests for seeking)
-  useEffect(() => {
-    if (!previewFilePath || !isDesktopRuntime()) {
-      setSourceProxySrc(null);
-      return;
-    }
-    setSourceProxySrc(resolveMediaSrc(previewFilePath));
-    setMediaError(null);
-  }, [previewFilePath]);
-
-  // Convert edited preview path to asset:// URL (supports HTTP Range requests for seeking)
-  useEffect(() => {
-    if (!editedPreviewFilePath || !isDesktopRuntime()) {
-      setEditedPreviewSrc(null);
-      return;
-    }
-    setEditedPreviewSrc(resolveMediaSrc(editedPreviewFilePath));
-    setMediaError(null);
-  }, [editedPreviewFilePath]);
-
-  useEffect(() => {
-    if (
-      currentView !== "editor" ||
-      previewMode !== "edited" ||
-      !filePath ||
-      filePath.startsWith("blob:") ||
-      activeClips.length === 0
-    ) {
-      return;
-    }
-
-    const previewBuildKey = `${filePath}::${clipSignature}`;
-    if (
-      buildingEditedPreviewRef.current === previewBuildKey ||
-      lastBuiltEditedPreviewRef.current === previewBuildKey
-    ) {
-      return;
-    }
-
-    let active = true;
-    const timeout = window.setTimeout(() => {
-      void (async () => {
-        try {
-          buildingEditedPreviewRef.current = previewBuildKey;
-          setIsGeneratingEditedPreview(true);
-          const dataDir = await appDataDir();
-          const baseName = getFileName(filePath).replace(/\.[^.]+$/, "");
-          const outputPath = `${dataDir}/previews/${Date.now()}-${baseName}-sequence.mp4`;
-          const result = await generateEditedSequencePreview(
-            filePath,
-            outputPath,
-            activeClips.map((clip) => ({ start: clip.start, end: clip.end }))
-          );
-          if (!active) {
-            return;
-          }
-          setEditedPreviewFilePath(result);
-          setEditedPreviewRetryCount(0);
-          lastBuiltEditedPreviewRef.current = previewBuildKey;
-          setMediaError(null);
-        } catch (error) {
-          log.error("[preview]", "Failed to generate edited sequence preview:", error);
-          if (active) {
-            setMediaError(t("detection.cannotPlayWithProxy", {
-              errorLabel: "SEQUENCE_PREVIEW",
-              error: String(error),
-            }));
-          }
-        } finally {
-          if (buildingEditedPreviewRef.current === previewBuildKey) {
-            buildingEditedPreviewRef.current = null;
-          }
-          if (active) {
-            setIsGeneratingEditedPreview(false);
-          }
-        }
-      })();
-    }, 350);
-
-    return () => {
-      active = false;
-      window.clearTimeout(timeout);
-    };
-  }, [
-    clipSignature,
-    currentView,
-    filePath,
-    previewMode,
-    setEditedPreviewFilePath,
-  ]);
-
+  // Undo keyboard shortcut
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const isUndoShortcut =
@@ -255,58 +144,41 @@ export function EditorView() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [canUndo, undoLastEdit]);
 
-  const seekVideoTimeSafely = useCallback(
-    (
-      nextVideoTime: number,
-      nextSourceTime: number,
-      options?: { resumeAfterSeek?: boolean }
-    ) => {
+  // Seek to a source time in the video element
+  const seekSourceTimeSafely = useCallback(
+    (nextSourceTime: number, options?: { resumeAfterSeek?: boolean }) => {
       const video = videoRef.current;
       if (!video) return;
 
       const resumeAfterSeek = options?.resumeAfterSeek ?? true;
-      const maxVideoTime =
-        currentView === "editor" && previewMode === "edited" ? estimatedDuration : duration;
-      const boundedVideoTime = Math.max(0, Math.min(maxVideoTime, nextVideoTime));
-      const boundedSourceTime = Math.max(0, Math.min(duration, nextSourceTime));
+      const bounded = Math.max(0, Math.min(duration, nextSourceTime));
       const wasPlaying = !video.paused;
       if (wasPlaying || !resumeAfterSeek) {
         video.pause();
         setIsPlaying(false);
       }
 
-      video.currentTime = boundedVideoTime;
-      setCurrentSourceTime(boundedSourceTime);
+      video.currentTime = bounded;
+      setCurrentSourceTime(bounded);
 
       if (resumeAfterSeek && wasPlaying) {
         window.setTimeout(() => {
           void video.play().catch((error) => {
-            log.warn("[preview]", "Failed to resume playback after manual seek:", error);
+            log.warn("[preview]", "Failed to resume after seek:", error);
           });
         }, 40);
       }
     },
-    [currentView, duration, estimatedDuration, previewMode]
+    [duration]
   );
 
-  const seekSourceTimeSafely = useCallback(
-    (nextSourceTime: number, options?: { resumeAfterSeek?: boolean }) => {
-      seekVideoTimeSafely(nextSourceTime, nextSourceTime, options);
-    },
-    [seekVideoTimeSafely]
-  );
-
+  // Seek using edited timeline time → convert to source time
   const seekEditedTimeSafely = useCallback(
     (nextEditedTime: number, options?: { resumeAfterSeek?: boolean }) => {
       const sourceTime = editedToSourceTime(nextEditedTime, activeClips);
-      if (isUsingEditedSequenceSource) {
-        seekVideoTimeSafely(nextEditedTime, sourceTime, options);
-        return;
-      }
-
-      seekVideoTimeSafely(sourceTime, sourceTime, options);
+      seekSourceTimeSafely(sourceTime, options);
     },
-    [activeClips, isUsingEditedSequenceSource, seekVideoTimeSafely]
+    [activeClips, seekSourceTimeSafely]
   );
 
   const handleSeek = useCallback(
@@ -337,19 +209,47 @@ export function EditorView() {
     }
   };
 
+  // Clip-based playback: in edited mode, skip silence gaps automatically
   const handleTimeUpdate = () => {
     const video = videoRef.current;
     if (!video) return;
 
-    const sourceTime =
-      isUsingEditedSequenceSource
-        ? editedToSourceTime(video.currentTime, activeClips)
-        : video.currentTime;
-
+    const sourceTime = video.currentTime;
     setCurrentSourceTime(sourceTime);
-    const currentClip = findClipAtSourceTime(sourceTime, activeClips);
-    if (currentClip && currentClip.id !== selectedClipId) {
-      setSelectedClipId(currentClip.id);
+
+    // In edited mode, skip over silence gaps during playback
+    if (isEditedPreviewMode && !video.paused) {
+      const currentClip = findClipAtSourceTime(sourceTime, activeClips);
+      if (currentClip) {
+        // Check if we've passed the end of the current clip
+        if (sourceTime >= currentClip.end - 0.05) {
+          const clipIndex = activeClips.indexOf(currentClip);
+          const nextClip = activeClips[clipIndex + 1];
+          if (nextClip) {
+            video.currentTime = nextClip.start;
+            return;
+          }
+          // End of all clips
+          video.pause();
+          setIsPlaying(false);
+          return;
+        }
+      } else {
+        // We're in a silence gap — jump to the next clip
+        const nextClip = activeClips.find((c) => c.start > sourceTime);
+        if (nextClip) {
+          video.currentTime = nextClip.start;
+          return;
+        }
+        video.pause();
+        setIsPlaying(false);
+        return;
+      }
+    }
+
+    const clip = findClipAtSourceTime(sourceTime, activeClips);
+    if (clip && clip.id !== selectedClipId) {
+      setSelectedClipId(clip.id);
     }
   };
 
@@ -432,6 +332,7 @@ export function EditorView() {
     seekSourceTimeSafely(nextTime);
   };
 
+  // Handle video playback error — generate H.264 proxy if codec unsupported
   const handleVideoError = useCallback(async () => {
     const video = videoRef.current;
     const errorCode = video?.error?.code ?? 0;
@@ -449,69 +350,16 @@ export function EditorView() {
       currentSrc: video?.currentSrc,
       filePath,
       previewFilePath,
-      editedPreviewFilePath,
-      previewMode,
     });
 
-    if (
-      currentView === "editor" &&
-      previewMode === "edited" &&
-      editedPreviewFilePath &&
-      filePath &&
-      !filePath.startsWith("blob:")
-    ) {
-      if (editedPreviewRetryCount < 1) {
-        try {
-          setIsGeneratingEditedPreview(true);
-          setMediaError(t("detection.proxyFailed", { errorLabel }));
-          const dataDir = await appDataDir();
-          const baseName = getFileName(filePath).replace(/\.[^.]+$/, "");
-          const retryPath = `${dataDir}/previews/${Date.now()}-${baseName}-sequence-retry.mp4`;
-          const result = await generateEditedSequencePreview(
-            filePath,
-            retryPath,
-            activeClips.map((clip) => ({ start: clip.start, end: clip.end }))
-          );
-          setEditedPreviewRetryCount((count) => count + 1);
-          setEditedPreviewFilePath(result);
-          setMediaError(null);
-          return;
-        } catch (err) {
-          log.error("[preview]", "Retry edited preview generation failed:", err);
-        } finally {
-          setIsGeneratingEditedPreview(false);
-        }
-      }
-
+    // Already have a proxy that failed — don't retry endlessly
+    if (previewFilePath || proxyRetryCount >= 1) {
       setMediaError(t("detection.cannotPlay", { errorLabel }));
       return;
     }
 
-    if (
-      !isDesktopRuntime() ||
-      !filePath ||
-      filePath.startsWith("blob:") ||
-      isGeneratingSourceProxy
-    ) {
-      if (previewFilePath && sourceProxyRetryCount < 1 && filePath) {
-        try {
-          setIsGeneratingSourceProxy(true);
-          setMediaError(t("detection.proxyFailed", { errorLabel }));
-          const dataDir = await appDataDir();
-          const baseName = getFileName(filePath).replace(/\.[^.]+$/, "");
-          const retryPath = `${dataDir}/previews/${Date.now()}-${baseName}-retry.mp4`;
-          const result = await generatePreviewProxy(filePath, retryPath);
-          setSourceProxyRetryCount((count) => count + 1);
-          setPreviewFilePath(result);
-          setMediaError(null);
-          return;
-        } catch (err) {
-          log.error("[preview]", "Retry preview proxy generation failed:", err);
-        } finally {
-          setIsGeneratingSourceProxy(false);
-        }
-      }
-
+    // First error on original file — try generating an H.264 proxy
+    if (!isDesktopRuntime() || !filePath || filePath.startsWith("blob:") || isGeneratingSourceProxy) {
       setMediaError(t("detection.cannotPlay", { errorLabel }));
       return;
     }
@@ -523,26 +371,21 @@ export function EditorView() {
       const baseName = getFileName(filePath).replace(/\.[^.]+$/, "");
       const proxyPath = `${dataDir}/previews/${Date.now()}-${baseName}.mp4`;
       const result = await generatePreviewProxy(filePath, proxyPath);
+      setProxyRetryCount((count) => count + 1);
       setPreviewFilePath(result);
       setMediaError(null);
     } catch (err) {
-      log.error("[preview]", "Preview proxy generation failed:", err);
+      log.error("[preview]", "Proxy generation failed:", err);
       setMediaError(t("detection.cannotPlayWithProxy", { errorLabel, error: String(err) }));
     } finally {
       setIsGeneratingSourceProxy(false);
     }
   }, [
-    activeClips,
-    currentView,
-    editedPreviewFilePath,
-    editedPreviewRetryCount,
     filePath,
     isGeneratingSourceProxy,
-    previewMode,
     previewFilePath,
-    setEditedPreviewFilePath,
+    proxyRetryCount,
     setPreviewFilePath,
-    sourceProxyRetryCount,
     t,
   ]);
 
@@ -625,11 +468,9 @@ export function EditorView() {
                   onLoadedData={() => {
                     if (videoRef.current) {
                       const targetTime =
-                        isUsingEditedSequenceSource
-                          ? currentEditedTime
-                          : currentView === "editor"
-                            ? editedToSourceTime(currentEditedTime, activeClips)
-                            : currentSourceTime;
+                        currentView === "editor"
+                          ? editedToSourceTime(currentEditedTime, activeClips)
+                          : currentSourceTime;
                       if (Math.abs(videoRef.current.currentTime - targetTime) > 0.15) {
                         videoRef.current.currentTime = targetTime;
                       }
@@ -645,7 +486,7 @@ export function EditorView() {
                 />
               ) : (
                 <div className="text-on-surface-variant text-sm px-6 text-center">
-                  {isGeneratingSourceProxy || isGeneratingEditedPreview
+                  {isGeneratingSourceProxy
                     ? t("detection.proxyLoading")
                     : t("detection.importToBegin")}
                 </div>
@@ -655,33 +496,14 @@ export function EditorView() {
                 <div className="absolute inset-0 bg-black/70 flex items-center justify-center p-6 text-center">
                   <div>
                     <Icon
-                      name={isGeneratingSourceProxy || isGeneratingEditedPreview ? "sync" : "error"}
+                      name={isGeneratingSourceProxy ? "sync" : "error"}
                       className={`text-4xl mb-3 ${
-                        isGeneratingSourceProxy || isGeneratingEditedPreview
+                        isGeneratingSourceProxy
                           ? "text-primary animate-spin"
                           : "text-error"
                       }`}
                     />
                     <p className="text-sm text-white leading-relaxed">{mediaError}</p>
-                  </div>
-                </div>
-              )}
-
-              {isEditedPreviewBuilding && !mediaError && (
-                <div className="absolute inset-x-4 top-4 z-10 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 px-4 py-3">
-                  <div className="flex items-start gap-3">
-                    <Icon
-                      name="progress_activity"
-                      className="text-primary text-xl animate-spin mt-0.5"
-                    />
-                    <div>
-                      <p className="text-sm font-semibold text-white">
-                        {t("detection.updatingEditedPreviewTitle")}
-                      </p>
-                      <p className="text-xs text-white/70 leading-relaxed">
-                        {t("detection.updatingEditedPreviewDescription")}
-                      </p>
-                    </div>
                   </div>
                 </div>
               )}
