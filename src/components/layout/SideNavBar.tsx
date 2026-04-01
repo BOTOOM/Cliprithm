@@ -2,7 +2,7 @@ import { Icon } from "../ui/Icon";
 import { useI18n } from "../../lib/i18n";
 import { useProjectStore } from "../../stores/projectStore";
 
-type SideTab = "media" | "files" | "settings";
+type SideTab = "media" | "files" | "settings" | "about";
 
 interface SideNavItem {
   id: SideTab;
@@ -42,7 +42,22 @@ export function SideNavBar() {
           );
         })}
       </div>
-      <div className="mt-auto w-full px-2 pt-6">
+      <div className="mt-auto w-full px-2 pt-6 space-y-3">
+        {/* About button */}
+        <button
+          onClick={() => setActiveSideTab("about")}
+          className={`w-full flex flex-col items-center gap-1 cursor-pointer py-2 rounded-lg transition-all ease-in-out duration-300 ${
+            activeSideTab === "about"
+              ? "text-primary bg-surface-container-high"
+              : "text-on-surface-variant opacity-60 hover:text-white hover:bg-surface-container-high"
+          }`}
+        >
+          <Icon name="info" className="text-xl" filled={activeSideTab === "about"} />
+          <span className="text-[8px] font-semibold uppercase tracking-widest">
+            {t("about.title")}
+          </span>
+        </button>
+
         <div className="rounded-xl bg-surface-container-high p-2 border border-outline-variant/10">
           <div className="text-[8px] uppercase tracking-widest text-center text-on-surface-variant mb-2">
             {t("app.language")}

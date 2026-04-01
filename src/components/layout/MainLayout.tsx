@@ -9,6 +9,7 @@ import { ProcessingView } from "../processing/ProcessingView";
 import { EditorView } from "../editor/EditorView";
 import { ExportModal } from "../export/ExportModal";
 import { SettingsPanel } from "../editor/SettingsPanel";
+import { AboutView } from "../about/AboutView";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { getMediaServerPort } from "../../services/tauriCommands";
 import { useAutoSave } from "../../hooks/useAutoSave";
@@ -52,6 +53,7 @@ export function MainLayout() {
   }, [setProgress]);
 
   const showSettings = activeSideTab === "settings";
+  const showAbout = activeSideTab === "about";
 
   return (
     <div className="flex flex-col h-screen">
@@ -63,10 +65,16 @@ export function MainLayout() {
             <SettingsPanel />
           </aside>
         ) : null}
-        <main className="flex-1 bg-surface overflow-hidden">
-          {currentView === "import" && <EmptyState />}
-          {currentView === "processing" && <ProcessingView />}
-          {(currentView === "detection" || currentView === "editor") && <EditorView />}
+        <main className="flex-1 bg-surface overflow-hidden flex">
+          {showAbout ? (
+            <AboutView />
+          ) : (
+            <>
+              {currentView === "import" && <EmptyState />}
+              {currentView === "processing" && <ProcessingView />}
+              {(currentView === "detection" || currentView === "editor") && <EditorView />}
+            </>
+          )}
         </main>
       </div>
       {showExportModal && <ExportModal />}

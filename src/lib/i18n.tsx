@@ -14,7 +14,7 @@ const STORAGE_KEY = "cliprithm.language";
 const translations = {
   en: {
     app: {
-      brand: "The Precision Darkroom",
+      brand: "Smart Video Silence Remover",
       editor: "Editor",
       library: "Library",
       detectionReview: "Detection Review",
@@ -211,10 +211,33 @@ const translations = {
       outputDescription:
         "Generated captions will be exported as both SRT and WebVTT files. Enable burn-in to embed them directly in the video.",
     },
+    about: {
+      title: "About",
+      version: "Version {{version}}",
+      madeBy: "Made with love by",
+      description:
+        "Cliprithm is an open-source desktop app that automatically detects and removes silence from your videos — helping you create clean, professional content faster.",
+      openSource: "Open Source",
+      openSourceDesc:
+        "Cliprithm is free and open source under the MIT license. Contributions, bug reports, and feature requests are always welcome.",
+      links: "Links",
+      website: "Website",
+      github: "GitHub",
+      reportBug: "Report a Bug",
+      requestFeature: "Request a Feature",
+      contribute: "Contribute",
+      sponsor: "Support Development",
+      sponsorDesc:
+        "If Cliprithm saves you time, consider supporting its development. Every contribution helps keep the project alive and growing.",
+      githubSponsors: "GitHub Sponsors",
+      buyMeACoffee: "Buy Me a Coffee",
+      builtWith: "Built with",
+      thanksMessage: "Thank you for using Cliprithm!",
+    },
   },
   es: {
     app: {
-      brand: "The Precision Darkroom",
+      brand: "Eliminador inteligente de silencios",
       editor: "Editor",
       library: "Biblioteca",
       detectionReview: "Revision de silencios",
@@ -410,6 +433,29 @@ const translations = {
       burnIn: "Incrustar subtitulos al exportar",
       outputDescription:
         "Los subtitulos generados se exportaran como archivos SRT y WebVTT. Activa el burn-in para incrustarlos directamente en el video.",
+    },
+    about: {
+      title: "Acerca de",
+      version: "Version {{version}}",
+      madeBy: "Hecho con amor por",
+      description:
+        "Cliprithm es una app de escritorio de codigo abierto que detecta y elimina automaticamente los silencios de tus videos, ayudandote a crear contenido limpio y profesional mas rapido.",
+      openSource: "Codigo Abierto",
+      openSourceDesc:
+        "Cliprithm es gratuito y de codigo abierto bajo la licencia MIT. Las contribuciones, reportes de errores y solicitudes de funciones son siempre bienvenidas.",
+      links: "Enlaces",
+      website: "Sitio web",
+      github: "GitHub",
+      reportBug: "Reportar un error",
+      requestFeature: "Solicitar una funcion",
+      contribute: "Contribuir",
+      sponsor: "Apoyar el desarrollo",
+      sponsorDesc:
+        "Si Cliprithm te ahorra tiempo, considera apoyar su desarrollo. Cada contribucion ayuda a mantener el proyecto vivo y en crecimiento.",
+      githubSponsors: "GitHub Sponsors",
+      buyMeACoffee: "Buy Me a Coffee",
+      builtWith: "Construido con",
+      thanksMessage: "Gracias por usar Cliprithm!",
     },
   },
 } as const;

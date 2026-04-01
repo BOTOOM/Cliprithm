@@ -17,7 +17,7 @@ import type {
   VideoMetadata,
 } from "../types";
 
-type SideTab = "media" | "files" | "settings";
+type SideTab = "media" | "files" | "settings" | "about";
 
 interface ClipHistoryEntry {
   clipSegments: ClipSegment[];
