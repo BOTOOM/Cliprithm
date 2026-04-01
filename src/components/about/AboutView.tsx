@@ -1,3 +1,4 @@
+import { openUrl as tauriOpenUrl } from "@tauri-apps/plugin-opener";
 import { useI18n } from "../../lib/i18n";
 import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
@@ -20,7 +21,7 @@ export function AboutView() {
   const { t } = useI18n();
 
   const openUrl = (url: string) => {
-    window.open(url, "_blank");
+    tauriOpenUrl(url).catch(console.error);
   };
 
   return (
