@@ -20,6 +20,7 @@ import type { ClipSegment } from "../../types";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 import { Slider } from "../ui/Slider";
+import { SpeedControl } from "../ui/SpeedControl";
 import { Toggle } from "../ui/Toggle";
 import { Tooltip } from "../ui/Tooltip";
 import { DetectionTimeline } from "../timeline/DetectionTimeline";
@@ -124,8 +125,8 @@ export function EditorView() {
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const rate = detectionSettings.playbackRate;
-    if (video.playbackRate !== rate) {
+    const rate = detectionSettings.playbackRate ?? 1.0;
+    if (rate > 0 && video.playbackRate !== rate) {
       video.playbackRate = rate;
     }
   }, [detectionSettings.playbackRate]);
@@ -537,7 +538,7 @@ export function EditorView() {
                       if (Math.abs(videoRef.current.currentTime - targetTime) > 0.15) {
                         videoRef.current.currentTime = targetTime;
                       }
-                      videoRef.current.playbackRate = detectionSettings.playbackRate;
+                      videoRef.current.playbackRate = detectionSettings.playbackRate ?? 1.0;
                     }
                     setMediaError(null);
                     setIsVideoReady(true);
@@ -774,7 +775,7 @@ export function EditorView() {
                     </label>
                     <Tooltip content={t("detection.playbackSpeedTooltip")} />
                   </div>
-                  {detectionSettings.playbackRate !== 1.0 && (
+                  {(detectionSettings.playbackRate ?? 1.0) !== 1.0 && (
                     <button
                       onClick={() => updateDetectionSettings({ playbackRate: 1.0 })}
                       className="text-[10px] text-primary font-semibold hover:text-primary-dim transition-colors"
@@ -783,13 +784,8 @@ export function EditorView() {
                     </button>
                   )}
                 </div>
-                <Slider
-                  label=""
-                  value={detectionSettings.playbackRate}
-                  min={0.25}
-                  max={4}
-                  step={0.25}
-                  displayValue={`${detectionSettings.playbackRate}x`}
+                <SpeedControl
+                  value={detectionSettings.playbackRate ?? 1.0}
                   onChange={(value) =>
                     updateDetectionSettings({ playbackRate: value })
                   }

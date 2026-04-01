@@ -93,10 +93,14 @@ export function MediaLibrary() {
           project.detection_result_json,
           null
         );
-        const savedSettings = parseJsonSafe<DetectionSettings>(
-          project.detection_settings_json,
-          defaultDetectionSettings
-        );
+        // Merge with defaults so new fields (e.g. playbackRate) get a value
+        const savedSettings: DetectionSettings = {
+          ...defaultDetectionSettings,
+          ...parseJsonSafe<Partial<DetectionSettings>>(
+            project.detection_settings_json,
+            {}
+          ),
+        };
         const savedView = (project.current_view || "import") as AppView;
         const savedPreviewMode = (project.preview_mode || "source") as PreviewMode;
         const savedMetadata = parseJsonSafe<VideoMetadata | null>(

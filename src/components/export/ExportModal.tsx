@@ -131,7 +131,7 @@ export function ExportModal() {
             ? detectionSettings.speedMultiplier
             : null,
         playback_rate:
-          detectionSettings.playbackRate !== 1.0
+          (detectionSettings.playbackRate ?? 1.0) !== 1.0
             ? detectionSettings.playbackRate
             : null,
       });
