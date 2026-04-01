@@ -90,6 +90,39 @@ jobs:
         if: matrix.platform == 'windows-latest'
         run: choco install ffmpeg -y
 
+      - name: Sync release version across app files
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["RELEASE_VERSION"]
+
+          tauri_conf_path = Path("src-tauri/tauri.conf.json")
+          tauri_conf = json.loads(tauri_conf_path.read_text(encoding="utf-8"))
+          tauri_conf["version"] = version
+          tauri_conf_path.write_text(json.dumps(tauri_conf, indent=2) + "\n", encoding="utf-8")
+
+          cargo_toml_path = Path("src-tauri/Cargo.toml")
+          cargo_toml = cargo_toml_path.read_text(encoding="utf-8")
+          cargo_toml, replacements = re.subn(
+              r'(?m)^version = "[^"]+"$',
+              f'version = "{version}"',
+              cargo_toml,
+              count=1,
+          )
+          if replacements != 1:
+              raise SystemExit("Failed to update package.version in src-tauri/Cargo.toml")
+          cargo_toml_path.write_text(cargo_toml, encoding="utf-8")
+
+          print(f"Synchronized release version {version}")
+          PY
+
       - name: Validate updater signing secrets
         shell: bash
         env:
@@ -158,6 +191,39 @@ jobs:
 
       - name: Install FFmpeg (macOS)
         run: brew install ffmpeg
+
+      - name: Sync release version across app files
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["RELEASE_VERSION"]
+
+          tauri_conf_path = Path("src-tauri/tauri.conf.json")
+          tauri_conf = json.loads(tauri_conf_path.read_text(encoding="utf-8"))
+          tauri_conf["version"] = version
+          tauri_conf_path.write_text(json.dumps(tauri_conf, indent=2) + "\n", encoding="utf-8")
+
+          cargo_toml_path = Path("src-tauri/Cargo.toml")
+          cargo_toml = cargo_toml_path.read_text(encoding="utf-8")
+          cargo_toml, replacements = re.subn(
+              r'(?m)^version = "[^"]+"$',
+              f'version = "{version}"',
+              cargo_toml,
+              count=1,
+          )
+          if replacements != 1:
+              raise SystemExit("Failed to update package.version in src-tauri/Cargo.toml")
+          cargo_toml_path.write_text(cargo_toml, encoding="utf-8")
+
+          print(f"Synchronized release version {version}")
+          PY
 
       - name: Validate updater signing secrets
         shell: bash
