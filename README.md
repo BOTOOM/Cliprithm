@@ -51,6 +51,66 @@ npm run tauri dev
 npm run tauri build
 ```
 
+## Installing from Releases
+
+### Linux
+
+- **Arch / Manjaro**: the long-term recommended path is the **AUR package** once it is published.
+- **Ubuntu / Debian**: install the `.deb` artifact from the GitHub release:
+
+```bash
+sudo apt install ./Cliprithm_1.0.0_amd64.deb
+```
+
+- **Generic Linux**: use the AppImage as the portable fallback:
+
+```bash
+chmod +x Cliprithm_1.0.0_amd64.AppImage
+./Cliprithm_1.0.0_amd64.AppImage
+```
+
+If the AppImage freezes or behaves oddly on some Arch/Manjaro systems, try:
+
+```bash
+APPIMAGE_EXTRACT_AND_RUN=1 ./Cliprithm_1.0.0_amd64.AppImage
+```
+
+That workaround helps on systems where AppImage/FUSE integration is inconsistent. For Arch-based distros, the AUR package is the preferred destination.
+
+### Windows
+
+- Use `Cliprithm_1.0.0_x64-setup.exe` for the guided installer
+- Use `Cliprithm_1.0.0_x64_en-US.msi` for MSI-based deployment
+
+## AUR Publishing Automation
+
+Cliprithm is prepared to publish a **source-based** AUR package named `cliprithm` from the main repository release workflow.
+
+The automation:
+- generates `PKGBUILD` and `.SRCINFO` from the release version and tag
+- points the package to the tagged GitHub source tarball
+- computes the release tarball `sha256`
+- pushes the updated package files to the AUR git repository
+
+Required GitHub configuration:
+- Secret: `AUR_SSH_PRIVATE_KEY`
+- Optional repository variable: `AUR_PACKAGE_REPO_SSH_URL`
+
+Default AUR repository URL if the variable is not set:
+
+```text
+ssh://aur@aur.archlinux.org/cliprithm.git
+```
+
+Recommended maintainer setup:
+1. Create or use your AUR account
+2. Generate a dedicated SSH keypair for AUR publishing
+3. Add the public key to your AUR account
+4. Save the private key in this repo as `AUR_SSH_PRIVATE_KEY`
+5. Let the release workflow publish the package on future releases
+
+Until the AUR package is live, Arch/Manjaro users should use the AppImage fallback above.
+
 ## Project Structure
 
 ```

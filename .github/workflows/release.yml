@@ -150,6 +150,77 @@ jobs:
           prerelease: false
           args: --target ${{ matrix.target }}
 
+  publish-aur:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check AUR configuration
+        id: aur-config
+        shell: bash
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping AUR publish because AUR_SSH_PRIVATE_KEY is not configured."
+            exit 0
+          fi
+
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Generate AUR package files
+        if: steps.aur-config.outputs.enabled == 'true'
+        env:
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          python3 scripts/generate_aur_package.py \
+            --version "$RELEASE_VERSION" \
+            --tag "$RELEASE_TAG" \
+            --output-dir .artifacts/aur
+
+      - name: Configure SSH for AUR
+        if: steps.aur-config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Publish AUR package repository
+        if: steps.aur-config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+          AUR_PACKAGE_REPO_SSH_URL: ${{ vars.AUR_PACKAGE_REPO_SSH_URL }}
+        run: |
+          REPO_URL="${AUR_PACKAGE_REPO_SSH_URL:-ssh://aur@aur.archlinux.org/cliprithm.git}"
+          git clone "$REPO_URL" /tmp/aur-cliprithm
+          cp .artifacts/aur/PKGBUILD /tmp/aur-cliprithm/PKGBUILD
+          cp .artifacts/aur/.SRCINFO /tmp/aur-cliprithm/.SRCINFO
+
+          git -C /tmp/aur-cliprithm config user.name "github-actions[bot]"
+          git -C /tmp/aur-cliprithm config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C /tmp/aur-cliprithm add PKGBUILD .SRCINFO
+
+          if git -C /tmp/aur-cliprithm diff --cached --quiet; then
+            echo "AUR package repository already up to date."
+            exit 0
+          fi
+
+          git -C /tmp/aur-cliprithm commit -m "cliprithm ${RELEASE_VERSION}"
+          git -C /tmp/aur-cliprithm push origin HEAD
+
   # Step 3: Build macOS (only when manually opted in)
   build-macos:
     needs: release-please
