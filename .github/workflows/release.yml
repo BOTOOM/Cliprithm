@@ -11,6 +11,11 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -28,8 +33,9 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          release-type: node
           token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
 
   # Step 2: Build Linux + Windows (always when release is created)
   build-linux-windows:
@@ -83,6 +89,19 @@ jobs:
       - name: Install FFmpeg (Windows)
         if: matrix.platform == 'windows-latest'
         run: choco install ffmpeg -y
+
+      - name: Validate updater signing secrets
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ] || [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+            echo "::error::Missing TAURI_SIGNING_PRIVATE_KEY and/or TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets."
+            echo "::error::Generate them with: npm run tauri signer generate -- -w ~/.tauri/cliprithm.key"
+            echo "::error::Store the private key content or path in TAURI_SIGNING_PRIVATE_KEY and the passphrase in TAURI_SIGNING_PRIVATE_KEY_PASSWORD."
+            exit 1
+          fi
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -139,6 +158,19 @@ jobs:
 
       - name: Install FFmpeg (macOS)
         run: brew install ffmpeg
+
+      - name: Validate updater signing secrets
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ] || [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+            echo "::error::Missing TAURI_SIGNING_PRIVATE_KEY and/or TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets."
+            echo "::error::Generate them with: npm run tauri signer generate -- -w ~/.tauri/cliprithm.key"
+            echo "::error::Store the private key content or path in TAURI_SIGNING_PRIVATE_KEY and the passphrase in TAURI_SIGNING_PRIVATE_KEY_PASSWORD."
+            exit 1
+          fi
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
