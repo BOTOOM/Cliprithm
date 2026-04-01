@@ -26,6 +26,7 @@ export function EmptyState() {
     setProcessedFilePath,
     setPreviewFilePath,
     setProgress,
+    setProjectId,
     detectionSettings,
   } = useProjectStore();
   const [isDragOver, setIsDragOver] = useState(false);
@@ -65,7 +66,7 @@ export function EmptyState() {
         }
 
         try {
-          await createProject({
+          const newProjectId = await createProject({
             name: fileName,
             file_path: path,
             thumbnail_path: thumbnailPath,
@@ -79,6 +80,7 @@ export function EmptyState() {
             min_duration: detectionSettings.minDuration,
             mode: detectionSettings.mode,
           });
+          setProjectId(newProjectId);
         } catch (dbError) {
           log.warn("[db]", "Failed to save project:", dbError);
         }
@@ -109,6 +111,7 @@ export function EmptyState() {
       setProgress,
       setVideoMetadata,
       setView,
+      setProjectId,
     ]
   );
 

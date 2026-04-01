@@ -43,6 +43,17 @@ pub fn run() {
             )",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "add_project_editing_state_columns",
+            sql: "ALTER TABLE projects ADD COLUMN clip_segments TEXT DEFAULT '[]';
+                  ALTER TABLE projects ADD COLUMN current_view TEXT DEFAULT 'import';
+                  ALTER TABLE projects ADD COLUMN preview_mode TEXT DEFAULT 'source';
+                  ALTER TABLE projects ADD COLUMN detection_result_json TEXT DEFAULT NULL;
+                  ALTER TABLE projects ADD COLUMN detection_settings_json TEXT DEFAULT NULL;
+                  ALTER TABLE projects ADD COLUMN video_metadata_json TEXT DEFAULT NULL;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Start the local HTTP media server for video streaming

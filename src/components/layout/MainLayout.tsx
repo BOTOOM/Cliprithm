@@ -11,11 +11,14 @@ import { ExportModal } from "../export/ExportModal";
 import { SettingsPanel } from "../editor/SettingsPanel";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { getMediaServerPort } from "../../services/tauriCommands";
+import { useAutoSave } from "../../hooks/useAutoSave";
 import type { ProcessingProgress } from "../../types";
 
 export function MainLayout() {
   const { currentView, showExportModal, activeSideTab, setProgress, setMediaServerPort } =
     useProjectStore();
+
+  useAutoSave();
 
   useEffect(() => {
     if (!isDesktopRuntime()) return;

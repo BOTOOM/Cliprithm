@@ -9,9 +9,36 @@ import {
   deleteProject,
   type ProjectRecord,
 } from "../../services/database";
+import { buildClipSegmentsFromSilence } from "../../lib/editor";
 import { useProjectStore } from "../../stores/projectStore";
 import { getVideoMetadata, detectSilence } from "../../services/tauriCommands";
 import { formatTime, formatFileSize } from "../../lib/utils";
+import type {
+  AppView,
+  ClipSegment,
+  DetectionResult,
+  DetectionSettings,
+  PreviewMode,
+  VideoMetadata,
+} from "../../types";
+
+const defaultDetectionSettings: DetectionSettings = {
+  noiseThreshold: -30,
+  minDuration: 0.5,
+  mode: "cut",
+  speedMultiplier: 2.0,
+  fadeEnabled: true,
+  detectBreath: false,
+};
+
+function parseJsonSafe<T>(json: string | null | undefined, fallback: T): T {
+  if (!json) return fallback;
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 export function MediaLibrary() {
   const { t } = useI18n();
@@ -26,6 +53,7 @@ export function MediaLibrary() {
     setProgress,
     setProcessedFilePath,
     setPreviewFilePath,
+    loadProject,
     detectionSettings,
   } = useProjectStore();
 
@@ -51,9 +79,6 @@ export function MediaLibrary() {
   const handleOpenProject = useCallback(
     async (project: ProjectRecord) => {
       try {
-        setProcessedFilePath(project.processed_path);
-        setPreviewFilePath(null);
-        setFilePath(project.file_path);
         setView("processing");
         setProgress({
           percent: 10,
@@ -61,30 +86,116 @@ export function MediaLibrary() {
           message: t("mediaLibrary.loadingProject"),
         });
 
+        // Check if project has saved editing state
+        const savedClips = parseJsonSafe<ClipSegment[]>(project.clip_segments, []);
+        const savedDetectionResult = parseJsonSafe<DetectionResult | null>(
+          project.detection_result_json,
+          null
+        );
+        const savedSettings = parseJsonSafe<DetectionSettings>(
+          project.detection_settings_json,
+          defaultDetectionSettings
+        );
+        const savedView = (project.current_view || "import") as AppView;
+        const savedPreviewMode = (project.preview_mode || "source") as PreviewMode;
+        const savedMetadata = parseJsonSafe<VideoMetadata | null>(
+          project.video_metadata_json,
+          null
+        );
+
+        // Has a saved in-progress state? Restore it
+        const hasSavedState =
+          savedClips.length > 0 &&
+          savedDetectionResult !== null &&
+          savedView !== "import";
+
+        if (hasSavedState) {
+          setProgress({
+            percent: 50,
+            stage: "restoring",
+            message: t("mediaLibrary.restoringProject"),
+          });
+
+          // Use saved metadata or re-read (fast ffprobe call)
+          let metadata = savedMetadata;
+          if (!metadata) {
+            metadata = await getVideoMetadata(project.file_path);
+          }
+
+          const removedSegments = savedDetectionResult?.segments ?? [];
+
+          loadProject({
+            projectId: project.id,
+            filePath: project.file_path,
+            videoMetadata: metadata,
+            detectionResult: savedDetectionResult,
+            detectionSettings: savedSettings,
+            clipSegments: savedClips,
+            removedSegments,
+            currentView: savedView,
+            previewMode: savedPreviewMode,
+            processedPath: project.processed_path,
+          });
+
+          setProgress({
+            percent: 100,
+            stage: "complete",
+            message: t("mediaLibrary.projectRestored"),
+          });
+
+          log.info(
+            "[restore]",
+            `Project ${project.id} restored — view:${savedView} clips:${savedClips.length}`
+          );
+          return;
+        }
+
+        // No saved editing state — load from scratch
+        setProcessedFilePath(project.processed_path);
+        setPreviewFilePath(null);
+        setFilePath(project.file_path);
+
         const metadata = await getVideoMetadata(project.file_path);
         setVideoMetadata(metadata);
 
+        // Has cached silence segments? Use them
         if (project.silence_segments && project.silence_segments !== "[]") {
           const segments = JSON.parse(project.silence_segments);
           const totalSilence = segments.reduce(
             (acc: number, segment: { duration: number }) => acc + segment.duration,
             0
           );
-          setDetectionResult({
+
+          const detectionResult: DetectionResult = {
             segments,
             total_silence_duration: totalSilence,
             original_duration: metadata.duration,
             estimated_output_duration: metadata.duration - totalSilence,
+          };
+          const clips = buildClipSegmentsFromSilence(segments, metadata.duration);
+
+          loadProject({
+            projectId: project.id,
+            filePath: project.file_path,
+            videoMetadata: metadata,
+            detectionResult,
+            detectionSettings: savedSettings,
+            clipSegments: clips,
+            removedSegments: segments,
+            currentView: "detection",
+            previewMode: "source",
+            processedPath: project.processed_path,
           });
+
           setProgress({
             percent: 100,
             stage: "complete",
             message: t("mediaLibrary.loadedCachedSegments", { count: segments.length }),
           });
-          setView("detection");
           return;
         }
 
+        // No cached data — run detection
         setProgress({
           percent: 25,
           stage: "analyzing",
@@ -96,6 +207,7 @@ export function MediaLibrary() {
           project.min_duration || detectionSettings.minDuration
         );
         setDetectionResult(result);
+        useProjectStore.getState().setProjectId(project.id);
         setView("detection");
       } catch (err) {
         log.error("[import]", "Failed to open project:", err);
@@ -104,6 +216,7 @@ export function MediaLibrary() {
     },
     [
       detectionSettings,
+      loadProject,
       setDetectionResult,
       setFilePath,
       setProcessedFilePath,
@@ -111,6 +224,7 @@ export function MediaLibrary() {
       setProgress,
       setVideoMetadata,
       setView,
+      t,
     ]
   );
 
@@ -171,63 +285,74 @@ export function MediaLibrary() {
         </span>
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar px-2 space-y-1.5">
-        {projects.map((project) => (
-          <div
-            key={project.id}
-            className="w-full p-3 rounded-lg hover:bg-surface-container-highest transition-all group cursor-pointer"
-            onClick={() => void handleOpenProject(project)}
-          >
-            <div className="flex items-start gap-3">
-              <div className="w-12 h-8 rounded bg-surface-container-lowest flex-shrink-0 overflow-hidden">
-                {project.thumbnail_path ? (
-                  <img
-                    src={resolveMediaSrc(project.thumbnail_path)}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Icon
-                      name="videocam"
-                      className="text-on-surface-variant/40 text-sm"
+        {projects.map((project) => {
+          const isInProgress = project.status === "in_progress";
+          return (
+            <div
+              key={project.id}
+              className="w-full p-3 rounded-lg hover:bg-surface-container-highest transition-all group cursor-pointer"
+              onClick={() => void handleOpenProject(project)}
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-12 h-8 rounded bg-surface-container-lowest flex-shrink-0 overflow-hidden">
+                  {project.thumbnail_path ? (
+                    <img
+                      src={resolveMediaSrc(project.thumbnail_path)}
+                      alt=""
+                      className="w-full h-full object-cover"
                     />
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-on-surface truncate">
-                  {project.name}
-                </p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[9px] text-on-surface-variant">
-                    {formatTime(project.duration)}
-                  </span>
-                  <span className="text-[9px] text-on-surface-variant/40">•</span>
-                  <span className="text-[9px] text-on-surface-variant">
-                    {formatFileSize(project.file_size)}
-                  </span>
-                  {project.status === "processed" && (
-                    <>
-                      <span className="text-[9px] text-on-surface-variant/40">•</span>
-                        <span className="text-[9px] text-primary font-medium">
-                         {t("mediaLibrary.processed")}
-                        </span>
-                    </>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Icon
+                        name="videocam"
+                        className="text-on-surface-variant/40 text-sm"
+                      />
+                    </div>
                   )}
                 </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-on-surface truncate">
+                    {project.name}
+                  </p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[9px] text-on-surface-variant">
+                      {formatTime(project.duration)}
+                    </span>
+                    <span className="text-[9px] text-on-surface-variant/40">•</span>
+                    <span className="text-[9px] text-on-surface-variant">
+                      {formatFileSize(project.file_size)}
+                    </span>
+                    {isInProgress && (
+                      <>
+                        <span className="text-[9px] text-on-surface-variant/40">•</span>
+                        <span className="text-[9px] text-secondary font-medium">
+                          {t("mediaLibrary.inProgress")}
+                        </span>
+                      </>
+                    )}
+                    {project.status === "processed" && (
+                      <>
+                        <span className="text-[9px] text-on-surface-variant/40">•</span>
+                        <span className="text-[9px] text-primary font-medium">
+                          {t("mediaLibrary.processed")}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void handleDelete(project.id);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-error/20 rounded transition-all"
+                >
+                  <Icon name="delete" className="text-sm text-error/70" />
+                </button>
               </div>
-              <button
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void handleDelete(project.id);
-                }}
-                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-error/20 rounded transition-all"
-              >
-                <Icon name="delete" className="text-sm text-error/70" />
-              </button>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

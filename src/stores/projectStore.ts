@@ -75,6 +75,9 @@ interface ProjectState {
   activeSideTab: SideTab;
   setActiveSideTab: (tab: SideTab) => void;
 
+  projectId: number | null;
+  setProjectId: (id: number | null) => void;
+
   mediaServerPort: number;
   setMediaServerPort: (port: number) => void;
 
@@ -122,6 +125,19 @@ interface ProjectState {
   showExportModal: boolean;
   setShowExportModal: (show: boolean) => void;
 
+  loadProject: (opts: {
+    projectId: number;
+    filePath: string;
+    videoMetadata: VideoMetadata;
+    detectionResult: DetectionResult | null;
+    detectionSettings: DetectionSettings;
+    clipSegments: ClipSegment[];
+    removedSegments: SilenceSegment[];
+    currentView: AppView;
+    previewMode: PreviewMode;
+    processedPath: string | null;
+  }) => void;
+
   resetProject: () => void;
 }
 
@@ -152,6 +168,9 @@ export const useProjectStore = create<ProjectState>((set) => ({
   setView: (view) => set({ currentView: view }),
   activeSideTab: "media",
   setActiveSideTab: (tab) => set({ activeSideTab: tab }),
+
+  projectId: null,
+  setProjectId: (id) => set({ projectId: id }),
 
   mediaServerPort: 0,
   setMediaServerPort: (port) => set({ mediaServerPort: port }),
@@ -303,10 +322,32 @@ export const useProjectStore = create<ProjectState>((set) => ({
   showExportModal: false,
   setShowExportModal: (show) => set({ showExportModal: show }),
 
+  loadProject: (opts) =>
+    set({
+      projectId: opts.projectId,
+      filePath: opts.filePath,
+      videoMetadata: opts.videoMetadata,
+      detectionResult: opts.detectionResult,
+      detectionSettings: opts.detectionSettings,
+      clipSegments: opts.clipSegments,
+      removedSegments: opts.removedSegments,
+      selectedClipId: opts.clipSegments[0]?.id ?? null,
+      currentView: opts.currentView,
+      previewMode: opts.previewMode,
+      processedFilePath: opts.processedPath,
+      previewFilePath: null,
+      editedPreviewFilePath: null,
+      editHistory: [],
+      canUndo: false,
+      progress: defaultProgress,
+      showExportModal: false,
+    }),
+
   resetProject: () =>
     set({
       currentView: "import",
       activeSideTab: "media",
+      projectId: null,
       filePath: null,
       videoMetadata: null,
       processedFilePath: null,

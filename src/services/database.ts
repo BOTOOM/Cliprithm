@@ -1,4 +1,5 @@
 import Database from "@tauri-apps/plugin-sql";
+import { remove, exists } from "@tauri-apps/plugin-fs";
 import { log } from "../lib/logger";
 import { isDesktopRuntime } from "../lib/runtime";
 
@@ -19,6 +20,12 @@ export interface ProjectRecord {
   min_duration: number;
   mode: string;
   silence_segments: string;
+  clip_segments: string;
+  current_view: string;
+  preview_mode: string;
+  detection_result_json: string | null;
+  detection_settings_json: string | null;
+  video_metadata_json: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -84,6 +91,12 @@ export async function createProject(
     | "processed_path"
     | "status"
     | "silence_segments"
+    | "clip_segments"
+    | "current_view"
+    | "preview_mode"
+    | "detection_result_json"
+    | "detection_settings_json"
+    | "video_metadata_json"
   >
 ): Promise<number> {
   if (!isDesktopRuntime()) {
@@ -95,6 +108,12 @@ export async function createProject(
       processed_path: null,
       status: "imported",
       silence_segments: "[]",
+      clip_segments: "[]",
+      current_view: "import",
+      preview_mode: "source",
+      detection_result_json: null,
+      detection_settings_json: null,
+      video_metadata_json: null,
       created_at: timestamp,
       updated_at: timestamp,
     });
@@ -136,6 +155,12 @@ export async function updateProject(
       | "mode"
       | "silence_segments"
       | "name"
+      | "clip_segments"
+      | "current_view"
+      | "preview_mode"
+      | "detection_result_json"
+      | "detection_settings_json"
+      | "video_metadata_json"
     >
   >
 ): Promise<void> {
@@ -174,6 +199,26 @@ export async function deleteProject(id: number): Promise<void> {
       memoryProjects.splice(index, 1);
     }
     return;
+  }
+
+  // Get the project record so we can clean up associated files
+  const project = await getProjectById(id);
+  if (project) {
+    const filesToRemove: string[] = [];
+    if (project.thumbnail_path) filesToRemove.push(project.thumbnail_path);
+    if (project.processed_path) filesToRemove.push(project.processed_path);
+
+    for (const filePath of filesToRemove) {
+      try {
+        const fileExists = await exists(filePath);
+        if (fileExists) {
+          await remove(filePath);
+          log.info("[db]", `Deleted file: ${filePath}`);
+        }
+      } catch (err) {
+        log.warn("[db]", `Failed to delete file ${filePath}:`, err);
+      }
+    }
   }
 
   const database = await getDb();
