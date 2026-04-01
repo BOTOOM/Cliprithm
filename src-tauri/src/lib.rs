@@ -65,7 +65,7 @@ pub fn run() {
             tauri_plugin_log::Builder::new()
                 .targets([
                     Target::new(TargetKind::Stdout),
-                    Target::new(TargetKind::LogDir { file_name: Some("silencut".into()) }),
+                    Target::new(TargetKind::LogDir { file_name: Some("cliprithm".into()) }),
                     Target::new(TargetKind::Webview),
                 ])
                 .level(if cfg!(debug_assertions) {
@@ -83,7 +83,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:silencut.db", migrations)
+                .add_migrations("sqlite:cliprithm.db", migrations)
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![

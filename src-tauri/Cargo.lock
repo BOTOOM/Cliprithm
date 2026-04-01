@@ -599,6 +599,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "cliprithm"
+version = "1.0.0"
+dependencies = [
+ "chrono",
+ "log",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-log",
+ "tauri-plugin-opener",
+ "tauri-plugin-process",
+ "tauri-plugin-shell",
+ "tauri-plugin-sql",
+ "tauri-plugin-updater",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "combine"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4201,29 +4224,6 @@ checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 dependencies = [
  "digest",
  "rand_core 0.6.4",
-]
-
-[[package]]
-name = "silencut"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "log",
- "regex",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-log",
- "tauri-plugin-opener",
- "tauri-plugin-process",
- "tauri-plugin-shell",
- "tauri-plugin-sql",
- "tauri-plugin-updater",
- "tempfile",
- "tokio",
 ]
 
 [[package]]

@@ -1,12 +1,12 @@
 [package]
-name = "silencut"
-version = "0.1.0"
-description = "SilenCut — Desktop video silence remover"
-authors = ["botom"]
+name = "cliprithm"
+version = "1.0.0"
+description = "Cliprithm — Smart video silence remover"
+authors = ["Edwar Diaz <edwardiaz.dev>"]
 edition = "2021"
 
 [lib]
-name = "silencut_lib"
+name = "cliprithm_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

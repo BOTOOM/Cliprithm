@@ -1,5 +1,5 @@
 /**
- * SilenCut Logger
+ * Cliprithm Logger
  *
  * En DEV  → logs en consola del navegador (DevTools) + backend Tauri
  * En PROD → solo logs WARN/ERROR se envían al archivo via plugin-log

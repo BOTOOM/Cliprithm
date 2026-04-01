@@ -9,7 +9,7 @@ import {
 
 export type Language = "en" | "es";
 
-const STORAGE_KEY = "silencut.language";
+const STORAGE_KEY = "cliprithm.language";
 
 const translations = {
   en: {

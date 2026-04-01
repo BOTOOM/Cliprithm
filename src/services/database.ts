@@ -46,8 +46,8 @@ async function getDb(): Promise<Database> {
   }
 
   if (!dbPromise) {
-    log.info("[db]", "Opening SQLite database: silencut.db");
-    dbPromise = Database.load("sqlite:silencut.db").then((database) => {
+    log.info("[db]", "Opening SQLite database: cliprithm.db");
+    dbPromise = Database.load("sqlite:cliprithm.db").then((database) => {
       db = database;
       log.info("[db]", "Database opened OK");
       return database;
