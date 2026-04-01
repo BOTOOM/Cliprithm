@@ -125,6 +125,8 @@ export function MediaLibrary() {
 
           const removedSegments = savedDetectionResult?.segments ?? [];
 
+          // Restore to "processing" first so the UI shows loading
+          // then transition to the saved view after a tick
           loadProject({
             projectId: project.id,
             filePath: project.file_path,
@@ -133,7 +135,7 @@ export function MediaLibrary() {
             detectionSettings: savedSettings,
             clipSegments: savedClips,
             removedSegments,
-            currentView: savedView,
+            currentView: "processing",
             previewMode: savedPreviewMode,
             processedPath: project.processed_path,
           });
@@ -148,6 +150,11 @@ export function MediaLibrary() {
             "[restore]",
             `Project ${project.id} restored — view:${savedView} clips:${savedClips.length}`
           );
+
+          // Transition to the saved view after a short delay so the
+          // video element has time to mount and start loading
+          await new Promise((r) => setTimeout(r, 200));
+          setView(savedView);
           return;
         }
 
