@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1035"/>
+      <stop offset="100%" stop-color="#0e0e0e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ba9eff"/>
+      <stop offset="100%" stop-color="#8455ef"/>
+    </linearGradient>
+    <linearGradient id="pink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ff97b5"/>
+      <stop offset="100%" stop-color="#f0779d"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ba9eff" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#ff97b5" stop-opacity="0.1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#bg)" stroke="url(#accent)" stroke-width="3" opacity="0.95"/>
+
+  <!-- Subtle glow -->
+  <circle cx="256" cy="256" r="180" fill="url(#glow)" opacity="0.15"/>
+
+  <!-- Audio waveform bars (representing rhythm) -->
+  <!-- Left side bars -->
+  <rect x="80" y="218" width="14" height="76" rx="7" fill="url(#accent)" opacity="0.5"/>
+  <rect x="104" y="188" width="14" height="136" rx="7" fill="url(#accent)" opacity="0.6"/>
+  <rect x="128" y="158" width="14" height="196" rx="7" fill="url(#accent)" opacity="0.7"/>
+  <rect x="152" y="178" width="14" height="156" rx="7" fill="url(#accent)" opacity="0.8"/>
+  <rect x="176" y="138" width="14" height="236" rx="7" fill="url(#accent)" opacity="0.9"/>
+  <rect x="200" y="168" width="14" height="176" rx="7" fill="url(#accent)" opacity="1.0"/>
+  <rect x="224" y="198" width="14" height="116" rx="7" fill="url(#accent)" opacity="0.85"/>
+
+  <!-- Cut line (diagonal slash representing the clip/cut) -->
+  <line x1="252" y1="120" x2="260" y2="392" stroke="url(#pink)" stroke-width="4" stroke-dasharray="8 6" opacity="0.9"/>
+
+  <!-- Right side bars (slightly different pattern = rhythm shift after cut) -->
+  <rect x="274" y="198" width="14" height="116" rx="7" fill="url(#pink)" opacity="0.85"/>
+  <rect x="298" y="158" width="14" height="196" rx="7" fill="url(#pink)" opacity="1.0"/>
+  <rect x="322" y="178" width="14" height="156" rx="7" fill="url(#pink)" opacity="0.9"/>
+  <rect x="346" y="138" width="14" height="236" rx="7" fill="url(#pink)" opacity="0.8"/>
+  <rect x="370" y="178" width="14" height="156" rx="7" fill="url(#pink)" opacity="0.7"/>
+  <rect x="394" y="198" width="14" height="116" rx="7" fill="url(#pink)" opacity="0.6"/>
+  <rect x="418" y="228" width="14" height="56" rx="7" fill="url(#pink)" opacity="0.5"/>
+
+  <!-- Scissors icon at the cut point -->
+  <g transform="translate(237, 96)" opacity="0.9">
+    <circle cx="10" cy="8" r="8" stroke="#ff97b5" stroke-width="2.5" fill="none"/>
+    <circle cx="26" cy="8" r="8" stroke="#ff97b5" stroke-width="2.5" fill="none"/>
+    <line x1="15" y1="14" x2="26" y2="36" stroke="#ff97b5" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="21" y1="14" x2="10" y2="36" stroke="#ff97b5" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+</svg>
