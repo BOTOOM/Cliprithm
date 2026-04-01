@@ -52,7 +52,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhGQkE1Qjc2MDgwMjdCRTUKUldUbGV3SUlkbHU2ajA1RHNzWTZnMEpwMi9HWm5vR2xFV2loZHoxV2xmN0RHVitwaXFNbzd2Q1UK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJCQjAxRUQ0RjVENTREMDEKUldRQlRkWDExQjZ3SzNoVDk2YkkwTFZoYXdBUlgvbVpKMGpGdEFhdEZRNzRacXp4Y2dCdGxwTU8K",
       "endpoints": [
         "https://github.com/BOTOOM/Cliprithm/releases/latest/download/latest.json"
       ]
