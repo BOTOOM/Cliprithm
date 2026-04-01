@@ -63,6 +63,7 @@ export function EditorView() {
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [proxyRetryCount, setProxyRetryCount] = useState(0);
   const lastDetectedSignatureRef = useRef<string | null>(null);
+  const lastClipSignatureRef = useRef<string>("");
 
   const duration = videoMetadata?.duration ?? 0;
   const isDetectionReview = currentView === "detection";
@@ -77,12 +78,15 @@ export function EditorView() {
     };
   }, [duration, t]);
 
-  const activeClips = clipSegments.length > 0 ? clipSegments : fallbackClip ? [fallbackClip] : [];
+  const activeClips = useMemo(
+    () => (clipSegments.length > 0 ? clipSegments : fallbackClip ? [fallbackClip] : []),
+    [clipSegments, fallbackClip]
+  );
   const editedDuration = getTotalClipDuration(activeClips);
   const isEditedPreviewMode = currentView === "editor" && previewMode === "edited";
   const currentEditedTime =
     currentView === "editor"
-      ? sourceToEditedTime(currentSourceTime, activeClips)
+      ? Math.min(sourceToEditedTime(currentSourceTime, activeClips), editedDuration)
       : currentSourceTime;
 
   const selectedClip =
@@ -143,6 +147,50 @@ export function EditorView() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [canUndo, undoLastEdit]);
+
+  // When clips change (delete/split/undo), pause and seek to a valid position
+  useEffect(() => {
+    if (currentView !== "editor") return;
+
+    const signature = activeClips.map((c) => c.id).join("|");
+    const prev = lastClipSignatureRef.current;
+    lastClipSignatureRef.current = signature;
+
+    if (!prev || prev === signature) return;
+
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.pause();
+    setIsPlaying(false);
+
+    const sourceTime = video.currentTime;
+    const clip = findClipAtSourceTime(sourceTime, activeClips);
+
+    if (!clip && activeClips.length > 0) {
+      let bestClip = activeClips[0];
+      let bestDist = Infinity;
+      for (const c of activeClips) {
+        const d =
+          sourceTime < c.start
+            ? c.start - sourceTime
+            : sourceTime > c.end
+              ? sourceTime - c.end
+              : 0;
+        if (d < bestDist) {
+          bestDist = d;
+          bestClip = c;
+        }
+      }
+      video.currentTime = bestClip.start;
+      setCurrentSourceTime(bestClip.start);
+    }
+
+    const newClip = findClipAtSourceTime(video.currentTime, activeClips);
+    if (newClip) {
+      setSelectedClipId(newClip.id);
+    }
+  }, [activeClips, currentView, setSelectedClipId]);
 
   // Seek to a source time in the video element
   const seekSourceTimeSafely = useCallback(
@@ -311,6 +359,11 @@ export function EditorView() {
 
   const handleDeleteSelected = () => {
     if (!selectedClip) return;
+    const video = videoRef.current;
+    if (video && !video.paused) {
+      video.pause();
+      setIsPlaying(false);
+    }
     removeClipSegment(selectedClip.id);
   };
 

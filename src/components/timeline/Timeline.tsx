@@ -95,6 +95,15 @@ export function Timeline({
     if (!container) return;
     if (isScrubbing) return;
 
+    const visibleLeft = container.scrollLeft;
+    const visibleRight = visibleLeft + container.clientWidth;
+    const margin = container.clientWidth * 0.15;
+
+    // Only scroll if playhead is outside the visible area (with margin)
+    if (playheadLeft >= visibleLeft + margin && playheadLeft <= visibleRight - margin) {
+      return;
+    }
+
     const targetLeft = playheadLeft - container.clientWidth / 2;
     const maxScroll = Math.max(0, timelineWidth - container.clientWidth);
     const nextScroll = Math.max(0, Math.min(maxScroll, targetLeft));
