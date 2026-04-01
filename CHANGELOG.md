@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.0.0...cliprithm-v1.1.0) (2026-04-01)
+
+
+### Features
+
+* add AUR packaging automation ([ed66d48](https://github.com/BOTOOM/Cliprithm/commit/ed66d484ae35e05d07ab911dd1ac36fc9b2a99d3))
+
 ## 1.0.0 (2026-04-01)
 
 
