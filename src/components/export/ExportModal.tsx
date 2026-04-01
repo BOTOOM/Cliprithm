@@ -130,6 +130,10 @@ export function ExportModal() {
           detectionSettings.mode === "speed"
             ? detectionSettings.speedMultiplier
             : null,
+        playback_rate:
+          detectionSettings.playbackRate !== 1.0
+            ? detectionSettings.playbackRate
+            : null,
       });
       setProcessedFilePath(result);
       setExportProgress(100);

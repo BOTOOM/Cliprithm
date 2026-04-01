@@ -106,6 +106,13 @@ const translations = {
         "Cut Silence removes detected gaps. Time Warp keeps them but speeds them up instead of deleting them.",
       cutSilence: "Cut Silence",
       timeWarp: "Time Warp",
+      speedMultiplier: "Silence Speed",
+      speedMultiplierTooltip:
+        "How fast silent segments play in Time Warp mode. Higher values make pauses fly by faster.",
+      playbackSpeed: "Playback Speed",
+      playbackSpeedTooltip:
+        "Global playback speed for preview and export. Changing this speeds up or slows down the entire video. Persists when you reopen the project.",
+      resetSpeed: "Reset to 1×",
       reDetect: "Re-detect Silence",
       reDetecting: "Re-detecting...",
       originalTimeline: "Original timeline",
@@ -299,6 +306,13 @@ const translations = {
         "Cut Silence elimina los huecos detectados. Time Warp los mantiene, pero los acelera en lugar de borrarlos.",
       cutSilence: "Cortar silencio",
       timeWarp: "Time Warp",
+      speedMultiplier: "Velocidad de silencios",
+      speedMultiplierTooltip:
+        "Que tan rapido se reproducen los silencios en modo Time Warp. Valores mas altos hacen que las pausas pasen mas rapido.",
+      playbackSpeed: "Velocidad de reproduccion",
+      playbackSpeedTooltip:
+        "Velocidad global de reproduccion para preview y exportacion. Cambiar esto acelera o ralentiza todo el video. Se guarda al cerrar el proyecto.",
+      resetSpeed: "Restaurar a 1×",
       reDetect: "Volver a detectar silencios",
       reDetecting: "Redetectando...",
       originalTimeline: "Timeline original",

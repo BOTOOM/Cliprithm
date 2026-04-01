@@ -120,6 +120,16 @@ export function EditorView() {
     setProxyRetryCount(0);
   }, [filePath]);
 
+  // Sync playback rate to video element
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const rate = detectionSettings.playbackRate;
+    if (video.playbackRate !== rate) {
+      video.playbackRate = rate;
+    }
+  }, [detectionSettings.playbackRate]);
+
   // Undo keyboard shortcut
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -527,6 +537,7 @@ export function EditorView() {
                       if (Math.abs(videoRef.current.currentTime - targetTime) > 0.15) {
                         videoRef.current.currentTime = targetTime;
                       }
+                      videoRef.current.playbackRate = detectionSettings.playbackRate;
                     }
                     setMediaError(null);
                     setIsVideoReady(true);
@@ -742,17 +753,48 @@ export function EditorView() {
 
               {detectionSettings.mode === "speed" && (
                 <Slider
-                  label="Speed Multiplier"
+                  label={t("detection.speedMultiplier")}
                   value={detectionSettings.speedMultiplier}
-                  min={1.5}
+                  min={0.5}
                   max={6}
                   step={0.5}
+                  tooltip={t("detection.speedMultiplierTooltip")}
                   displayValue={`${detectionSettings.speedMultiplier}x`}
                   onChange={(value) =>
                     updateDetectionSettings({ speedMultiplier: value })
                   }
                 />
               )}
+
+              <div className="pt-2">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-semibold text-on-surface-variant">
+                      {t("detection.playbackSpeed")}
+                    </label>
+                    <Tooltip content={t("detection.playbackSpeedTooltip")} />
+                  </div>
+                  {detectionSettings.playbackRate !== 1.0 && (
+                    <button
+                      onClick={() => updateDetectionSettings({ playbackRate: 1.0 })}
+                      className="text-[10px] text-primary font-semibold hover:text-primary-dim transition-colors"
+                    >
+                      {t("detection.resetSpeed")}
+                    </button>
+                  )}
+                </div>
+                <Slider
+                  label=""
+                  value={detectionSettings.playbackRate}
+                  min={0.25}
+                  max={4}
+                  step={0.25}
+                  displayValue={`${detectionSettings.playbackRate}x`}
+                  onChange={(value) =>
+                    updateDetectionSettings({ playbackRate: value })
+                  }
+                />
+              </div>
             </div>
 
             <Button

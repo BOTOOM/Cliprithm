@@ -29,6 +29,7 @@ const defaultDetectionSettings: DetectionSettings = {
   speedMultiplier: 2.0,
   fadeEnabled: true,
   detectBreath: false,
+  playbackRate: 1.0,
 };
 
 function parseJsonSafe<T>(json: string | null | undefined, fallback: T): T {

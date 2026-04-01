@@ -46,6 +46,7 @@ export interface ExportOptions {
   fps: number | null;
   mode: string;
   speed_multiplier: number | null;
+  playback_rate: number | null;
 }
 
 export interface DetectionSettings {
@@ -55,6 +56,7 @@ export interface DetectionSettings {
   speedMultiplier: number;
   fadeEnabled: boolean;
   detectBreath: boolean;
+  playbackRate: number;
 }
 
 export interface ExportSettings {

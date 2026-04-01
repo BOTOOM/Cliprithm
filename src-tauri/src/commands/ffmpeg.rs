@@ -47,6 +47,7 @@ pub struct ExportOptions {
     pub fps: Option<u32>,
     pub mode: String,
     pub speed_multiplier: Option<f64>,
+    pub playback_rate: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -307,10 +308,15 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
         return Err("No hay clips activos para exportar.".to_string());
     }
 
-    let expected_duration: f64 = segments_to_keep
+    let raw_duration: f64 = segments_to_keep
         .iter()
         .map(|(start, end)| end - start)
         .sum();
+    let expected_duration = if let Some(rate) = options.playback_rate {
+        if rate > 0.01 { raw_duration / rate } else { raw_duration }
+    } else {
+        raw_duration
+    };
 
     emit_named_progress(
         &window,
@@ -324,6 +330,7 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
         &segments_to_keep,
         options.resolution.as_deref(),
         options.fps,
+        options.playback_rate,
     );
 
     let mut args: Vec<String> = vec![
@@ -410,7 +417,7 @@ pub fn generate_sequence_preview(
         "format=yuv420p".to_string(),
         "setsar=1".to_string(),
     ];
-    let (filter, video_output_label) = build_concat_filter(&keep_ranges, &transforms);
+    let (filter, video_output_label) = build_concat_filter(&keep_ranges, &transforms, None);
 
     let output = Command::new("ffmpeg")
         .args([
@@ -496,6 +503,7 @@ fn build_export_filter(
     segments_to_keep: &[(f64, f64)],
     resolution: Option<&str>,
     fps: Option<u32>,
+    playback_rate: Option<f64>,
 ) -> (String, String) {
     let mut transforms: Vec<String> = Vec::new();
 
@@ -511,12 +519,13 @@ fn build_export_filter(
         transforms.push(format!("fps={}", fps));
     }
 
-    build_concat_filter(segments_to_keep, &transforms)
+    build_concat_filter(segments_to_keep, &transforms, playback_rate)
 }
 
 fn build_concat_filter(
     segments_to_keep: &[(f64, f64)],
     transforms: &[String],
+    playback_rate: Option<f64>,
 ) -> (String, String) {
     let mut filter_parts: Vec<String> = Vec::new();
 
@@ -533,19 +542,59 @@ fn build_concat_filter(
         .join("");
 
     filter_parts.push(format!(
-        "{}concat=n={}:v=1:a=1[vcat][aout]",
+        "{}concat=n={}:v=1:a=1[vcat][acat]",
         concat_inputs,
         segments_to_keep.len()
     ));
 
-    let mut video_output_label = "[vcat]".to_string();
+    let mut video_label = "[vcat]".to_string();
+    let mut audio_label = "[acat]".to_string();
 
-    if !transforms.is_empty() {
-        filter_parts.push(format!("[vcat]{}[vout]", transforms.join(",")));
-        video_output_label = "[vout]".to_string();
+    // Apply global playback rate if set (≠ 1.0)
+    if let Some(rate) = playback_rate {
+        if (rate - 1.0).abs() > 0.01 {
+            // Video: setpts divides by rate (faster = smaller PTS)
+            filter_parts.push(format!(
+                "{}setpts=PTS/{}[vrate]",
+                video_label, rate
+            ));
+            video_label = "[vrate]".to_string();
+
+            // Audio: atempo only supports 0.5–100.0 range,
+            // chain multiple filters for extreme values
+            let mut audio_chain = Vec::new();
+            let mut remaining = rate;
+            while remaining > 2.0 {
+                audio_chain.push("atempo=2.0".to_string());
+                remaining /= 2.0;
+            }
+            while remaining < 0.5 {
+                audio_chain.push("atempo=0.5".to_string());
+                remaining /= 0.5;
+            }
+            audio_chain.push(format!("atempo={:.4}", remaining));
+
+            filter_parts.push(format!(
+                "{}{}[arate]",
+                audio_label,
+                audio_chain.join(",")
+            ));
+            audio_label = "[arate]".to_string();
+        }
     }
 
-    (filter_parts.join(";"), video_output_label)
+    // Apply video transforms (resolution, fps) after speed adjustment
+    if !transforms.is_empty() {
+        filter_parts.push(format!("{}{}[vout]", video_label, transforms.join(",")));
+        video_label = "[vout]".to_string();
+    }
+
+    // Rename final audio label to [aout]
+    if audio_label != "[aout]" {
+        filter_parts.push(format!("{}anull[aout]", audio_label));
+    }
+
+    (filter_parts.join(";"), video_label)
 }
 
 fn run_ffmpeg_with_progress(

@@ -148,6 +148,7 @@ const defaultDetectionSettings: DetectionSettings = {
   speedMultiplier: 2.0,
   fadeEnabled: true,
   detectBreath: false,
+  playbackRate: 1.0,
 };
 
 const defaultExportSettings: ExportSettings = {
