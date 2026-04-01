@@ -2,31 +2,39 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      build_macos:
+        description: 'Build macOS (uses extra credits)'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  create-release:
-    permissions:
-      contents: write
+  # Step 1: release-please creates/updates a release PR with changelog
+  # When merged, it creates a GitHub release + git tag automatically
+  release-please:
     runs-on: ubuntu-latest
     outputs:
-      release_id: ${{ steps.create-release.outputs.id }}
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Create Release
-        id: create-release
-        uses: softprops/action-gh-release@v2
+      - uses: googleapis/release-please-action@v4
+        id: release
         with:
-          draft: true
-          generate_release_notes: true
+          release-type: node
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-  build-tauri:
-    needs: create-release
+  # Step 2: Build Linux + Windows (always when release is created)
+  build-linux-windows:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     permissions:
       contents: write
     strategy:
@@ -37,10 +45,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-          - platform: macos-latest
-            target: aarch64-apple-darwin
-          - platform: macos-latest
-            target: x86_64-apple-darwin
 
     runs-on: ${{ matrix.platform }}
 
@@ -76,10 +80,6 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: sudo apt-get install -y ffmpeg
 
-      - name: Install FFmpeg (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: brew install ffmpeg
-
       - name: Install FFmpeg (Windows)
         if: matrix.platform == 'windows-latest'
         run: choco install ffmpeg -y
@@ -91,17 +91,65 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
+          tagName: ${{ needs.release-please.outputs.tag_name }}
+          releaseName: 'Cliprithm ${{ needs.release-please.outputs.version }}'
+          releaseBody: ''
+          releaseDraft: false
+          prerelease: false
           args: --target ${{ matrix.target }}
 
-  publish-release:
+  # Step 3: Build macOS (only when manually opted in)
+  build-macos:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created && github.event.inputs.build_macos == 'true' }}
     permissions:
       contents: write
-    runs-on: ubuntu-latest
-    needs: [create-release, build-tauri]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+
+    runs-on: ${{ matrix.platform }}
+
     steps:
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
         with:
-          draft: false
-          tag_name: ${{ github.ref_name }}
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install FFmpeg (macOS)
+        run: brew install ffmpeg
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ needs.release-please.outputs.tag_name }}
+          releaseName: 'Cliprithm ${{ needs.release-please.outputs.version }}'
+          releaseBody: ''
+          releaseDraft: false
+          prerelease: false
+          args: --target ${{ matrix.target }}
