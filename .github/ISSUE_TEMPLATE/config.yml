@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Contributing Guide
+    url: https://github.com/BOTOOM/Cliprithm/blob/main/CONTRIBUTING.md
+    about: Read our contributing guidelines before opening an issue
+  - name: Security Vulnerabilities
+    url: https://github.com/BOTOOM/Cliprithm/security/advisories
+    about: Report security vulnerabilities privately
