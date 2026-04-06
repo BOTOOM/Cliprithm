@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "bash scripts/clean-artifacts.sh",
     "clean:full": "bash scripts/clean-artifacts.sh --full",
-    "tauri": "tauri"
+    "tauri": "node scripts/run-tauri.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

@@ -54,6 +54,8 @@ npm run tauri build
 npm run clean
 ```
 
+On local Linux builds, `npm run tauri build` now auto-enables the AppImage fallback used by `linuxdeploy`, skips the problematic `strip` pass, and disables updater artifacts when no signing key is configured. That makes unsigned local builds work more reliably on distros like Arch/Manjaro.
+
 ## Installing from Releases
 
 ### Linux
