@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.1](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.1.0...cliprithm-v1.1.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* correct aur packaging build and add cleanup script ([9b247cd](https://github.com/BOTOOM/Cliprithm/commit/9b247cd534bd529968d19f558ab916e34c658506))
+* stabilize local linux tauri builds ([f15f127](https://github.com/BOTOOM/Cliprithm/commit/f15f1273413b11aff26169223ecd84954fd8bc57))
+* update vite to address audit advisory ([197f7bc](https://github.com/BOTOOM/Cliprithm/commit/197f7bc6aa93de53514baef210d1c4f41b51b221))
+
 ## [1.1.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.0.0...cliprithm-v1.1.0) (2026-04-01)
 
 
