@@ -49,30 +49,38 @@ npm run tauri dev
 
 # Build for production
 npm run tauri build
+
+# Remove generated build/debug artifacts
+npm run clean
 ```
 
 ## Installing from Releases
 
 ### Linux
 
-- **Arch / Manjaro**: the long-term recommended path is the **AUR package** once it is published.
+- **Arch / Manjaro**: install from AUR:
+
+```bash
+yay -S cliprithm
+```
+
 - **Ubuntu / Debian**: install the `.deb` artifact from the GitHub release:
 
 ```bash
-sudo apt install ./Cliprithm_1.0.0_amd64.deb
+sudo apt install ./Cliprithm_<version>_amd64.deb
 ```
 
 - **Generic Linux**: use the AppImage as the portable fallback:
 
 ```bash
-chmod +x Cliprithm_1.0.0_amd64.AppImage
-./Cliprithm_1.0.0_amd64.AppImage
+chmod +x Cliprithm_<version>_amd64.AppImage
+./Cliprithm_<version>_amd64.AppImage
 ```
 
 If the AppImage freezes or behaves oddly on some Arch/Manjaro systems, try:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./Cliprithm_1.0.0_amd64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./Cliprithm_<version>_amd64.AppImage
 ```
 
 That workaround helps on systems where AppImage/FUSE integration is inconsistent. For Arch-based distros, the AUR package is the preferred destination.
@@ -109,7 +117,21 @@ Recommended maintainer setup:
 4. Save the private key in this repo as `AUR_SSH_PRIVATE_KEY`
 5. Let the release workflow publish the package on future releases
 
-Until the AUR package is live, Arch/Manjaro users should use the AppImage fallback above.
+## Cleanup
+
+When the project starts consuming too much disk space again, use:
+
+```bash
+npm run clean
+```
+
+That removes `dist`, `src-tauri/gen`, and `src-tauri/target`.
+
+If you also want to remove `node_modules`:
+
+```bash
+npm run clean:full
+```
 
 ## Project Structure
 

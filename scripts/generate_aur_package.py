@@ -44,6 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--version", required=True, help="Release version, e.g. 1.0.0")
     parser.add_argument("--tag", required=True, help="Git tag, e.g. cliprithm-v1.0.0")
     parser.add_argument("--output-dir", required=True, help="Directory where PKGBUILD and .SRCINFO are written")
+    parser.add_argument("--pkgrel", type=int, default=1, help="Arch package release number")
     parser.add_argument("--owner", default="BOTOOM", help="GitHub owner")
     parser.add_argument("--repo", default="Cliprithm", help="GitHub repository")
     parser.add_argument(
@@ -96,6 +97,7 @@ def sha256_for_url(url: str) -> str:
 def render_pkgbuild(
     pkgname: str,
     version: str,
+    pkgrel: int,
     tag: str,
     owner: str,
     repo: str,
@@ -112,7 +114,7 @@ def render_pkgbuild(
 
         pkgname={pkgname}
         pkgver={version}
-        pkgrel=1
+        pkgrel={pkgrel}
         pkgdesc="{PKGDESC}"
         arch=('x86_64')
         url="{URL}"
@@ -137,8 +139,7 @@ def render_pkgbuild(
           cd "{src_root}"
           export CARGO_HOME="$srcdir/cargo-home"
           export CARGO_TARGET_DIR="$srcdir/target"
-          npm run build
-          cargo build --manifest-path src-tauri/Cargo.toml --release --locked
+          npm run tauri build -- --no-bundle --ci --no-sign
         }}
 
         package() {{
@@ -166,14 +167,22 @@ def render_pkgbuild(
     )
 
 
-def render_srcinfo(pkgname: str, version: str, tag: str, owner: str, repo: str, sha256: str) -> str:
+def render_srcinfo(
+    pkgname: str,
+    version: str,
+    pkgrel: int,
+    tag: str,
+    owner: str,
+    repo: str,
+    sha256: str,
+) -> str:
     src_filename = source_filename(pkgname, version)
     src_url = source_url(owner, repo, tag, version)
     lines = [
         f"pkgbase = {pkgname}",
         f"\tpkgdesc = {PKGDESC}",
         f"\tpkgver = {version}",
-        "\tpkgrel = 1",
+        f"\tpkgrel = {pkgrel}",
         "\turl = https://github.com/BOTOOM/Cliprithm",
         "\tarch = x86_64",
         f"\tlicense = {LICENSE}",
@@ -209,8 +218,25 @@ def main() -> None:
     tarball_url = source_url(args.owner, args.repo, args.tag, args.version)
     sha256 = sha256_for_url(tarball_url)
 
-    pkgbuild = render_pkgbuild(pkgname, args.version, args.tag, args.owner, args.repo, args.maintainer, sha256)
-    srcinfo = render_srcinfo(pkgname, args.version, args.tag, args.owner, args.repo, sha256)
+    pkgbuild = render_pkgbuild(
+        pkgname,
+        args.version,
+        args.pkgrel,
+        args.tag,
+        args.owner,
+        args.repo,
+        args.maintainer,
+        sha256,
+    )
+    srcinfo = render_srcinfo(
+        pkgname,
+        args.version,
+        args.pkgrel,
+        args.tag,
+        args.owner,
+        args.repo,
+        sha256,
+    )
 
     (output_dir / "PKGBUILD").write_text(pkgbuild, encoding="utf-8")
     (output_dir / ".SRCINFO").write_text(srcinfo, encoding="utf-8")
