@@ -90,6 +90,7 @@ const tauriBin =
 const child = spawn(tauriBin, tauriArgs, {
   cwd: repoRoot,
   env,
+  shell: process.platform === "win32",
   stdio: "inherit",
 });
 
