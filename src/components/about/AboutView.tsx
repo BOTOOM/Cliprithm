@@ -1,28 +1,10 @@
-import { openUrl as tauriOpenUrl } from "@tauri-apps/plugin-opener";
 import { useI18n } from "../../lib/i18n";
+import { APP_LINKS, APP_VERSION, openExternalUrl } from "../../lib/appInfo";
 import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
 
-const APP_VERSION = "1.0.0";
-
-const LINKS = {
-  github: "https://github.com/BOTOOM/Cliprithm",
-  website: "https://edwardiaz.dev",
-  linkedin: "https://www.linkedin.com/in/edwardiazruiz",
-  email: "mailto:edwardiazruiz@gmail.com",
-  bugReport: "https://github.com/BOTOOM/Cliprithm/issues/new?template=bug_report.yml",
-  featureRequest: "https://github.com/BOTOOM/Cliprithm/issues/new?template=feature_request.yml",
-  contribute: "https://github.com/BOTOOM/Cliprithm/blob/main/CONTRIBUTING.md",
-  githubSponsors: "https://github.com/sponsors/BOTOOM",
-  buyMeACoffee: "https://www.buymeacoffee.com/edwardiazdev",
-};
-
 export function AboutView() {
   const { t } = useI18n();
-
-  const openUrl = (url: string) => {
-    tauriOpenUrl(url).catch(console.error);
-  };
 
   return (
     <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
@@ -65,22 +47,22 @@ export function AboutView() {
             <LinkButton
               icon="language"
               label={t("about.website")}
-              onClick={() => openUrl(LINKS.website)}
+              onClick={() => void openExternalUrl(APP_LINKS.website)}
             />
             <LinkButton
               icon="code"
               label={t("about.github")}
-              onClick={() => openUrl(LINKS.github)}
+              onClick={() => void openExternalUrl(APP_LINKS.github)}
             />
             <LinkButton
               icon="work"
               label="LinkedIn"
-              onClick={() => openUrl(LINKS.linkedin)}
+              onClick={() => void openExternalUrl(APP_LINKS.linkedin)}
             />
             <LinkButton
               icon="mail"
               label="Email"
-              onClick={() => openUrl(LINKS.email)}
+              onClick={() => void openExternalUrl(APP_LINKS.email)}
             />
           </div>
         </div>
@@ -104,7 +86,7 @@ export function AboutView() {
             <Button
               variant="surface"
               size="sm"
-              onClick={() => openUrl(LINKS.githubSponsors)}
+              onClick={() => void openExternalUrl(APP_LINKS.githubSponsors)}
               className="flex-1"
             >
               <Icon name="favorite" className="text-sm mr-1.5" />
@@ -113,7 +95,7 @@ export function AboutView() {
             <Button
               variant="surface"
               size="sm"
-              onClick={() => openUrl(LINKS.buyMeACoffee)}
+              onClick={() => void openExternalUrl(APP_LINKS.buyMeACoffee)}
               className="flex-1"
             >
               <Icon name="coffee" className="text-sm mr-1.5" />
@@ -141,17 +123,17 @@ export function AboutView() {
             <ActionButton
               icon="bug_report"
               label={t("about.reportBug")}
-              onClick={() => openUrl(LINKS.bugReport)}
+              onClick={() => void openExternalUrl(APP_LINKS.bugReport)}
             />
             <ActionButton
               icon="lightbulb"
               label={t("about.requestFeature")}
-              onClick={() => openUrl(LINKS.featureRequest)}
+              onClick={() => void openExternalUrl(APP_LINKS.featureRequest)}
             />
             <ActionButton
               icon="handshake"
               label={t("about.contribute")}
-              onClick={() => openUrl(LINKS.contribute)}
+              onClick={() => void openExternalUrl(APP_LINKS.contribute)}
             />
           </div>
         </div>

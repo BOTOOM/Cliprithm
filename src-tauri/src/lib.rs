@@ -71,7 +71,7 @@ pub fn run() {
                 .level(if cfg!(debug_assertions) {
                     log::LevelFilter::Debug
                 } else {
-                    log::LevelFilter::Warn
+                    log::LevelFilter::Info
                 })
                 .build(),
         )

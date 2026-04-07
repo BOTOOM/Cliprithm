@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "clean": "bash scripts/clean-artifacts.sh",
     "clean:full": "bash scripts/clean-artifacts.sh --full",
-    "tauri": "node scripts/run-tauri.mjs"
+    "tauri": "node scripts/run-tauri.mjs",
+    "verify:linux-release": "bash scripts/verify_release_linux.sh",
+    "verify:aur:source": "bash scripts/verify_aur_package.sh source",
+    "verify:aur:bin": "bash scripts/verify_aur_package.sh bin"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

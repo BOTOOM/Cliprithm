@@ -52,6 +52,13 @@ npm run tauri build
 
 # Remove generated build/debug artifacts
 npm run clean
+
+# Validate the Linux release bundle locally before publishing
+npm run verify:linux-release
+
+# Validate both AUR package variants locally
+npm run verify:aur:source
+npm run verify:aur:bin
 ```
 
 On local Linux builds, `npm run tauri build` now auto-enables the AppImage fallback used by `linuxdeploy`, skips the problematic `strip` pass, and disables updater artifacts when no signing key is configured. That makes unsigned local builds work more reliably on distros like Arch/Manjaro.
@@ -64,6 +71,12 @@ On local Linux builds, `npm run tauri build` now auto-enables the AppImage fallb
 
 ```bash
 yay -S cliprithm
+```
+
+- **Arch / Manjaro (fast install)**: use the prebuilt binary package:
+
+```bash
+yay -S cliprithm-bin
 ```
 
 - **Ubuntu / Debian**: install the `.deb` artifact from the GitHub release:
@@ -89,18 +102,23 @@ That workaround helps on systems where AppImage/FUSE integration is inconsistent
 
 ### Windows
 
-- Use `Cliprithm_1.0.0_x64-setup.exe` for the guided installer
-- Use `Cliprithm_1.0.0_x64_en-US.msi` for MSI-based deployment
+- Use `Cliprithm_<version>_x64-setup.exe` for the guided installer
+- Use `Cliprithm_<version>_x64_en-US.msi` for MSI-based deployment
 
 ## AUR Publishing Automation
 
-Cliprithm is prepared to publish a **source-based** AUR package named `cliprithm` from the main repository release workflow.
+Cliprithm now has tooling for two AUR variants:
 
-The automation:
+- `cliprithm` → source-based package
+- `cliprithm-bin` → binary package backed by the release AppImage
+
+Current automation in GitHub Actions still publishes the source package. The binary package tooling is ready for local validation and for wiring into a second AUR repo when you decide to enable it.
+
+The local/publication tooling:
 - generates `PKGBUILD` and `.SRCINFO` from the release version and tag
-- points the package to the tagged GitHub source tarball
-- computes the release tarball `sha256`
-- pushes the updated package files to the AUR git repository
+- points the package either to the tagged GitHub source tarball or to the release AppImage
+- computes the required `sha256` values automatically
+- can be validated locally with `makepkg` before publishing
 
 Required GitHub configuration:
 - Secret: `AUR_SSH_PRIVATE_KEY`
@@ -118,6 +136,21 @@ Recommended maintainer setup:
 3. Add the public key to your AUR account
 4. Save the private key in this repo as `AUR_SSH_PRIVATE_KEY`
 5. Let the release workflow publish the package on future releases
+
+Local validation flow:
+
+```bash
+# Build the Linux artifacts that users will receive
+npm run verify:linux-release
+
+# Validate source AUR metadata and sources
+npm run verify:aur:source
+
+# Validate binary AUR metadata against the locally built AppImage
+npm run verify:aur:bin
+```
+
+See `distribution-playbooks/aur.md` for the full strategy and the notes for `cliprithm-bin`.
 
 ## Cleanup
 
@@ -156,6 +189,7 @@ cliprithm/
 ├── src-tauri/                 # Rust backend
 │   ├── src/commands/          # FFmpeg, library, media server
 │   └── tauri.conf.json
+├── distribution-playbooks/    # Packaging and store deployment notes
 ├── .github/                   # CI/CD, issue templates
 └── public/                    # Logo, static assets
 ```

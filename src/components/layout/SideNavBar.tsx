@@ -2,7 +2,7 @@ import { Icon } from "../ui/Icon";
 import { useI18n } from "../../lib/i18n";
 import { useProjectStore } from "../../stores/projectStore";
 
-type SideTab = "media" | "files" | "settings" | "about";
+type SideTab = "media" | "files" | "settings" | "diagnostics" | "about";
 
 interface SideNavItem {
   id: SideTab;
@@ -17,6 +17,7 @@ export function SideNavBar() {
     { id: "media", icon: "video_library", label: t("app.mediaLibrary") },
     { id: "files", icon: "folder_open", label: t("app.projectFiles") },
     { id: "settings", icon: "settings", label: t("app.settings") },
+    { id: "diagnostics", icon: "monitor_heart", label: t("app.diagnostics") },
   ];
 
   return (

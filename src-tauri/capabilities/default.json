@@ -40,7 +40,8 @@
       "identifier": "fs:scope",
       "allow": [
         { "path": "$APPDATA/previews/*" },
-        { "path": "$APPDATA/thumbnails/*" }
+        { "path": "$APPDATA/thumbnails/*" },
+        { "path": "$APPLOG/*" }
       ]
     }
   ]

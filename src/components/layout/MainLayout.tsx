@@ -10,6 +10,7 @@ import { EditorView } from "../editor/EditorView";
 import { ExportModal } from "../export/ExportModal";
 import { SettingsPanel } from "../editor/SettingsPanel";
 import { AboutView } from "../about/AboutView";
+import { DiagnosticsView } from "../diagnostics/DiagnosticsView";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { getMediaServerPort } from "../../services/tauriCommands";
 import { useAutoSave } from "../../hooks/useAutoSave";
@@ -54,6 +55,7 @@ export function MainLayout() {
 
   const showSettings = activeSideTab === "settings";
   const showAbout = activeSideTab === "about";
+  const showDiagnostics = activeSideTab === "diagnostics";
 
   return (
     <div className="flex flex-col h-screen">
@@ -68,6 +70,8 @@ export function MainLayout() {
         <main className="flex-1 bg-surface overflow-hidden flex">
           {showAbout ? (
             <AboutView />
+          ) : showDiagnostics ? (
+            <DiagnosticsView />
           ) : (
             <>
               {currentView === "import" && <EmptyState />}
