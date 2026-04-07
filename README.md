@@ -17,6 +17,7 @@ A desktop application for automatic silence detection and removal in videos. Bui
 - **Captions Beta**: Generate transcriptions (OpenRouter, Cerebras, Groq, Ollama, LM Studio)
 - **i18n**: English and Spanish
 - **Auto Updates**: Automatic update checking via GitHub Releases
+- **Store-Aware Updates**: GitHub installs self-update, while AUR/Snap/Flatpak/Homebrew channels can switch to store-managed guidance
 - **Cross Platform**: Linux, Windows, macOS
 
 ## Tech Stack
@@ -152,6 +153,23 @@ npm run verify:aur:bin
 
 See `distribution-playbooks/aur.md` for the full strategy and the notes for `cliprithm-bin`.
 
+## Store Channels and Update Behavior
+
+- **GitHub installers / AppImage from Releases** use the built-in Tauri updater.
+- **AUR / AUR bin** are now prepared to run in **store-managed** mode, with the app pointing users back to AUR and checking the package version through the AUR RPC API.
+- **Snap / Flatpak / Homebrew** now have repo scaffolding under `packaging/` plus playbooks in `distribution-playbooks/`, and the app can check public store metadata before guiding the user back to that channel.
+- For store-managed channels, the app is designed to **avoid self-installing updates** and instead guide the user back to the store/package manager that delivered the app:
+  - Snap -> Snap Store API
+  - Flatpak -> Flathub appstream API
+  - Homebrew -> Homebrew Cask JSON API or a raw tap cask file when you override the build env
+
+Packaging scaffolding added in this repo:
+
+- `packaging/flatpak/com.botom.cliprithm.yml`
+- `packaging/snap/snapcraft.yaml`
+- `packaging/homebrew/cliprithm.rb.template`
+- `packaging/linux/` shared desktop/appstream metadata
+
 ## Cleanup
 
 When the project starts consuming too much disk space again, use:
@@ -189,6 +207,7 @@ cliprithm/
 ├── src-tauri/                 # Rust backend
 │   ├── src/commands/          # FFmpeg, library, media server
 │   └── tauri.conf.json
+├── packaging/                 # Flatpak, Snap, Homebrew, and shared Linux metadata
 ├── distribution-playbooks/    # Packaging and store deployment notes
 ├── .github/                   # CI/CD, issue templates
 └── public/                    # Logo, static assets

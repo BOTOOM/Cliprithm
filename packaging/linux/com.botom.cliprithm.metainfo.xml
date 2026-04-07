@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.botom.cliprithm</id>
+  <name>Cliprithm</name>
+  <summary>Smart desktop video silence remover and clip editor</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <developer_name>Edwar Diaz</developer_name>
+  <launchable type="desktop-id">com.botom.cliprithm.desktop</launchable>
+  <url type="homepage">https://github.com/BOTOOM/Cliprithm</url>
+  <url type="bugtracker">https://github.com/BOTOOM/Cliprithm/issues</url>
+  <description>
+    <p>
+      Cliprithm is a desktop application for detecting silence in videos, editing cut points,
+      previewing the result, and exporting the final video with FFmpeg.
+    </p>
+  </description>
+  <categories>
+    <category>AudioVideo</category>
+    <category>VideoEditing</category>
+  </categories>
+  <provides>
+    <binary>cliprithm</binary>
+  </provides>
+</component>

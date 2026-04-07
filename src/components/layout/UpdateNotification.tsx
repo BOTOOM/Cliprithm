@@ -1,8 +1,16 @@
 import { useEffect, useState, useCallback } from "react";
 import { check, Update } from "@tauri-apps/plugin-updater";
-import { isDesktopRuntime } from "../../lib/runtime";
+import { copyTextToClipboard } from "../../lib/clipboard";
+import {
+  getDistributionContext,
+  isStoreManagedDistribution,
+} from "../../lib/distribution";
+import { openExternalUrl } from "../../lib/appInfo";
 import { log } from "../../lib/logger";
 import { useI18n } from "../../lib/i18n";
+import { isDesktopRuntime } from "../../lib/runtime";
+import { checkStoreManagedUpdate } from "../../services/storeUpdates";
+import type { DistributionContext } from "../../types/distribution";
 import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
 
@@ -10,6 +18,8 @@ type UpdateState =
   | { status: "idle" }
   | { status: "checking" }
   | { status: "available"; update: Update }
+  | { status: "store-managed"; distribution: DistributionContext }
+  | { status: "store-available"; distribution: DistributionContext; latestVersion: string | null }
   | { status: "downloading"; percent: number }
   | { status: "ready" }
   | { status: "error"; message: string }
@@ -21,10 +31,35 @@ export function UpdateNotification() {
   const [dismissed, setDismissed] = useState(false);
 
   const checkForUpdates = useCallback(async () => {
-    if (!isDesktopRuntime()) return;
+    if (!isDesktopRuntime()) {
+      return;
+    }
 
     setState({ status: "checking" });
     try {
+      const distribution = await getDistributionContext();
+      if (isStoreManagedDistribution(distribution)) {
+        log.info("[updater]", `Store-managed updates via ${distribution.channel}`);
+
+        try {
+          const storeUpdate = await checkStoreManagedUpdate(distribution);
+          if (storeUpdate.available) {
+            setState({
+              status: "store-available",
+              distribution,
+              latestVersion: storeUpdate.latestVersion,
+            });
+            return;
+          }
+        } catch (storeError) {
+          log.warn("[updater]", "Store update check failed:", storeError);
+        }
+
+        setState({ status: "store-managed", distribution });
+        setTimeout(() => setState({ status: "idle" }), 6000);
+        return;
+      }
+
       const update = await check();
       if (update) {
         log.info("[updater]", `Update available: ${update.version}`);
@@ -51,7 +86,6 @@ export function UpdateNotification() {
   }, []);
 
   useEffect(() => {
-    if (!isDesktopRuntime()) return;
     const timer = setTimeout(checkForUpdates, 3000);
     const interval = setInterval(checkForUpdates, 30 * 60 * 1000);
     return () => {
@@ -100,7 +134,19 @@ export function UpdateNotification() {
     await relaunch();
   };
 
-  if (!isDesktopRuntime() || state.status === "idle" || dismissed) return null;
+  const handleOpenStore = async () => {
+    if (state.status !== "store-managed" && state.status !== "store-available") return;
+    if (!state.distribution.storeUrl) return;
+    await openExternalUrl(state.distribution.storeUrl);
+  };
+
+  const handleCopyStoreCommand = async () => {
+    if (state.status !== "store-managed" && state.status !== "store-available") return;
+    if (!state.distribution.storeInstructions) return;
+    await copyTextToClipboard(state.distribution.storeInstructions);
+  };
+
+  if (state.status === "idle" || dismissed) return null;
 
   return (
     <div className="fixed bottom-6 right-6 z-[100] w-96 glass-panel rounded-xl shadow-2xl border border-outline-variant/20 overflow-hidden animate-in fade-in slide-in-from-bottom-4">
@@ -125,6 +171,135 @@ export function UpdateNotification() {
           <p className="text-xs font-medium text-on-surface-variant">
             {t("updates.latestVersion")}
           </p>
+        </div>
+      )}
+
+      {state.status === "store-managed" && (
+        <div className="p-5">
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                <Icon name="storefront" className="text-primary text-xl" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-on-surface">
+                  {t("updates.managedByStoreTitle", {
+                    store: state.distribution.storeName ?? state.distribution.channel,
+                  })}
+                </p>
+                <p className="text-[10px] text-on-surface-variant">
+                  {t("updates.managedByStoreDescription", {
+                    store: state.distribution.storeName ?? state.distribution.channel,
+                  })}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setDismissed(true)}
+              className="text-on-surface-variant hover:text-white transition-colors"
+            >
+              <Icon name="close" className="text-sm" />
+            </button>
+          </div>
+          {state.distribution.storeInstructions && (
+            <div className="mb-4 rounded-lg bg-surface-container-highest px-3 py-2">
+              <p className="text-[10px] text-on-surface-variant mb-1">
+                {t("updates.runCommand")}
+              </p>
+              <code className="text-[11px] text-primary break-all">
+                {state.distribution.storeInstructions}
+              </code>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setDismissed(true)}>
+              {t("updates.later")}
+            </Button>
+            <Button
+              variant="surface"
+              size="sm"
+              onClick={handleCopyStoreCommand}
+              disabled={!state.distribution.storeInstructions}
+            >
+              {t("updates.copyCommand")}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              className="flex-1"
+              onClick={handleOpenStore}
+              disabled={!state.distribution.storeUrl}
+            >
+              {t("updates.openStore")}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {state.status === "store-available" && (
+        <div className="p-5">
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                <Icon name="store_mall_directory" className="text-primary text-xl" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-on-surface">
+                  {t("updates.availableInStore", {
+                    store: state.distribution.storeName ?? state.distribution.channel,
+                  })}
+                </p>
+                <p className="text-[10px] text-on-surface-variant">
+                  {t("updates.version", {
+                    version: state.latestVersion ?? "n/a",
+                  })}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setDismissed(true)}
+              className="text-on-surface-variant hover:text-white transition-colors"
+            >
+              <Icon name="close" className="text-sm" />
+            </button>
+          </div>
+          <p className="text-[11px] text-on-surface-variant mb-4 leading-relaxed">
+            {t("updates.availableInStoreDescription", {
+              store: state.distribution.storeName ?? state.distribution.channel,
+            })}
+          </p>
+          {state.distribution.storeInstructions && (
+            <div className="mb-4 rounded-lg bg-surface-container-highest px-3 py-2">
+              <p className="text-[10px] text-on-surface-variant mb-1">
+                {t("updates.runCommand")}
+              </p>
+              <code className="text-[11px] text-primary break-all">
+                {state.distribution.storeInstructions}
+              </code>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setDismissed(true)}>
+              {t("updates.later")}
+            </Button>
+            <Button
+              variant="surface"
+              size="sm"
+              onClick={handleCopyStoreCommand}
+              disabled={!state.distribution.storeInstructions}
+            >
+              {t("updates.copyCommand")}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              className="flex-1"
+              onClick={handleOpenStore}
+              disabled={!state.distribution.storeUrl}
+            >
+              {t("updates.openStore")}
+            </Button>
+          </div>
         </div>
       )}
 

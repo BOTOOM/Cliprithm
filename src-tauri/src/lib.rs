@@ -1,5 +1,6 @@
 mod commands;
 
+use commands::app;
 use commands::ffmpeg;
 use commands::library;
 use commands::media_server;
@@ -87,6 +88,7 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
+            app::get_distribution_context,
             ffmpeg::check_ffmpeg,
             ffmpeg::get_video_metadata,
             ffmpeg::detect_silence,

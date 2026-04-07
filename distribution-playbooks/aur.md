@@ -17,6 +17,8 @@ Cliprithm should maintain two AUR packages:
 - `cliprithm` consumes the tagged GitHub source tarball.
 - `cliprithm-bin` consumes the release AppImage.
 - The `cliprithm-bin` wrapper exports `APPIMAGE_EXTRACT_AND_RUN=1` to avoid common AppImage integration problems on Arch-family systems.
+- Both wrappers now also export **distribution-channel env vars** so the app knows it was installed from AUR and switches to **store-managed** update guidance instead of self-updating from GitHub.
+- `cliprithm` / `cliprithm-bin` can now surface newer package versions through the **AUR RPC API**.
 
 ## Local verification
 

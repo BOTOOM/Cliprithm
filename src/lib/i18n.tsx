@@ -190,6 +190,15 @@ const translations = {
       restartToApply: "Restart the app to apply the update.",
       restartNow: "Restart Now",
       failed: "Update failed",
+      managedByStoreTitle: "Updates managed by {{store}}",
+      managedByStoreDescription:
+        "This installation is store-managed. New builds will arrive according to {{store}} rollout timings.",
+      availableInStore: "Update available in {{store}}",
+      availableInStoreDescription:
+        "A newer Cliprithm build is visible for this channel. Availability can still depend on {{store}} propagation.",
+      openStore: "Open store",
+      copyCommand: "Copy command",
+      runCommand: "Recommended command",
     },
     settingsPanel: {
       settings: "Settings",
@@ -462,6 +471,15 @@ const translations = {
       restartToApply: "Reinicia la app para aplicar la actualizacion.",
       restartNow: "Reiniciar ahora",
       failed: "La actualizacion fallo",
+      managedByStoreTitle: "Actualizaciones gestionadas por {{store}}",
+      managedByStoreDescription:
+        "Esta instalacion la gestiona la tienda o gestor de paquetes. Las nuevas builds llegaran segun los tiempos de publicacion de {{store}}.",
+      availableInStore: "Actualizacion disponible en {{store}}",
+      availableInStoreDescription:
+        "Hay una build mas nueva de Cliprithm para este canal. La disponibilidad final puede depender de la propagacion de {{store}}.",
+      openStore: "Abrir tienda",
+      copyCommand: "Copiar comando",
+      runCommand: "Comando recomendado",
     },
     settingsPanel: {
       settings: "Ajustes",

@@ -1,16 +1,25 @@
 # Snap
 
-## Recommended approach
+## Current repo state
 
-- Prefer a strict Snap only after the filesystem, FFmpeg, and updater behavior are validated inside confinement.
-- If strict confinement blocks core media workflows, use classic confinement only if the review burden is acceptable.
+- Initial scaffold added at `packaging/snap/snapcraft.yaml`
+- Runtime channel wrapper added at `packaging/snap/command-chain/cliprithm-env`
+- The app channel is set to `snap` with **store-managed updates**
 
-## Open questions before implementation
+## Update behavior
 
-1. Whether bundled FFmpeg stays external or becomes part of the snap runtime story.
-2. Whether the Tauri updater should be disabled for Snap builds and delegated to the store update channel.
-3. Which interfaces are required for file pickers, desktop integration, and media playback.
+- Snap installs should **not self-update** through the GitHub updater.
+- The app can check the latest published version through the public **Snap Store API** and, if it finds a newer release, point the user back to Snap.
+- The app should guide users back to Snap with:
 
-## Suggested next step
+```bash
+sudo snap refresh cliprithm
+```
 
-Create a `snap/snapcraft.yaml` only after the AUR + diagnostics flow is stable and the Linux artifact has been smoke-tested locally.
+- Actual update delivery still depends on Snap Store publication/review timing.
+
+## Open questions
+
+1. Whether strict confinement is sufficient for every local-media workflow or if classic confinement becomes necessary.
+2. Whether FFmpeg should stay external or become part of the snapped runtime story.
+3. Which additional interfaces may be required after real-world store review/testing.

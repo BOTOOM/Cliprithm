@@ -1,16 +1,25 @@
 # Flatpak
 
-## Recommended approach
+## Current repo state
 
-- Flatpak is a good long-term distribution channel for Linux desktops because it is storefront-friendly and handles runtime dependencies more predictably than ad-hoc installs.
-- For Cliprithm, Flatpak likely wants store-managed updates instead of the built-in GitHub updater.
+- Initial scaffold added at `packaging/flatpak/com.botom.cliprithm.yml`
+- Shared desktop/appstream metadata added under `packaging/linux/`
+- The manifest injects a `flatpak` runtime channel so the app switches to **store-managed updates**
+
+## Update behavior
+
+- Flatpak installs should not self-update via GitHub.
+- The app can check the published version through the public **Flathub appstream API** and, if a newer build exists, point the user back to Flatpak / Flathub.
+- The app should point users back to Flathub / Flatpak with:
+
+```bash
+flatpak update com.botom.cliprithm
+```
+
+- Actual availability still depends on Flathub publication/review timing.
 
 ## Important considerations
 
-1. File-system access should go through portals wherever possible.
-2. FFmpeg availability must be defined explicitly in the Flatpak manifest.
-3. The Tauri log directory and SQLite persistence paths should be checked against Flatpak sandbox behavior.
-
-## Suggested next step
-
-Prototype a Flatpak manifest only after deciding which permissions are truly necessary for local video editing and export.
+1. Review whether `--filesystem=home` can be narrowed down further once the real export/import workflow is tested under sandboxing.
+2. Confirm the SDK/runtime versions and Rust/Node extensions against the builder environment you choose.
+3. Validate SQLite/log paths and portal behavior inside the sandbox before shipping.

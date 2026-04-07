@@ -1,0 +1,45 @@
+app-id: com.botom.cliprithm
+runtime: org.gnome.Platform
+runtime-version: "47"
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node20
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: cliprithm
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  - --filesystem=home
+  - --talk-name=org.freedesktop.portal.Desktop
+  - --env=CLIPRITHM_DISTRIBUTION_CHANNEL=flatpak
+  - --env=CLIPRITHM_UPDATE_STRATEGY=store-managed
+  - --env=CLIPRITHM_PACKAGE_NAME=com.botom.cliprithm
+  - --env=CLIPRITHM_STORE_NAME=Flathub
+  - --env=CLIPRITHM_STORE_URL=https://flathub.org/apps/details/com.botom.cliprithm
+  - --env=CLIPRITHM_STORE_INSTRUCTIONS=flatpak update com.botom.cliprithm
+  - --env=CLIPRITHM_VERSION_SOURCE_TYPE=flathub-appstream
+  - --env=CLIPRITHM_VERSION_SOURCE_URL=https://flathub.org/api/v2/appstream/com.botom.cliprithm
+modules:
+  - name: cliprithm
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/node20/bin:/usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/cliprithm/cargo-home
+        npm_config_cache: /run/build/cliprithm/npm-cache
+    build-commands:
+      - npm ci --cache "$npm_config_cache" --prefer-offline
+      - npm run build
+      - cargo build --manifest-path src-tauri/Cargo.toml --release
+      - install -Dm755 src-tauri/target/release/cliprithm /app/bin/cliprithm
+      - install -Dm644 packaging/linux/com.botom.cliprithm.desktop /app/share/applications/com.botom.cliprithm.desktop
+      - install -Dm644 packaging/linux/com.botom.cliprithm.metainfo.xml /app/share/metainfo/com.botom.cliprithm.metainfo.xml
+      - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/com.botom.cliprithm.png
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/com.botom.cliprithm.png
+    sources:
+      - type: dir
+        path: ../..

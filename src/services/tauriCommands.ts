@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { log } from "../lib/logger";
 import { assertDesktop } from "../lib/runtime";
+import type { DistributionContext } from "../types/distribution";
 import type {
   DetectionResult,
   ExportOptions,
@@ -97,4 +98,9 @@ export async function generateEditedSequencePreview(
 export async function getMediaServerPort(): Promise<number> {
   assertDesktop("Media server");
   return invoke<number>("get_media_server_port");
+}
+
+export async function getDistributionContext(): Promise<DistributionContext> {
+  assertDesktop("Contexto de distribución");
+  return invoke<DistributionContext>("get_distribution_context");
 }

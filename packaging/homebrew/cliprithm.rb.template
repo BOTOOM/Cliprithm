@@ -1,0 +1,30 @@
+cask "cliprithm" do
+  arch arm: "aarch64", intel: "x64"
+
+  version "{{VERSION}}"
+  sha256 arm: "{{ARM64_SHA256}}", intel: "{{INTEL_SHA256}}"
+
+  url "https://github.com/BOTOOM/Cliprithm/releases/download/cliprithm-v#{version}/Cliprithm_#{version}_#{arch}.dmg"
+  name "Cliprithm"
+  desc "Smart desktop video silence remover and clip editor"
+  homepage "https://github.com/BOTOOM/Cliprithm"
+
+  auto_updates true
+
+  app "Cliprithm.app"
+
+  caveats <<~EOS
+    Build the macOS artifact for Homebrew with:
+      CLIPRITHM_DISTRIBUTION_CHANNEL=homebrew
+      CLIPRITHM_UPDATE_STRATEGY=store-managed
+      CLIPRITHM_PACKAGE_NAME=cliprithm
+      CLIPRITHM_STORE_NAME=Homebrew
+      CLIPRITHM_STORE_URL=https://github.com/BOTOOM/homebrew-tap
+      CLIPRITHM_STORE_INSTRUCTIONS=brew upgrade --cask cliprithm
+      CLIPRITHM_VERSION_SOURCE_TYPE=homebrew-cask-ruby
+      CLIPRITHM_VERSION_SOURCE_URL=https://raw.githubusercontent.com/BOTOOM/homebrew-tap/main/Casks/cliprithm.rb
+
+    Users should receive updates through Homebrew:
+      brew upgrade --cask cliprithm
+  EOS
+end

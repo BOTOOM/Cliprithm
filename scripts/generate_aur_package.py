@@ -192,9 +192,24 @@ def render_source_pkgbuild(
         package() {{
           cd "{src_root}"
 
-          install -Dm755 "$srcdir/target/release/cliprithm" "$pkgdir/usr/bin/cliprithm"
+          install -Dm755 "$srcdir/target/release/cliprithm" "$pkgdir/usr/lib/cliprithm/cliprithm"
           install -Dm644 "src-tauri/icons/128x128.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/cliprithm.png"
           install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
+          cat > "$srcdir/cliprithm" <<'EOF'
+        #!/usr/bin/env bash
+        set -euo pipefail
+        export CLIPRITHM_DISTRIBUTION_CHANNEL=aur
+        export CLIPRITHM_UPDATE_STRATEGY=store-managed
+        export CLIPRITHM_PACKAGE_NAME=cliprithm
+        export CLIPRITHM_STORE_NAME=AUR
+        export CLIPRITHM_STORE_URL=https://aur.archlinux.org/packages/cliprithm
+        export CLIPRITHM_STORE_INSTRUCTIONS='yay -Syu cliprithm'
+        export CLIPRITHM_VERSION_SOURCE_TYPE=aur-rpc
+        export CLIPRITHM_VERSION_SOURCE_URL=https://aur.archlinux.org/rpc/v5/info/cliprithm
+        exec /usr/lib/cliprithm/cliprithm "$@"
+        EOF
+          install -Dm755 "$srcdir/cliprithm" "$pkgdir/usr/bin/cliprithm"
 
           cat > "$srcdir/$pkgname.desktop" <<'EOF'
         [Desktop Entry]
@@ -258,6 +273,14 @@ def render_bin_pkgbuild(
           cat > "$srcdir/cliprithm" <<'EOF'
         #!/usr/bin/env bash
         set -euo pipefail
+        export CLIPRITHM_DISTRIBUTION_CHANNEL=aur-bin
+        export CLIPRITHM_UPDATE_STRATEGY=store-managed
+        export CLIPRITHM_PACKAGE_NAME=cliprithm-bin
+        export CLIPRITHM_STORE_NAME=AUR
+        export CLIPRITHM_STORE_URL=https://aur.archlinux.org/packages/cliprithm-bin
+        export CLIPRITHM_STORE_INSTRUCTIONS='yay -Syu cliprithm-bin'
+        export CLIPRITHM_VERSION_SOURCE_TYPE=aur-rpc
+        export CLIPRITHM_VERSION_SOURCE_URL=https://aur.archlinux.org/rpc/v5/info/cliprithm-bin
         export APPIMAGE_EXTRACT_AND_RUN=1
         exec /opt/cliprithm/cliprithm.AppImage "$@"
         EOF

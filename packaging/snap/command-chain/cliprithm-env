@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export CLIPRITHM_DISTRIBUTION_CHANNEL="${CLIPRITHM_DISTRIBUTION_CHANNEL:-snap}"
+export CLIPRITHM_UPDATE_STRATEGY="${CLIPRITHM_UPDATE_STRATEGY:-store-managed}"
+export CLIPRITHM_PACKAGE_NAME="${CLIPRITHM_PACKAGE_NAME:-cliprithm}"
+export CLIPRITHM_STORE_NAME="${CLIPRITHM_STORE_NAME:-Snap Store}"
+export CLIPRITHM_STORE_URL="${CLIPRITHM_STORE_URL:-https://snapcraft.io/cliprithm}"
+export CLIPRITHM_STORE_INSTRUCTIONS="${CLIPRITHM_STORE_INSTRUCTIONS:-sudo snap refresh cliprithm}"
+export CLIPRITHM_VERSION_SOURCE_TYPE="${CLIPRITHM_VERSION_SOURCE_TYPE:-snap-info}"
+export CLIPRITHM_VERSION_SOURCE_URL="${CLIPRITHM_VERSION_SOURCE_URL:-https://api.snapcraft.io/v2/snaps/info/cliprithm}"
+
+exec "$@"

@@ -1,0 +1,64 @@
+name: cliprithm
+base: core24
+summary: Smart desktop video silence remover and clip editor
+description: |
+  Cliprithm detects silence in videos, lets you review and edit cut points,
+  preview the result, and export the final video with FFmpeg.
+grade: stable
+confinement: strict
+compression: lzo
+
+apps:
+  cliprithm:
+    command-chain:
+      - snap/command-chain/cliprithm-env
+    command: usr/bin/cliprithm
+    desktop: usr/share/applications/com.botom.cliprithm.desktop
+    extensions:
+      - gnome
+    environment:
+      CLIPRITHM_DISTRIBUTION_CHANNEL: snap
+      CLIPRITHM_UPDATE_STRATEGY: store-managed
+      CLIPRITHM_PACKAGE_NAME: cliprithm
+      CLIPRITHM_STORE_NAME: Snap Store
+      CLIPRITHM_STORE_URL: https://snapcraft.io/cliprithm
+      CLIPRITHM_STORE_INSTRUCTIONS: sudo snap refresh cliprithm
+      CLIPRITHM_VERSION_SOURCE_TYPE: snap-info
+      CLIPRITHM_VERSION_SOURCE_URL: https://api.snapcraft.io/v2/snaps/info/cliprithm
+    plugs:
+      - audio-playback
+      - desktop
+      - desktop-legacy
+      - home
+      - network
+      - opengl
+      - removable-media
+      - wayland
+      - x11
+
+parts:
+  cliprithm:
+    plugin: nil
+    source: .
+    build-packages:
+      - cargo
+      - libayatana-appindicator3-dev
+      - libgtk-3-dev
+      - libwebkit2gtk-4.1-dev
+      - nodejs
+      - npm
+      - patchelf
+      - pkg-config
+      - rustc
+    override-build: |
+      craftctl default
+      export npm_config_cache="$CRAFT_PART_BUILD/npm-cache"
+      npm ci --cache "$npm_config_cache" --prefer-offline
+      npm run tauri build -- --no-bundle --ci --no-sign
+      install -Dm755 src-tauri/target/release/cliprithm "$CRAFT_PART_INSTALL/usr/bin/cliprithm"
+      install -Dm644 packaging/linux/com.botom.cliprithm.desktop "$CRAFT_PART_INSTALL/usr/share/applications/com.botom.cliprithm.desktop"
+      install -Dm644 packaging/linux/com.botom.cliprithm.metainfo.xml "$CRAFT_PART_INSTALL/usr/share/metainfo/com.botom.cliprithm.metainfo.xml"
+      install -Dm644 src-tauri/icons/32x32.png "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/32x32/apps/com.botom.cliprithm.png"
+      install -Dm644 src-tauri/icons/128x128.png "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/128x128/apps/com.botom.cliprithm.png"
+      install -Dm755 packaging/snap/command-chain/cliprithm-env "$CRAFT_PART_INSTALL/snap/command-chain/cliprithm-env"
+      craftctl set version="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
