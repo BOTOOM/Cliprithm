@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.1.1...cliprithm-v1.1.2) (2026-04-07)
+
+
+### Bug Fixes
+
+* support tauri wrapper on windows ([04e4fb6](https://github.com/BOTOOM/Cliprithm/commit/04e4fb69176ad06641bfe95f642141c334d47ad4))
+
 ## [1.1.1](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.1.0...cliprithm-v1.1.1) (2026-04-06)
 
 
