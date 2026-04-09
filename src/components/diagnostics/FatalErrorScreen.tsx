@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 import { useI18n } from "../../lib/i18n";
@@ -23,17 +24,22 @@ export function FatalErrorScreen({ fallbackError = null }: FatalErrorScreenProps
   const logFileLoading = useDiagnosticsStore((state) => state.logFileLoading);
   const refreshLogFile = useDiagnosticsStore((state) => state.refreshLogFile);
   const { currentView, activeSideTab, filePath, processedFilePath, mediaServerPort } =
-    useProjectStore((state) => ({
-      currentView: state.currentView,
-      activeSideTab: state.activeSideTab,
-      filePath: state.filePath,
-      processedFilePath: state.processedFilePath,
-      mediaServerPort: state.mediaServerPort,
-    }));
+    useProjectStore(
+      useShallow((state) => ({
+        currentView: state.currentView,
+        activeSideTab: state.activeSideTab,
+        filePath: state.filePath,
+        processedFilePath: state.processedFilePath,
+        mediaServerPort: state.mediaServerPort,
+      }))
+    );
   const [memoryLogs, setMemoryLogs] = useState(() => getRecentLogEntries(80));
   const desktopRuntime = isDesktopRuntime();
 
-  useEffect(() => subscribeToLogEntries((entries) => setMemoryLogs(entries.slice(-80))), []);
+  useEffect(
+    () => subscribeToLogEntries((entries) => setMemoryLogs(entries.slice(-80))),
+    []
+  );
 
   useEffect(() => {
     void refreshLogFile();
