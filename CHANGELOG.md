@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.2.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.1.2...cliprithm-v1.2.0) (2026-04-09)
+
+
+### Features
+
+* add diagnostics and local distro tooling ([d2332cc](https://github.com/BOTOOM/Cliprithm/commit/d2332cc5c9577db26148522fc6aee90c1f69a5c4))
+* add store-aware distribution updates ([705c4a2](https://github.com/BOTOOM/Cliprithm/commit/705c4a2205b13e120533f9163031b785bea16418))
+* **packaging:** add docker workflows for linux packages ([4189134](https://github.com/BOTOOM/Cliprithm/commit/41891340299b201f3b8d418d992496e5f206b5de))
+
+
+### Bug Fixes
+
+* separate update behavior by platform ([504947a](https://github.com/BOTOOM/Cliprithm/commit/504947a59ab352e088c99dbe75a5ced2fbf1bfae))
+* stabilize diagnostics store selectors ([44d398c](https://github.com/BOTOOM/Cliprithm/commit/44d398cb97b3e3cebcd402f59f2929d167421ba6))
+
 ## [1.1.2](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.1.1...cliprithm-v1.1.2) (2026-04-07)
 
 
