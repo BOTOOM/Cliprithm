@@ -178,13 +178,15 @@ When the project starts consuming too much disk space again, use:
 npm run clean
 ```
 
-That removes `dist`, `src-tauri/gen`, and `src-tauri/target`.
+That removes `dist`, `src-tauri/gen`, `src-tauri/target`, and Snapcraft build artifacts under `packaging/snap/` (`.snapcraft`, `parts`, `prime`, `stage`, and generated `.snap` files).
 
 If you also want to remove `node_modules`:
 
 ```bash
 npm run clean:full
 ```
+
+`npm run clean:full` also removes `node_modules` and `.playwright-mcp`.
 
 ## Project Structure
 

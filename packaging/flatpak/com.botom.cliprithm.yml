@@ -28,13 +28,34 @@ modules:
     buildsystem: simple
     build-options:
       append-path: /usr/lib/sdk/node20/bin:/usr/lib/sdk/rust-stable/bin
+      build-args:
+        - --share=network
       env:
         CARGO_HOME: /run/build/cliprithm/cargo-home
         npm_config_cache: /run/build/cliprithm/npm-cache
     build-commands:
-      - npm ci --cache "$npm_config_cache" --prefer-offline
-      - npm run build
-      - cargo build --manifest-path src-tauri/Cargo.toml --release
+      - |
+        case "$(uname -m)" in
+          x86_64) node_arch="x64" ;;
+          aarch64) node_arch="arm64" ;;
+          *)
+            echo "Unsupported Node.js architecture: $(uname -m)" >&2
+            exit 1
+            ;;
+        esac
+
+        node_version="v22.12.0"
+        node_root="/run/build/cliprithm/node-${node_version}-linux-${node_arch}"
+        if [ ! -x "$node_root/bin/node" ]; then
+          curl -fsSLo /run/build/cliprithm/node.tar.xz \
+            "https://nodejs.org/dist/${node_version}/node-${node_version}-linux-${node_arch}.tar.xz"
+          tar -xJf /run/build/cliprithm/node.tar.xz -C /run/build/cliprithm
+        fi
+
+        export PATH="$node_root/bin:$PATH"
+        npm ci --cache "$npm_config_cache" --prefer-offline
+        npm run build
+        cargo build --manifest-path src-tauri/Cargo.toml --release
       - install -Dm755 src-tauri/target/release/cliprithm /app/bin/cliprithm
       - install -Dm644 packaging/linux/com.botom.cliprithm.desktop /app/share/applications/com.botom.cliprithm.desktop
       - install -Dm644 packaging/linux/com.botom.cliprithm.metainfo.xml /app/share/metainfo/com.botom.cliprithm.metainfo.xml

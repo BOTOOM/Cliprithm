@@ -1,5 +1,6 @@
 name: cliprithm
 base: core24
+version: "1.1.1"
 summary: Smart desktop video silence remover and clip editor
 description: |
   Cliprithm detects silence in videos, lets you review and edit cut points,
@@ -17,6 +18,9 @@ apps:
     extensions:
       - gnome
     environment:
+      LD_LIBRARY_PATH: $LD_LIBRARY_PATH:$SNAP/usr/lib/x86_64-linux-gnu/libproxy
+      LIBGL_ALWAYS_SOFTWARE: "true"
+      WEBKIT_DISABLE_COMPOSITING_MODE: "1"
       CLIPRITHM_DISTRIBUTION_CHANNEL: snap
       CLIPRITHM_UPDATE_STRATEGY: store-managed
       CLIPRITHM_PACKAGE_NAME: cliprithm
@@ -39,26 +43,77 @@ apps:
 parts:
   cliprithm:
     plugin: nil
-    source: .
+    source: ../..
     build-packages:
-      - cargo
+      - build-essential
+      - ca-certificates
+      - curl
       - libayatana-appindicator3-dev
       - libgtk-3-dev
       - libwebkit2gtk-4.1-dev
-      - nodejs
-      - npm
       - patchelf
       - pkg-config
-      - rustc
+      - xz-utils
+    stage-packages:
+      - ffmpeg
+      - glib-networking
+      - libblas3
+      - libayatana-appindicator3-1
+      - liblapack3
+      - libproxy1v5
+      - libwebkit2gtk-4.1-0
     override-build: |
-      craftctl default
+      export CARGO_HOME="$CRAFT_PART_BUILD/cargo-home"
       export npm_config_cache="$CRAFT_PART_BUILD/npm-cache"
+      export RUSTUP_HOME="$CRAFT_PART_BUILD/rustup-home"
+      export PATH="$CARGO_HOME/bin:$PATH"
+
+      if [[ ! -x "$CARGO_HOME/bin/rustup" ]]; then
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+          | sh -s -- -y --profile minimal --default-toolchain stable
+      fi
+
+      case "${CRAFT_ARCH_BUILD_FOR:-amd64}" in
+        amd64) node_arch="x64" ;;
+        arm64) node_arch="arm64" ;;
+        *)
+          echo "Unsupported Node.js architecture for snap build: ${CRAFT_ARCH_BUILD_FOR:-unknown}" >&2
+          exit 1
+          ;;
+      esac
+
+      node_version="v22.12.0"
+      node_root="$CRAFT_PART_BUILD/node-${node_version}-linux-${node_arch}"
+      if [[ ! -x "$node_root/bin/node" ]]; then
+        curl -fsSLo "$CRAFT_PART_BUILD/node.tar.xz" \
+          "https://nodejs.org/dist/${node_version}/node-${node_version}-linux-${node_arch}.tar.xz"
+        tar -xJf "$CRAFT_PART_BUILD/node.tar.xz" -C "$CRAFT_PART_BUILD"
+      fi
+      export PATH="$node_root/bin:$PATH"
+
       npm ci --cache "$npm_config_cache" --prefer-offline
       npm run tauri build -- --no-bundle --ci --no-sign
-      install -Dm755 src-tauri/target/release/cliprithm "$CRAFT_PART_INSTALL/usr/bin/cliprithm"
-      install -Dm644 packaging/linux/com.botom.cliprithm.desktop "$CRAFT_PART_INSTALL/usr/share/applications/com.botom.cliprithm.desktop"
-      install -Dm644 packaging/linux/com.botom.cliprithm.metainfo.xml "$CRAFT_PART_INSTALL/usr/share/metainfo/com.botom.cliprithm.metainfo.xml"
-      install -Dm644 src-tauri/icons/32x32.png "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/32x32/apps/com.botom.cliprithm.png"
-      install -Dm644 src-tauri/icons/128x128.png "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/128x128/apps/com.botom.cliprithm.png"
-      install -Dm755 packaging/snap/command-chain/cliprithm-env "$CRAFT_PART_INSTALL/snap/command-chain/cliprithm-env"
-      craftctl set version="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
+      install -Dm755 "$CRAFT_PART_BUILD/src-tauri/target/release/cliprithm" "$CRAFT_PART_INSTALL/usr/bin/cliprithm"
+      install -Dm644 "$CRAFT_PROJECT_DIR/../linux/com.botom.cliprithm.desktop" "$CRAFT_PART_INSTALL/usr/share/applications/com.botom.cliprithm.desktop"
+      install -Dm644 "$CRAFT_PROJECT_DIR/../linux/com.botom.cliprithm.metainfo.xml" "$CRAFT_PART_INSTALL/usr/share/metainfo/com.botom.cliprithm.metainfo.xml"
+      install -Dm644 "$CRAFT_PROJECT_DIR/../../src-tauri/icons/32x32.png" "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/32x32/apps/com.botom.cliprithm.png"
+      install -Dm644 "$CRAFT_PROJECT_DIR/../../src-tauri/icons/128x128.png" "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/128x128/apps/com.botom.cliprithm.png"
+      install -Dm755 "$CRAFT_PROJECT_DIR/command-chain/cliprithm-env" "$CRAFT_PART_INSTALL/snap/command-chain/cliprithm-env"
+  runtime-layout-fixes:
+    after:
+      - cliprithm
+    plugin: nil
+    override-prime: |
+      webkit_dir="$CRAFT_STAGE/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1"
+      if [[ ! -d "$webkit_dir" ]]; then
+        echo "Expected WebKit runtime files from libwebkit2gtk-4.1-0 in $webkit_dir" >&2
+        exit 1
+      fi
+
+      # Let the gnome extension keep using its own newer librsvg build so the
+      # runtime SVG pixbuf loader doesn't resolve against an older staged copy.
+      rm -f "$CRAFT_PRIME/usr/lib/x86_64-linux-gnu"/librsvg-2.so*
+
+      install -d "$CRAFT_PRIME/gnome-platform/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1"
+      cp -a "$webkit_dir/." \
+        "$CRAFT_PRIME/gnome-platform/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/"
