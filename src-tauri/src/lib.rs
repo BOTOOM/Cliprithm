@@ -7,8 +7,30 @@ use commands::media_server;
 use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+#[cfg(target_os = "linux")]
+fn configure_linux_release_runtime() {
+    if std::env::var_os("APPIMAGE").is_none() {
+        return;
+    }
+
+    // AppImage builds can render as a blank window on some Arch/Manjaro setups
+    // unless WebKitGTK falls back to the safer software-rendered path.
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+    if std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
+        std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
+    }
+    if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    configure_linux_release_runtime();
+
     let migrations = vec![
         Migration {
             version: 1,

@@ -4,12 +4,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      build_macos:
-        description: 'Build macOS (uses extra credits)'
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -55,7 +49,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies (Ubuntu)
         if: matrix.platform == 'ubuntu-22.04'
@@ -74,7 +68,7 @@ jobs:
           workspaces: './src-tauri -> target'
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: 'npm'
@@ -137,7 +131,7 @@ jobs:
           fi
 
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -151,13 +145,15 @@ jobs:
           args: --target ${{ matrix.target }}
 
   publish-aur:
-    needs: release-please
+    needs:
+      - release-please
+      - build-linux-windows
     if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Check AUR configuration
         id: aur-config
@@ -173,7 +169,7 @@ jobs:
 
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
-      - name: Generate AUR package files
+      - name: Generate AUR source package files
         if: steps.aur-config.outputs.enabled == 'true'
         env:
           RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
@@ -182,7 +178,19 @@ jobs:
           python3 scripts/generate_aur_package.py \
             --version "$RELEASE_VERSION" \
             --tag "$RELEASE_TAG" \
-            --output-dir .artifacts/aur
+            --output-dir .artifacts/aur/source
+
+      - name: Generate AUR binary package files
+        if: steps.aur-config.outputs.enabled == 'true'
+        env:
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          python3 scripts/generate_aur_package.py \
+            --package bin \
+            --version "$RELEASE_VERSION" \
+            --tag "$RELEASE_TAG" \
+            --output-dir .artifacts/aur/bin
 
       - name: Configure SSH for AUR
         if: steps.aur-config.outputs.enabled == 'true'
@@ -197,7 +205,7 @@ jobs:
           ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Publish AUR package repository
+      - name: Publish AUR source package repository
         if: steps.aur-config.outputs.enabled == 'true'
         shell: bash
         env:
@@ -206,8 +214,8 @@ jobs:
         run: |
           REPO_URL="${AUR_PACKAGE_REPO_SSH_URL:-ssh://aur@aur.archlinux.org/cliprithm.git}"
           git clone "$REPO_URL" /tmp/aur-cliprithm
-          cp .artifacts/aur/PKGBUILD /tmp/aur-cliprithm/PKGBUILD
-          cp .artifacts/aur/.SRCINFO /tmp/aur-cliprithm/.SRCINFO
+          cp .artifacts/aur/source/PKGBUILD /tmp/aur-cliprithm/PKGBUILD
+          cp .artifacts/aur/source/.SRCINFO /tmp/aur-cliprithm/.SRCINFO
 
           git -C /tmp/aur-cliprithm config user.name "github-actions[bot]"
           git -C /tmp/aur-cliprithm config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -221,10 +229,43 @@ jobs:
           git -C /tmp/aur-cliprithm commit -m "cliprithm ${RELEASE_VERSION}"
           git -C /tmp/aur-cliprithm push origin HEAD
 
-  # Step 3: Build macOS (only when manually opted in)
+      - name: Publish AUR binary package repository
+        if: steps.aur-config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+          AUR_PACKAGE_REPO_SSH_URL: ${{ vars.AUR_PACKAGE_REPO_SSH_URL }}
+        run: |
+          SOURCE_REPO_URL="${AUR_PACKAGE_REPO_SSH_URL:-ssh://aur@aur.archlinux.org/cliprithm.git}"
+          case "$SOURCE_REPO_URL" in
+            *cliprithm.git)
+              REPO_URL="${SOURCE_REPO_URL%cliprithm.git}cliprithm-bin.git"
+              ;;
+            *)
+              echo "::error::AUR_PACKAGE_REPO_SSH_URL must end with cliprithm.git so cliprithm-bin.git can be derived automatically."
+              exit 1
+              ;;
+          esac
+          git clone "$REPO_URL" /tmp/aur-cliprithm-bin
+          cp .artifacts/aur/bin/PKGBUILD /tmp/aur-cliprithm-bin/PKGBUILD
+          cp .artifacts/aur/bin/.SRCINFO /tmp/aur-cliprithm-bin/.SRCINFO
+
+          git -C /tmp/aur-cliprithm-bin config user.name "github-actions[bot]"
+          git -C /tmp/aur-cliprithm-bin config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C /tmp/aur-cliprithm-bin add PKGBUILD .SRCINFO
+
+          if git -C /tmp/aur-cliprithm-bin diff --cached --quiet; then
+            echo "AUR binary package repository already up to date."
+            exit 0
+          fi
+
+          git -C /tmp/aur-cliprithm-bin commit -m "cliprithm-bin ${RELEASE_VERSION}"
+          git -C /tmp/aur-cliprithm-bin push origin HEAD
+
+  # Step 3: Build macOS artifacts for every created release
   build-macos:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created && github.event.inputs.build_macos == 'true' }}
+    if: ${{ needs.release-please.outputs.release_created }}
     permissions:
       contents: write
     strategy:
@@ -239,7 +280,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -252,7 +293,7 @@ jobs:
           workspaces: './src-tauri -> target'
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: 'npm'
@@ -310,7 +351,7 @@ jobs:
           fi
 
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

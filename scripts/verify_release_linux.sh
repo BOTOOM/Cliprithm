@@ -28,5 +28,8 @@ sha256sum "$appimage" "$deb" "$rpm"
 
 echo
 echo "==> Smoke-run command for the exact AppImage shipped to users"
-echo "APPIMAGE_EXTRACT_AND_RUN=1 \"$PWD/$appimage\""
+echo "\"$PWD/$appimage\""
 
+echo
+echo "==> Arch/Manjaro fallback if the AppImage opens as a blank window"
+echo "APPIMAGE_EXTRACT_AND_RUN=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 \"$PWD/$appimage\""

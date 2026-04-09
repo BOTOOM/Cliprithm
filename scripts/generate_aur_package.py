@@ -282,6 +282,9 @@ def render_bin_pkgbuild(
         export CLIPRITHM_VERSION_SOURCE_TYPE=aur-rpc
         export CLIPRITHM_VERSION_SOURCE_URL=https://aur.archlinux.org/rpc/v5/info/cliprithm-bin
         export APPIMAGE_EXTRACT_AND_RUN=1
+        export WEBKIT_DISABLE_DMABUF_RENDERER=1
+        export WEBKIT_DISABLE_COMPOSITING_MODE=1
+        export LIBGL_ALWAYS_SOFTWARE=1
         exec /opt/cliprithm/cliprithm.AppImage "$@"
         EOF
           install -Dm755 "$srcdir/cliprithm" "$pkgdir/usr/bin/cliprithm"
