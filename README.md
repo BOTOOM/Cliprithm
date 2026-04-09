@@ -66,45 +66,56 @@ On local Linux builds, `npm run tauri build` now auto-enables the AppImage fallb
 
 ## Installing from Releases
 
+Files ending in `.sig` and `latest.json` are **not installers**:
+
+- `.sig` files are release/update signatures
+- `latest.json` is used by the in-app updater for GitHub-distributed builds
+
 ### Linux
 
-- **Arch / Manjaro**: install from AUR:
+| Target system | Release file | What to do |
+| --- | --- | --- |
+| Arch / Manjaro | AUR `cliprithm` | `yay -S cliprithm` |
+| Arch / Manjaro | AUR `cliprithm-bin` | `yay -S cliprithm-bin` |
+| Ubuntu / Debian | `Cliprithm_<version>_amd64.deb` | `sudo apt install ./Cliprithm_<version>_amd64.deb` |
+| Fedora / RHEL | `Cliprithm-<version>-1.x86_64.rpm` | `sudo dnf install ./Cliprithm-<version>-1.x86_64.rpm` |
+| openSUSE | `Cliprithm-<version>-1.x86_64.rpm` | `sudo zypper install ./Cliprithm-<version>-1.x86_64.rpm` |
+| Generic Linux | `Cliprithm_<version>_amd64.AppImage` | portable fallback; see below |
 
-```bash
-yay -S cliprithm
-```
-
-- **Arch / Manjaro (fast install)**: use the prebuilt binary package:
-
-```bash
-yay -S cliprithm-bin
-```
-
-- **Ubuntu / Debian**: install the `.deb` artifact from the GitHub release:
-
-```bash
-sudo apt install ./Cliprithm_<version>_amd64.deb
-```
-
-- **Generic Linux**: use the AppImage as the portable fallback:
+For the AppImage:
 
 ```bash
 chmod +x Cliprithm_<version>_amd64.AppImage
 ./Cliprithm_<version>_amd64.AppImage
 ```
 
-If the AppImage freezes or behaves oddly on some Arch/Manjaro systems, try:
+On Arch / Manjaro, if direct AppImage mounting fails, install the compatibility package once:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./Cliprithm_<version>_amd64.AppImage
+sudo pacman -S fuse2
 ```
 
-That workaround helps on systems where AppImage/FUSE integration is inconsistent. For Arch-based distros, the AUR package is the preferred destination.
+If the AppImage opens with a blank or white window on Arch / Manjaro, run it in **one single line**:
+
+```bash
+APPIMAGE_EXTRACT_AND_RUN=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 ./Cliprithm_<version>_amd64.AppImage
+```
+
+For Arch-based distros, `cliprithm-bin` is the preferred package because it already wraps the AppImage in the recommended AUR launcher.
 
 ### Windows
 
-- Use `Cliprithm_<version>_x64-setup.exe` for the guided installer
-- Use `Cliprithm_<version>_x64_en-US.msi` for MSI-based deployment
+- Use `Cliprithm_<version>_x64-setup.exe` for the normal interactive installer
+- Use `Cliprithm_<version>_x64_en-US.msi` for managed or silent MSI deployment
+
+### macOS
+
+- Download the `.dmg` that matches your Mac CPU:
+  - Apple Silicon: `aarch64`
+  - Intel: `x64`
+- Open the `.dmg`, drag **Cliprithm.app** into **Applications**, and start it from there
+
+If a specific release tag does not include macOS assets, that tag was published without the macOS build job.
 
 ## AUR Publishing Automation
 
@@ -113,7 +124,7 @@ Cliprithm now has tooling for two AUR variants:
 - `cliprithm` → source-based package
 - `cliprithm-bin` → binary package backed by the release AppImage
 
-Current automation in GitHub Actions still publishes the source package. The binary package tooling is ready for local validation and for wiring into a second AUR repo when you decide to enable it.
+GitHub Actions now publishes both AUR package variants when the SSH key is configured and the target AUR repositories exist.
 
 The local/publication tooling:
 - generates `PKGBUILD` and `.SRCINFO` from the release version and tag
@@ -125,18 +136,22 @@ Required GitHub configuration:
 - Secret: `AUR_SSH_PRIVATE_KEY`
 - Optional repository variable: `AUR_PACKAGE_REPO_SSH_URL`
 
-Default AUR repository URL if the variable is not set:
+Default AUR repository URLs if the variable is not set:
 
 ```text
 ssh://aur@aur.archlinux.org/cliprithm.git
+ssh://aur@aur.archlinux.org/cliprithm-bin.git
 ```
+
+The workflow derives `cliprithm-bin.git` automatically from `AUR_PACKAGE_REPO_SSH_URL`, so you do not need a second repository variable for the binary package.
 
 Recommended maintainer setup:
 1. Create or use your AUR account
 2. Generate a dedicated SSH keypair for AUR publishing
 3. Add the public key to your AUR account
 4. Save the private key in this repo as `AUR_SSH_PRIVATE_KEY`
-5. Let the release workflow publish the package on future releases
+5. Make sure that same key has write access to both AUR repos
+6. Let the release workflow publish both packages on future releases
 
 Local validation flow:
 

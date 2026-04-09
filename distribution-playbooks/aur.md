@@ -16,7 +16,7 @@ Cliprithm should maintain two AUR packages:
 
 - `cliprithm` consumes the tagged GitHub source tarball.
 - `cliprithm-bin` consumes the release AppImage.
-- The `cliprithm-bin` wrapper exports `APPIMAGE_EXTRACT_AND_RUN=1` to avoid common AppImage integration problems on Arch-family systems.
+- The `cliprithm-bin` wrapper exports `APPIMAGE_EXTRACT_AND_RUN=1`, `WEBKIT_DISABLE_DMABUF_RENDERER=1`, `WEBKIT_DISABLE_COMPOSITING_MODE=1`, and `LIBGL_ALWAYS_SOFTWARE=1` to avoid common AppImage / EGL problems on Arch-family systems.
 - Both wrappers now also export **distribution-channel env vars** so the app knows it was installed from AUR and switches to **store-managed** update guidance instead of self-updating from GitHub.
 - `cliprithm` / `cliprithm-bin` can now surface newer package versions through the **AUR RPC API**.
 
@@ -43,5 +43,14 @@ bash scripts/verify_aur_package.sh bin --build-package
 ## Publishing notes
 
 - Keep `cliprithm` and `cliprithm-bin` in separate AUR git repositories.
-- Use distinct repository URLs/secrets if release automation is later expanded to push both packages.
+- The release workflow can publish both packages with the same `AUR_SSH_PRIVATE_KEY` as long as that key is authorized in both AUR repositories.
 - Bump `pkgrel` when the PKGBUILD changes but the upstream app version does not.
+
+## GitHub configuration
+
+- Required secret:
+  - `AUR_SSH_PRIVATE_KEY`
+- Optional repository variable:
+  - `AUR_PACKAGE_REPO_SSH_URL` (defaults to `ssh://aur@aur.archlinux.org/cliprithm.git`)
+
+The release workflow derives `ssh://aur@aur.archlinux.org/cliprithm-bin.git` automatically from that same variable.
