@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.2.0...cliprithm-v1.2.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* **release:** publish aur bin and harden appimage startup ([0032556](https://github.com/BOTOOM/Cliprithm/commit/0032556e3739d92a93f28bab2a0fbdceffe35185))
+
 ## [1.2.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.1.2...cliprithm-v1.2.0) (2026-04-09)
 
 
