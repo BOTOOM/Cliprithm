@@ -9,6 +9,8 @@ export type DistributionChannel =
 
 export type UpdateStrategy = "self-update" | "store-managed";
 
+export type RuntimePlatform = "windows" | "macos" | "linux" | "unknown";
+
 export type VersionSourceType =
   | "none"
   | "aur-rpc"

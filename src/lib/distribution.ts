@@ -3,6 +3,7 @@ import { isDesktopRuntime } from "./runtime";
 import type {
   DistributionChannel,
   DistributionContext,
+  RuntimePlatform,
   UpdateStrategy,
   VersionSourceType,
 } from "../types/distribution";
@@ -60,6 +61,8 @@ function defaultStoreName(channel: DistributionChannel): string | null {
 
 function defaultStoreUrl(channel: DistributionChannel, packageName: string | null): string | null {
   switch (channel) {
+    case "github":
+      return "https://github.com/BOTOOM/Cliprithm/releases/latest";
     case "aur":
     case "aur-bin":
       return packageName ? `https://aur.archlinux.org/packages/${packageName}` : null;
@@ -207,4 +210,23 @@ export async function getDistributionContext(): Promise<DistributionContext> {
 
 export function isStoreManagedDistribution(context: DistributionContext): boolean {
   return context.updateStrategy === "store-managed";
+}
+
+export function getRuntimePlatform(): RuntimePlatform {
+  if (!isDesktopRuntime()) {
+    return "unknown";
+  }
+
+  const userAgent = window.navigator.userAgent.toLowerCase();
+  if (userAgent.includes("windows")) {
+    return "windows";
+  }
+  if (userAgent.includes("mac os") || userAgent.includes("macintosh")) {
+    return "macos";
+  }
+  if (userAgent.includes("linux")) {
+    return "linux";
+  }
+
+  return "unknown";
 }

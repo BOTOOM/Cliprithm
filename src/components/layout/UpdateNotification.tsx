@@ -3,7 +3,7 @@ import { check, Update } from "@tauri-apps/plugin-updater";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import {
   getDistributionContext,
-  isStoreManagedDistribution,
+  getRuntimePlatform,
 } from "../../lib/distribution";
 import { openExternalUrl } from "../../lib/appInfo";
 import { log } from "../../lib/logger";
@@ -18,8 +18,12 @@ type UpdateState =
   | { status: "idle" }
   | { status: "checking" }
   | { status: "available"; update: Update }
-  | { status: "store-managed"; distribution: DistributionContext }
-  | { status: "store-available"; distribution: DistributionContext; latestVersion: string | null }
+  | {
+      status: "manual-update-available";
+      distribution: DistributionContext;
+      latestVersion: string | null;
+      autoUpdateFailed: boolean;
+    }
   | { status: "downloading"; percent: number }
   | { status: "ready" }
   | { status: "error"; message: string }
@@ -38,35 +42,56 @@ export function UpdateNotification() {
     setState({ status: "checking" });
     try {
       const distribution = await getDistributionContext();
-      if (isStoreManagedDistribution(distribution)) {
-        log.info("[updater]", `Store-managed updates via ${distribution.channel}`);
+      const runtimePlatform = getRuntimePlatform();
+      const linuxRuntime = runtimePlatform === "linux";
 
-        try {
-          const storeUpdate = await checkStoreManagedUpdate(distribution);
-          if (storeUpdate.available) {
-            setState({
-              status: "store-available",
-              distribution,
-              latestVersion: storeUpdate.latestVersion,
-            });
-            return;
-          }
-        } catch (storeError) {
-          log.warn("[updater]", "Store update check failed:", storeError);
+      if (!linuxRuntime) {
+        const update = await check();
+        if (update) {
+          log.info("[updater]", `Update available: ${update.version}`);
+          setState({ status: "available", update });
+        } else {
+          setState({ status: "uptodate" });
+          setTimeout(() => setState({ status: "idle" }), 3000);
         }
-
-        setState({ status: "store-managed", distribution });
-        setTimeout(() => setState({ status: "idle" }), 6000);
         return;
       }
 
-      const update = await check();
-      if (update) {
-        log.info("[updater]", `Update available: ${update.version}`);
-        setState({ status: "available", update });
-      } else {
+      let updaterCheckFailed = false;
+      try {
+        const update = await check();
+        if (update) {
+          log.info("[updater]", `Update available: ${update.version}`);
+          setState({ status: "available", update });
+          return;
+        }
+      } catch (updaterError) {
+        updaterCheckFailed = true;
+        log.warn("[updater]", "Automatic update check failed on Linux:", updaterError);
+      }
+
+      let storeCheckFailed = false;
+      try {
+        const storeUpdate = await checkStoreManagedUpdate(distribution);
+        if (storeUpdate.available) {
+          setState({
+            status: "manual-update-available",
+            distribution,
+            latestVersion: storeUpdate.latestVersion,
+            autoUpdateFailed: false,
+          });
+          return;
+        }
+      } catch (storeError) {
+        storeCheckFailed = true;
+        log.warn("[updater]", "Linux fallback update check failed:", storeError);
+      }
+
+      if (!updaterCheckFailed && !storeCheckFailed) {
         setState({ status: "uptodate" });
         setTimeout(() => setState({ status: "idle" }), 3000);
+      } else {
+        setState({ status: "idle" });
       }
     } catch (err) {
       const message = String(err);
@@ -125,6 +150,18 @@ export function UpdateNotification() {
 
       setState({ status: "ready" });
     } catch (err) {
+      if (getRuntimePlatform() === "linux") {
+        const distribution = await getDistributionContext();
+        log.warn("[updater]", "Automatic Linux update failed, falling back to manual update.", err);
+        setState({
+          status: "manual-update-available",
+          distribution,
+          latestVersion: state.update.version,
+          autoUpdateFailed: true,
+        });
+        return;
+      }
+
       setState({ status: "error", message: String(err) });
     }
   };
@@ -135,13 +172,13 @@ export function UpdateNotification() {
   };
 
   const handleOpenStore = async () => {
-    if (state.status !== "store-managed" && state.status !== "store-available") return;
+    if (state.status !== "manual-update-available") return;
     if (!state.distribution.storeUrl) return;
     await openExternalUrl(state.distribution.storeUrl);
   };
 
   const handleCopyStoreCommand = async () => {
-    if (state.status !== "store-managed" && state.status !== "store-available") return;
+    if (state.status !== "manual-update-available") return;
     if (!state.distribution.storeInstructions) return;
     await copyTextToClipboard(state.distribution.storeInstructions);
   };
@@ -174,80 +211,16 @@ export function UpdateNotification() {
         </div>
       )}
 
-      {state.status === "store-managed" && (
+      {state.status === "manual-update-available" && (
         <div className="p-5">
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                <Icon name="storefront" className="text-primary text-xl" />
+                <Icon name="system_update_alt" className="text-primary text-xl" />
               </div>
               <div>
                 <p className="text-sm font-bold text-on-surface">
-                  {t("updates.managedByStoreTitle", {
-                    store: state.distribution.storeName ?? state.distribution.channel,
-                  })}
-                </p>
-                <p className="text-[10px] text-on-surface-variant">
-                  {t("updates.managedByStoreDescription", {
-                    store: state.distribution.storeName ?? state.distribution.channel,
-                  })}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setDismissed(true)}
-              className="text-on-surface-variant hover:text-white transition-colors"
-            >
-              <Icon name="close" className="text-sm" />
-            </button>
-          </div>
-          {state.distribution.storeInstructions && (
-            <div className="mb-4 rounded-lg bg-surface-container-highest px-3 py-2">
-              <p className="text-[10px] text-on-surface-variant mb-1">
-                {t("updates.runCommand")}
-              </p>
-              <code className="text-[11px] text-primary break-all">
-                {state.distribution.storeInstructions}
-              </code>
-            </div>
-          )}
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setDismissed(true)}>
-              {t("updates.later")}
-            </Button>
-            <Button
-              variant="surface"
-              size="sm"
-              onClick={handleCopyStoreCommand}
-              disabled={!state.distribution.storeInstructions}
-            >
-              {t("updates.copyCommand")}
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              className="flex-1"
-              onClick={handleOpenStore}
-              disabled={!state.distribution.storeUrl}
-            >
-              {t("updates.openStore")}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {state.status === "store-available" && (
-        <div className="p-5">
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                <Icon name="store_mall_directory" className="text-primary text-xl" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-on-surface">
-                  {t("updates.availableInStore", {
-                    store: state.distribution.storeName ?? state.distribution.channel,
-                  })}
+                  {t("updates.manualUpdateAvailable")}
                 </p>
                 <p className="text-[10px] text-on-surface-variant">
                   {t("updates.version", {
@@ -264,9 +237,9 @@ export function UpdateNotification() {
             </button>
           </div>
           <p className="text-[11px] text-on-surface-variant mb-4 leading-relaxed">
-            {t("updates.availableInStoreDescription", {
-              store: state.distribution.storeName ?? state.distribution.channel,
-            })}
+            {state.autoUpdateFailed
+              ? t("updates.manualUpdateFallbackDescription")
+              : t("updates.manualUpdateAvailableDescription")}
           </p>
           {state.distribution.storeInstructions && (
             <div className="mb-4 rounded-lg bg-surface-container-highest px-3 py-2">
@@ -297,7 +270,7 @@ export function UpdateNotification() {
               onClick={handleOpenStore}
               disabled={!state.distribution.storeUrl}
             >
-              {t("updates.openStore")}
+              {t("updates.openDownloadSource")}
             </Button>
           </div>
         </div>

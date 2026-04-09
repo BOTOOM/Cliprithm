@@ -196,7 +196,13 @@ const translations = {
       availableInStore: "Update available in {{store}}",
       availableInStoreDescription:
         "A newer Cliprithm build is visible for this channel. Availability can still depend on {{store}} propagation.",
+      manualUpdateAvailable: "Update available",
+      manualUpdateAvailableDescription:
+        "A newer Cliprithm build is available for this Linux installation. If automatic install is not possible, update it from the same store or download source you used originally.",
+      manualUpdateFallbackDescription:
+        "Cliprithm could not finish the Linux update automatically. Update it from the same store or download source you used originally.",
       openStore: "Open store",
+      openDownloadSource: "Open download page",
       copyCommand: "Copy command",
       runCommand: "Recommended command",
     },
@@ -477,7 +483,13 @@ const translations = {
       availableInStore: "Actualizacion disponible en {{store}}",
       availableInStoreDescription:
         "Hay una build mas nueva de Cliprithm para este canal. La disponibilidad final puede depender de la propagacion de {{store}}.",
+      manualUpdateAvailable: "Actualizacion disponible",
+      manualUpdateAvailableDescription:
+        "Hay una build mas nueva de Cliprithm para esta instalacion de Linux. Si la instalacion automatica no es posible, actualizala desde la misma tienda o fuente de descarga que usaste originalmente.",
+      manualUpdateFallbackDescription:
+        "Cliprithm no pudo completar la actualizacion automatica en Linux. Actualizala desde la misma tienda o fuente de descarga que usaste originalmente.",
       openStore: "Abrir tienda",
+      openDownloadSource: "Abrir pagina de descarga",
       copyCommand: "Copiar comando",
       runCommand: "Comando recomendado",
     },
