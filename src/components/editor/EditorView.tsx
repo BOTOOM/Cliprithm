@@ -66,6 +66,17 @@ export function EditorView() {
   const lastDetectedSignatureRef = useRef<string | null>(null);
   const lastClipSignatureRef = useRef<string>("");
 
+  const playVideoSafely = useCallback((video: HTMLVideoElement, reason: string) => {
+    void video.play().catch((error) => {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        log.warn("[preview]", `${reason} aborted by a newer playback action`, error);
+        return;
+      }
+
+      log.warn("[preview]", `${reason} failed:`, error);
+    });
+  }, []);
+
   const duration = videoMetadata?.duration ?? 0;
   const isDetectionReview = currentView === "detection";
   const fallbackClip: ClipSegment | null = useMemo(() => {
@@ -222,13 +233,11 @@ export function EditorView() {
 
       if (resumeAfterSeek && wasPlaying) {
         window.setTimeout(() => {
-          void video.play().catch((error) => {
-            log.warn("[preview]", "Failed to resume after seek:", error);
-          });
+          playVideoSafely(video, "Resume after seek");
         }, 40);
       }
     },
-    [duration]
+    [duration, playVideoSafely]
   );
 
   // Seek using edited timeline time → convert to source time
@@ -262,7 +271,7 @@ export function EditorView() {
   const handlePlayPause = () => {
     if (!videoRef.current) return;
     if (videoRef.current.paused) {
-      void videoRef.current.play();
+      playVideoSafely(videoRef.current, "Manual playback start");
     } else {
       videoRef.current.pause();
     }
