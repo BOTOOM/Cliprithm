@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.2.1...cliprithm-v1.2.2) (2026-04-29)
+
+
+### Bug Fixes
+
+* **editor:** avoid abort-related fatal errors during rapid playback/seek ([69db04c](https://github.com/BOTOOM/Cliprithm/commit/69db04c1b80efda50d91b8f32e04e4d1512018c2))
+
 ## [1.2.1](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.2.0...cliprithm-v1.2.1) (2026-04-09)
 
 
