@@ -11,6 +11,7 @@ import type {
   DetectionResult,
   DetectionSettings,
   ExportSettings,
+  FfmpegStatus,
   ProcessingProgress,
   PreviewMode,
   SilenceSegment,
@@ -80,6 +81,9 @@ interface ProjectState {
 
   mediaServerPort: number;
   setMediaServerPort: (port: number) => void;
+
+  ffmpegStatus: FfmpegStatus | null;
+  setFfmpegStatus: (status: FfmpegStatus | null) => void;
 
   filePath: string | null;
   videoMetadata: VideoMetadata | null;
@@ -175,6 +179,9 @@ export const useProjectStore = create<ProjectState>((set) => ({
 
   mediaServerPort: 0,
   setMediaServerPort: (port) => set({ mediaServerPort: port }),
+
+  ffmpegStatus: null,
+  setFfmpegStatus: (status) => set({ ffmpegStatus: status }),
 
   filePath: null,
   videoMetadata: null,

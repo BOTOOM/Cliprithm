@@ -4,6 +4,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { log } from "../../lib/logger";
 import { useI18n } from "../../lib/i18n";
 import { isDesktopRuntime } from "../../lib/runtime";
+import { formatFileSize, formatTime } from "../../lib/utils";
 import { useProjectStore } from "../../stores/projectStore";
 import { exportVideo } from "../../services/tauriCommands";
 import type { ProcessingProgress } from "../../types";
@@ -45,6 +46,7 @@ export function ExportModal() {
     clipSegments,
     detectionSettings,
     setProcessedFilePath,
+    ffmpegStatus,
   } = useProjectStore();
 
   const [isExporting, setIsExporting] = useState(false);
@@ -92,17 +94,24 @@ export function ExportModal() {
     };
   }, [isExporting]);
 
-  const estimatedSize = videoMetadata
-    ? (videoMetadata.file_size *
-        (exportSettings.resolution === "4k" ? 2 : 1) *
-        (exportSettings.fps === 60 ? 1.5 : 1)) /
-      1024 /
-      1024
-    : 0;
+  const estimatedDurationSeconds = clipSegments.reduce(
+    (total, clip) => total + clip.duration,
+    0
+  );
+  const previewDurationSeconds =
+    (detectionSettings.playbackRate ?? 1.0) > 0.01
+      ? estimatedDurationSeconds / (detectionSettings.playbackRate ?? 1.0)
+      : estimatedDurationSeconds;
+  const ffmpegUnavailable = isDesktopRuntime() && ffmpegStatus?.available === false;
 
   const handleExport = useCallback(async () => {
     if (!filePath || clipSegments.length === 0 || !isDesktopRuntime()) {
       setError(t("exportModal.desktopOnly"));
+      return;
+    }
+
+    if (ffmpegUnavailable) {
+      setError(ffmpegStatus?.error ?? t("exportModal.ffmpegMissingDescription"));
       return;
     }
 
@@ -155,8 +164,11 @@ export function ExportModal() {
     exportSettings.fps,
     exportSettings.resolution,
     filePath,
+    ffmpegStatus?.error,
+    ffmpegUnavailable,
     setProcessedFilePath,
     setShowExportModal,
+    t,
   ]);
 
   return (
@@ -278,16 +290,36 @@ export function ExportModal() {
               <Icon name="info" className="text-primary-fixed text-xl" />
               <div>
                 <div className="text-xs text-on-surface-variant uppercase font-bold tracking-wider">
-                   {t("exportModal.estimatedFileSize")}
+                  {t("exportModal.outputSummary")}
                 </div>
-                <div className="text-lg font-mono text-white">{estimatedSize.toFixed(1)} MB</div>
+                <div className="text-lg font-mono text-white">
+                  {formatTime(previewDurationSeconds)}
+                </div>
+                <div className="text-[11px] text-on-surface-variant mt-1 leading-relaxed">
+                  {t("exportModal.finalSizeDependsOnContent")}
+                </div>
               </div>
             </div>
             <div className="text-right">
-              <div className="text-xs text-on-surface-variant">{t("exportModal.clips")}</div>
+              <div className="text-xs text-on-surface-variant">{t("exportModal.sourceSize")}</div>
+              <div className="text-sm font-medium text-on-surface">
+                {videoMetadata ? formatFileSize(videoMetadata.file_size) : "—"}
+              </div>
+              <div className="text-xs text-on-surface-variant mt-2">{t("exportModal.clips")}</div>
               <div className="text-sm font-medium text-on-surface">{clipSegments.length}</div>
             </div>
           </div>
+
+          {ffmpegUnavailable && (
+            <div className="rounded-lg border border-error/30 bg-error/10 px-4 py-3">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-error mb-1">
+                {t("exportModal.ffmpegMissingTitle")}
+              </div>
+              <p className="text-xs text-on-surface-variant leading-relaxed">
+                {ffmpegStatus?.error ?? t("exportModal.ffmpegMissingDescription")}
+              </p>
+            </div>
+          )}
 
           {isExporting && (
             <div className="space-y-3">
@@ -314,7 +346,7 @@ export function ExportModal() {
           <Button
             variant="primary"
             onClick={handleExport}
-            disabled={isExporting || clipSegments.length === 0}
+            disabled={isExporting || clipSegments.length === 0 || ffmpegUnavailable}
             className="px-10"
           >
             {isExporting ? `${t("exportModal.exporting")} ${exportProgress}%` : t("exportModal.exportNow")}

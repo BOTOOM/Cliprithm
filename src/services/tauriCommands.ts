@@ -5,15 +5,28 @@ import type { DistributionContext } from "../types/distribution";
 import type {
   DetectionResult,
   ExportOptions,
+  FfmpegStatus,
   VideoMetadata,
 } from "../types";
 
-export async function checkFFmpeg(): Promise<string> {
+export async function checkFFmpeg(): Promise<FfmpegStatus> {
   assertDesktop("FFmpeg");
   log.debug("[ffmpeg]", "Checking FFmpeg availability...");
-  const result = await invoke<string>("check_ffmpeg");
-  log.info("[ffmpeg]", "FFmpeg OK:", result);
+  const result = await invoke<FfmpegStatus>("check_ffmpeg");
+  if (result.available) {
+    log.info(
+      "[ffmpeg]",
+      `FFmpeg OK (${result.source}) ${result.version ?? "unknown version"}`
+    );
+  } else {
+    log.warn("[ffmpeg]", result.error ?? "FFmpeg unavailable");
+  }
   return result;
+}
+
+export async function getFFmpegStatus(): Promise<FfmpegStatus> {
+  assertDesktop("FFmpeg");
+  return checkFFmpeg();
 }
 
 export async function getVideoMetadata(filePath: string): Promise<VideoMetadata> {

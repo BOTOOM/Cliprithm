@@ -23,6 +23,10 @@ interface PositionedClip extends ClipSegment {
 
 const MIN_ZOOM = 4;
 const MAX_ZOOM = 40;
+const CLIP_TITLE_MIN_WIDTH = 64;
+const CLIP_RANGE_MIN_WIDTH = 120;
+const CLIP_DURATION_MIN_WIDTH = 88;
+const CLIP_CONTENT_MIN_WIDTH = 18;
 
 function getMarkerStep(duration: number, zoom: number): number {
   const options = [1, 2, 5, 10, 15, 30, 60, 120, 300];
@@ -59,7 +63,7 @@ export function Timeline({
   }, [clips]);
 
   const safeDuration = Math.max(duration, 0.01);
-  const timelineWidth = Math.max(duration * zoom, 900);
+  const timelineWidth = Math.max(duration * zoom, 1);
   const playheadLeft = (currentTime / safeDuration) * timelineWidth;
   const markerStep = getMarkerStep(duration, zoom);
   const markerCount = Math.max(1, Math.ceil(duration / markerStep));
@@ -191,8 +195,29 @@ export function Timeline({
 
             {positionedClips.map((clip) => {
               const left = (clip.editedStart / safeDuration) * timelineWidth;
-              const width = Math.max((clip.duration / safeDuration) * timelineWidth, 32);
+              const width = (clip.duration / safeDuration) * timelineWidth;
               const selected = selectedClipId === clip.id;
+              const showTitle = width >= CLIP_TITLE_MIN_WIDTH;
+              const showRange = width >= CLIP_RANGE_MIN_WIDTH;
+              const showDuration = width >= CLIP_DURATION_MIN_WIDTH;
+              const showContent = width >= CLIP_CONTENT_MIN_WIDTH;
+              const clipPaddingClass =
+                width >= CLIP_RANGE_MIN_WIDTH
+                  ? "p-3"
+                  : width >= CLIP_DURATION_MIN_WIDTH
+                    ? "px-2 py-3"
+                    : width >= CLIP_TITLE_MIN_WIDTH
+                      ? "px-1.5 py-3"
+                      : "p-0";
+              const borderClass =
+                width >= 3
+                  ? selected
+                    ? "border-primary"
+                    : "border-outline-variant/20"
+                  : "border-transparent";
+              const backgroundClass = selected
+                ? "bg-primary/35"
+                : "bg-surface-container-high hover:bg-surface-container-highest";
 
               return (
                 <button
@@ -203,27 +228,31 @@ export function Timeline({
                     onSelectClip(clip.id);
                     onSeek(clip.editedStart);
                   }}
-                  className={`absolute top-5 bottom-5 rounded-xl border text-left overflow-hidden transition-all ${
-                    selected
-                      ? "bg-primary/35 border-primary shadow-[0_0_0_1px_rgba(186,158,255,0.5)]"
-                      : "bg-surface-container-high border-outline-variant/20 hover:border-primary/40 hover:bg-surface-container-highest"
-                  }`}
+                  className={`absolute top-5 bottom-5 rounded-xl border text-left overflow-hidden transition-colors ${backgroundClass} ${borderClass}`}
                   style={{ left: `${left}px`, width: `${width}px` }}
                 >
                   <div className="absolute inset-0 opacity-50 bg-[linear-gradient(90deg,rgba(255,255,255,0.06)_0%,transparent_12%,rgba(255,255,255,0.06)_24%,transparent_36%)] bg-[length:44px_100%]" />
-                  <div className="relative h-full p-3 flex flex-col justify-between">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-widest text-white/90 font-bold truncate">
-                        {clip.label}
-                      </p>
-                      <p className="text-[10px] text-white/60 truncate">
-                        {formatTime(clip.start)} → {formatTime(clip.end)}
-                      </p>
+                  {showContent ? (
+                    <div className={`relative h-full flex flex-col justify-between ${clipPaddingClass}`}>
+                      <div>
+                        {showTitle ? (
+                          <p className="text-[10px] uppercase tracking-widest text-white/90 font-bold truncate">
+                            {clip.label}
+                          </p>
+                        ) : null}
+                        {showRange ? (
+                          <p className="text-[10px] text-white/60 truncate">
+                            {formatTime(clip.start)} → {formatTime(clip.end)}
+                          </p>
+                        ) : null}
+                      </div>
+                      {showDuration ? (
+                        <div className="text-[10px] font-mono text-white/75 truncate">
+                          {formatTime(clip.duration)}
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="text-[10px] font-mono text-white/75">
-                      {formatTime(clip.duration)}
-                    </div>
-                  </div>
+                  ) : null}
                 </button>
               );
             })}

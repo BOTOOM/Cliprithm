@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -52,6 +52,26 @@ const env = { ...process.env };
 const command = args[0];
 const tauriArgs = [...args];
 
+function prepareFfmpegSidecarsIfNeeded() {
+  if (!["dev", "build", "bundle"].includes(command ?? "")) {
+    return;
+  }
+
+  const result = spawnSync(
+    process.execPath,
+    [path.join(scriptDir, "prepare_ffmpeg_sidecars.mjs")],
+    {
+      cwd: repoRoot,
+      env,
+      stdio: "inherit",
+    }
+  );
+
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
+}
+
 if (
   process.platform === "linux" &&
   (command === "build" || command === "bundle") &&
@@ -81,6 +101,8 @@ if (
   );
   console.log("[tauri] Disabled updater artifacts for this local unsigned build");
 }
+
+prepareFfmpegSidecarsIfNeeded();
 
 const tauriBin =
   process.platform === "win32"

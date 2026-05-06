@@ -38,6 +38,15 @@ export interface ProcessingProgress {
   message: string;
 }
 
+export interface FfmpegStatus {
+  available: boolean;
+  source: "bundled" | "system" | "missing";
+  ffmpeg_path: string | null;
+  ffprobe_path: string | null;
+  version: string | null;
+  error: string | null;
+}
+
 export interface ExportOptions {
   input_path: string;
   output_path: string;

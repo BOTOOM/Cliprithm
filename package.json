@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "node scripts/prepare_ffmpeg_sidecars.mjs && tsc && vite build",
     "preview": "vite preview",
     "clean": "bash scripts/clean-artifacts.sh",
     "clean:full": "bash scripts/clean-artifacts.sh --full",
@@ -38,6 +38,8 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0",
     "tailwindcss": "^4.2.2",
     "typescript": "~5.8.3",
     "vite": "^7.3.2"
