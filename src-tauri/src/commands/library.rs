@@ -1,8 +1,11 @@
-use std::process::Command;
 use std::path::Path;
+use tauri::{Manager, Window};
+
+use crate::commands::media_tools::ffmpeg_output;
 
 #[tauri::command]
-pub fn generate_thumbnail(
+pub async fn generate_thumbnail(
+    window: Window,
     video_path: String,
     output_path: String,
     timestamp: Option<f64>,
@@ -15,18 +18,25 @@ pub fn generate_thumbnail(
             .map_err(|e| format!("Failed to create thumbnail directory: {}", e))?;
     }
 
-    let output = Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-i", &video_path,
-            "-ss", &format!("{}", time),
-            "-vframes", "1",
-            "-vf", "scale=320:-1",
-            "-q:v", "5",
-            &output_path,
-        ])
-        .output()
-        .map_err(|e| format!("FFmpeg thumbnail error: {}", e))?;
+    let output = ffmpeg_output(
+        &window.app_handle(),
+        vec![
+            "-y".into(),
+            "-i".into(),
+            video_path.clone(),
+            "-ss".into(),
+            format!("{}", time),
+            "-vframes".into(),
+            "1".into(),
+            "-vf".into(),
+            "scale=320:-1".into(),
+            "-q:v".into(),
+            "5".into(),
+            output_path.clone(),
+        ],
+    )
+    .await
+    .map_err(|e| format!("FFmpeg thumbnail error: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -37,7 +47,8 @@ pub fn generate_thumbnail(
 }
 
 #[tauri::command]
-pub fn generate_preview_proxy(
+pub async fn generate_preview_proxy(
+    window: Window,
     video_path: String,
     output_path: String,
 ) -> Result<String, String> {
@@ -46,30 +57,49 @@ pub fn generate_preview_proxy(
             .map_err(|e| format!("Failed to create preview directory: {}", e))?;
     }
 
-    let output = Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-i", &video_path,
-            "-map", "0:v:0",
-            "-map", "0:a?",
-            "-vf", "scale=-2:720,format=yuv420p,setsar=1",
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "28",
-            "-profile:v", "baseline",
-            "-level", "4.0",
-            "-g", "15",
-            "-keyint_min", "15",
-            "-sc_threshold", "0",
-            "-pix_fmt", "yuv420p",
-            "-tune", "fastdecode",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-movflags", "+faststart",
-            &output_path,
-        ])
-        .output()
-        .map_err(|e| format!("FFmpeg preview proxy error: {}", e))?;
+    let output = ffmpeg_output(
+        &window.app_handle(),
+        vec![
+            "-y".into(),
+            "-i".into(),
+            video_path.clone(),
+            "-map".into(),
+            "0:v:0".into(),
+            "-map".into(),
+            "0:a?".into(),
+            "-vf".into(),
+            "scale=-2:720,format=yuv420p,setsar=1".into(),
+            "-c:v".into(),
+            "libx264".into(),
+            "-preset".into(),
+            "ultrafast".into(),
+            "-crf".into(),
+            "28".into(),
+            "-profile:v".into(),
+            "baseline".into(),
+            "-level".into(),
+            "4.0".into(),
+            "-g".into(),
+            "15".into(),
+            "-keyint_min".into(),
+            "15".into(),
+            "-sc_threshold".into(),
+            "0".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+            "-tune".into(),
+            "fastdecode".into(),
+            "-c:a".into(),
+            "aac".into(),
+            "-b:a".into(),
+            "128k".into(),
+            "-movflags".into(),
+            "+faststart".into(),
+            output_path.clone(),
+        ],
+    )
+    .await
+    .map_err(|e| format!("FFmpeg preview proxy error: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
