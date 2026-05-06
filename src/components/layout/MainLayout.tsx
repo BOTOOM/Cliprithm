@@ -12,12 +12,19 @@ import { SettingsPanel } from "../editor/SettingsPanel";
 import { AboutView } from "../about/AboutView";
 import { DiagnosticsView } from "../diagnostics/DiagnosticsView";
 import { isDesktopRuntime } from "../../lib/runtime";
-import { getMediaServerPort } from "../../services/tauriCommands";
+import { getFFmpegStatus, getMediaServerPort } from "../../services/tauriCommands";
 import { useAutoSave } from "../../hooks/useAutoSave";
 import type { ProcessingProgress } from "../../types";
 
 export function MainLayout() {
-  const { currentView, showExportModal, activeSideTab, setProgress, setMediaServerPort } =
+  const {
+    currentView,
+    showExportModal,
+    activeSideTab,
+    setProgress,
+    setMediaServerPort,
+    setFfmpegStatus,
+  } =
     useProjectStore();
 
   useAutoSave();
@@ -29,7 +36,21 @@ export function MainLayout() {
     void getMediaServerPort().then((port) => {
       setMediaServerPort(port);
     });
-  }, [setMediaServerPort]);
+    void getFFmpegStatus()
+      .then((status) => {
+        setFfmpegStatus(status);
+      })
+      .catch((error) => {
+        setFfmpegStatus({
+          available: false,
+          source: "missing",
+          ffmpeg_path: null,
+          ffprobe_path: null,
+          version: null,
+          error: String(error),
+        });
+      });
+  }, [setFfmpegStatus, setMediaServerPort]);
 
   useEffect(() => {
     if (!isDesktopRuntime()) return;

@@ -1,9 +1,10 @@
 use log::{debug, error, info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
-use tauri::{Emitter, Window};
+use tauri::{Emitter, Manager, Window};
+use tauri_plugin_shell::process::CommandEvent;
+
+use crate::commands::media_tools::{ffmpeg_output, ffmpeg_spawn, ffprobe_output};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VideoMetadata {
@@ -57,38 +58,25 @@ pub struct PreviewSegment {
 }
 
 #[tauri::command]
-pub fn check_ffmpeg() -> Result<String, String> {
-    debug!("[ffmpeg] Checking FFmpeg availability...");
-    let output = Command::new("ffmpeg")
-        .arg("-version")
-        .output()
-        .map_err(|e| {
-            error!("[ffmpeg] FFmpeg not found: {}", e);
-            format!("FFmpeg not found: {}", e)
-        })?;
-
-    let version = String::from_utf8_lossy(&output.stdout);
-    let first_line = version.lines().next().unwrap_or("unknown").to_string();
-    info!("[ffmpeg] FFmpeg found: {}", first_line);
-    Ok(first_line)
-}
-
-#[tauri::command]
-pub fn get_video_metadata(file_path: String) -> Result<VideoMetadata, String> {
+pub async fn get_video_metadata(window: Window, file_path: String) -> Result<VideoMetadata, String> {
     info!("[ffprobe] Getting metadata for: {}", file_path);
-    let output = Command::new("ffprobe")
-        .args([
-            "-v", "quiet",
-            "-print_format", "json",
-            "-show_format",
-            "-show_streams",
-            &file_path,
-        ])
-        .output()
-        .map_err(|e| {
-            error!("[ffprobe] Failed to run ffprobe: {}", e);
-            format!("ffprobe error: {}", e)
-        })?;
+    let output = ffprobe_output(
+        &window.app_handle(),
+        vec![
+            "-v".into(),
+            "quiet".into(),
+            "-print_format".into(),
+            "json".into(),
+            "-show_format".into(),
+            "-show_streams".into(),
+            file_path.clone(),
+        ],
+    )
+    .await
+    .map_err(|e| {
+        error!("[ffprobe] Failed to run ffprobe: {}", e);
+        e
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -165,18 +153,23 @@ pub async fn detect_silence(
 
     emit_progress(&window, 0.0, "analyzing", "Iniciando detección de silencios...");
 
-    let output = Command::new("ffmpeg")
-        .args([
-            "-i", &file_path,
-            "-af", &format!("silencedetect=noise={}:d={}", threshold_str, duration_str),
-            "-f", "null",
-            "-",
-        ])
-        .output()
-        .map_err(|e| {
-            error!("[silence] Failed to run FFmpeg: {}", e);
-            format!("FFmpeg error: {}", e)
-        })?;
+    let output = ffmpeg_output(
+        &window.app_handle(),
+        vec![
+            "-i".into(),
+            file_path.clone(),
+            "-af".into(),
+            format!("silencedetect=noise={}:d={}", threshold_str, duration_str),
+            "-f".into(),
+            "null".into(),
+            "-".into(),
+        ],
+    )
+    .await
+    .map_err(|e| {
+        error!("[silence] Failed to run FFmpeg: {}", e);
+        e
+    })?;
 
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let preview_start = stderr.len().saturating_sub(500);
@@ -185,7 +178,7 @@ pub async fn detect_silence(
     emit_progress(&window, 50.0, "analyzing", "Analizando output de FFmpeg...");
 
     let segments = parse_silence_output(&stderr);
-    let metadata = get_video_metadata(file_path.clone())?;
+    let metadata = get_video_metadata(window.clone(), file_path.clone()).await?;
     let total_silence: f64 = segments.iter().map(|s| s.duration).sum();
     let estimated_output = metadata.duration - total_silence;
 
@@ -222,13 +215,13 @@ pub async fn cut_silence(
         mode, segments_to_remove.len(), output_path
     );
 
-    let metadata = get_video_metadata(file_path.clone())?;
+        let metadata = get_video_metadata(window.clone(), file_path.clone()).await?;
     let total_duration = metadata.duration;
 
     if mode == "speed" {
         let speed = speed_multiplier.unwrap_or(2.0);
         info!("[cut] Time-warp mode — {}x", speed);
-        return cut_with_speed(&window, &file_path, &segments_to_remove, &output_path, speed, total_duration);
+        return cut_with_speed(&window, &file_path, &segments_to_remove, &output_path, speed, total_duration).await;
     }
 
     let segments_to_keep = invert_segments(&segments_to_remove, total_duration);
@@ -269,13 +262,36 @@ pub async fn cut_silence(
     emit_progress(&window, 30.0, "cutting", "Cortando y uniendo segmentos...");
 
     info!("[cut] Running FFmpeg...");
-    let output = Command::new("ffmpeg")
-        .args(["-y", "-i", &file_path, "-filter_complex", &filter,
-               "-map", "[outv]", "-map", "[outa]",
-               "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-               "-c:a", "aac", "-b:a", "192k", &output_path])
-        .output()
-        .map_err(|e| { error!("[cut] FFmpeg error: {}", e); format!("FFmpeg cut error: {}", e) })?;
+    let output = ffmpeg_output(
+        &window.app_handle(),
+        vec![
+            "-y".into(),
+            "-i".into(),
+            file_path.clone(),
+            "-filter_complex".into(),
+            filter,
+            "-map".into(),
+            "[outv]".into(),
+            "-map".into(),
+            "[outa]".into(),
+            "-c:v".into(),
+            "libx264".into(),
+            "-preset".into(),
+            "fast".into(),
+            "-crf".into(),
+            "18".into(),
+            "-c:a".into(),
+            "aac".into(),
+            "-b:a".into(),
+            "192k".into(),
+            output_path.clone(),
+        ],
+    )
+    .await
+    .map_err(|e| {
+        error!("[cut] FFmpeg error: {}", e);
+        e
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -297,7 +313,7 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
 
     emit_named_progress(&window, "export-progress", 5.0, "exporting", "Preparando exportación...");
 
-    let metadata = get_video_metadata(options.input_path.clone())?;
+    let metadata = get_video_metadata(window.clone(), options.input_path.clone()).await?;
     let mut segments_to_keep = options.segments_to_keep.clone();
     if segments_to_keep.is_empty() {
         segments_to_keep.push((0.0, metadata.duration));
@@ -371,7 +387,8 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
         "encoding",
         &mut args,
         expected_duration,
-    )?;
+    )
+    .await?;
 
     info!("[export] Done — {}", options.output_path);
     emit_named_progress(&window, "export-progress", 100.0, "complete", "¡Exportación completa!");
@@ -379,7 +396,8 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
 }
 
 #[tauri::command]
-pub fn generate_sequence_preview(
+pub async fn generate_sequence_preview(
+    window: Window,
     input_path: String,
     output_path: String,
     segments_to_keep: Vec<PreviewSegment>,
@@ -419,54 +437,56 @@ pub fn generate_sequence_preview(
     ];
     let (filter, video_output_label) = build_concat_filter(&keep_ranges, &transforms, None);
 
-    let output = Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-i",
-            &input_path,
-            "-filter_complex",
-            &filter,
-            "-map",
-            &video_output_label,
-            "-map",
-            "[aout]",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "24",
-            "-profile:v",
-            "baseline",
-            "-level",
-            "4.0",
-            "-g",
-            "15",
-            "-keyint_min",
-            "15",
-            "-sc_threshold",
-            "0",
-            "-pix_fmt",
-            "yuv420p",
-            "-tune",
-            "fastdecode",
-            "-c:a",
-            "aac",
-            "-ac",
-            "2",
-            "-ar",
-            "48000",
-            "-b:a",
-            "160k",
-            "-movflags",
-            "+faststart",
-            &output_path,
-        ])
-        .output()
-        .map_err(|e| {
-            error!("[preview-sequence] FFmpeg error: {}", e);
-            format!("FFmpeg edited preview error: {}", e)
-        })?;
+    let output = ffmpeg_output(
+        &window.app_handle(),
+        vec![
+            "-y".into(),
+            "-i".into(),
+            input_path.clone(),
+            "-filter_complex".into(),
+            filter,
+            "-map".into(),
+            video_output_label,
+            "-map".into(),
+            "[aout]".into(),
+            "-c:v".into(),
+            "libx264".into(),
+            "-preset".into(),
+            "veryfast".into(),
+            "-crf".into(),
+            "24".into(),
+            "-profile:v".into(),
+            "baseline".into(),
+            "-level".into(),
+            "4.0".into(),
+            "-g".into(),
+            "15".into(),
+            "-keyint_min".into(),
+            "15".into(),
+            "-sc_threshold".into(),
+            "0".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+            "-tune".into(),
+            "fastdecode".into(),
+            "-c:a".into(),
+            "aac".into(),
+            "-ac".into(),
+            "2".into(),
+            "-ar".into(),
+            "48000".into(),
+            "-b:a".into(),
+            "160k".into(),
+            "-movflags".into(),
+            "+faststart".into(),
+            output_path.clone(),
+        ],
+    )
+    .await
+    .map_err(|e| {
+        error!("[preview-sequence] FFmpeg error: {}", e);
+        e
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -597,69 +617,70 @@ fn build_concat_filter(
     (filter_parts.join(";"), video_label)
 }
 
-fn run_ffmpeg_with_progress(
+async fn run_ffmpeg_with_progress(
     window: &Window,
     event_name: &str,
     stage: &str,
     args: &[String],
     expected_duration: f64,
 ) -> Result<(), String> {
-    let mut child = Command::new("ffmpeg")
-        .args(args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
+    let (mut spawn, child) = ffmpeg_spawn(&window.app_handle(), args.to_vec())
+        .await
         .map_err(|e| {
             error!("[export] FFmpeg error: {}", e);
-            format!("FFmpeg export error: {}", e)
+            e
         })?;
-
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "No se pudo capturar el stderr de FFmpeg".to_string())?;
-
-    let reader = BufReader::new(stderr);
     let time_re = Regex::new(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)").unwrap();
     let mut last_percent = 20.0;
     let mut stderr_lines: Vec<String> = Vec::new();
 
-    for line in reader.lines() {
-        let line = line.unwrap_or_default();
-        debug!("[export] {}", line);
-        stderr_lines.push(line.clone());
-        if stderr_lines.len() > 300 {
-            stderr_lines.remove(0);
-        }
+    while let Some(event) = spawn.receiver.recv().await {
+        match event {
+            CommandEvent::Stderr(line) | CommandEvent::Stdout(line) => {
+                let line = String::from_utf8_lossy(&line).trim().to_string();
+                if line.is_empty() {
+                    continue;
+                }
 
-        if let Some(current_seconds) = parse_ffmpeg_progress_seconds(&time_re, &line) {
-            let progress = if expected_duration > 0.0 {
-                20.0 + ((current_seconds / expected_duration) * 75.0)
-            } else {
-                50.0
-            };
+                debug!("[export] {}", line);
+                stderr_lines.push(line.clone());
+                if stderr_lines.len() > 300 {
+                    stderr_lines.remove(0);
+                }
 
-            if progress - last_percent >= 1.0 {
-                let clamped = progress.clamp(20.0, 95.0);
-                emit_named_progress(
-                    window,
-                    event_name,
-                    clamped,
-                    stage,
-                    &format!("Codificando video... {:.0}%", clamped),
-                );
-                last_percent = clamped;
+                if let Some(current_seconds) = parse_ffmpeg_progress_seconds(&time_re, &line) {
+                    let progress = if expected_duration > 0.0 {
+                        20.0 + ((current_seconds / expected_duration) * 75.0)
+                    } else {
+                        50.0
+                    };
+
+                    if progress - last_percent >= 1.0 {
+                        let clamped = progress.clamp(20.0, 95.0);
+                        emit_named_progress(
+                            window,
+                            event_name,
+                            clamped,
+                            stage,
+                            &format!("Codificando video... {:.0}%", clamped),
+                        );
+                        last_percent = clamped;
+                    }
+                }
             }
+            CommandEvent::Error(error_message) => stderr_lines.push(error_message),
+            CommandEvent::Terminated(payload) => {
+                if payload.code != Some(0) {
+                    let stderr_tail = stderr_lines.join("\n");
+                    error!("[export] FFmpeg failed:\n{}", stderr_tail);
+                    return Err(format!("Export failed: {}", stderr_tail));
+                }
+            }
+            _ => {}
         }
     }
 
-    let status = child.wait().map_err(|e| format!("FFmpeg wait error: {}", e))?;
-    if !status.success() {
-        let stderr_tail = stderr_lines.join("\n");
-        error!("[export] FFmpeg failed:\n{}", stderr_tail);
-        return Err(format!("Export failed: {}", stderr_tail));
-    }
-
+    let _child = child;
     Ok(())
 }
 
@@ -671,7 +692,7 @@ fn parse_ffmpeg_progress_seconds(regex: &Regex, line: &str) -> Option<f64> {
     Some((hours * 3600.0) + (minutes * 60.0) + seconds)
 }
 
-fn cut_with_speed(
+async fn cut_with_speed(
     window: &Window,
     file_path: &str,
     silence_segments: &[SilenceSegment],
@@ -728,13 +749,36 @@ fn cut_with_speed(
         &format!("Aplicando {}x de velocidad a los silencios...", speed));
 
     info!("[timewarp] Running FFmpeg...");
-    let output = Command::new("ffmpeg")
-        .args(["-y", "-i", file_path, "-filter_complex", &filter,
-               "-map", "[outv]", "-map", "[outa]",
-               "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-               "-c:a", "aac", "-b:a", "192k", output_path])
-        .output()
-        .map_err(|e| { error!("[timewarp] FFmpeg error: {}", e); format!("FFmpeg time-warp error: {}", e) })?;
+    let output = ffmpeg_output(
+        &window.app_handle(),
+        vec![
+            "-y".into(),
+            "-i".into(),
+            file_path.to_string(),
+            "-filter_complex".into(),
+            filter,
+            "-map".into(),
+            "[outv]".into(),
+            "-map".into(),
+            "[outa]".into(),
+            "-c:v".into(),
+            "libx264".into(),
+            "-preset".into(),
+            "fast".into(),
+            "-crf".into(),
+            "18".into(),
+            "-c:a".into(),
+            "aac".into(),
+            "-b:a".into(),
+            "192k".into(),
+            output_path.to_string(),
+        ],
+    )
+    .await
+    .map_err(|e| {
+        error!("[timewarp] FFmpeg error: {}", e);
+        e
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

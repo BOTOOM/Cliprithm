@@ -60,6 +60,9 @@ const translations = {
       captions: "Captions Beta",
       captionsDescription:
         "Generate subtitles using cloud or local models and optionally burn them into the final export.",
+      ffmpegMissingTitle: "Desktop dependencies missing",
+      ffmpegMissingDescription:
+        "Cliprithm needs FFmpeg and FFprobe to import, analyze and export videos in the desktop app.",
     },
     mediaLibrary: {
       desktopOnly:
@@ -116,6 +119,12 @@ const translations = {
       resetSpeed: "Reset to 1×",
       reDetect: "Re-detect Silence",
       reDetecting: "Re-detecting...",
+      redetectCountdown: "Recalculating in {{seconds}}s",
+      redetectCountdownDescription:
+        "If you keep adjusting the parameters, the countdown restarts so only the latest configuration is processed.",
+      redetectQueued: "Latest changes queued",
+      redetectQueuedDescription:
+        "A detection pass is still running. The newest parameters will be processed as soon as that pass finishes.",
       originalTimeline: "Original timeline",
       originalTimelineDescription:
         "Review the detected silence spans before converting them into editable clips.",
@@ -153,6 +162,9 @@ const translations = {
         "The WebView could not play the original file ({{errorLabel}}). Generating a compatible preview proxy...",
       cannotPlayWithProxy:
         "The video could not be played ({{errorLabel}}) and the preview proxy also failed: {{error}}",
+      ffmpegMissingTitle: "FFmpeg unavailable",
+      ffmpegMissingDescription:
+        "Detection, preview generation and export need FFmpeg and FFprobe available in this installation.",
     },
     timeline: {
       timeline: "Timeline",
@@ -167,13 +179,19 @@ const translations = {
       fileName: "File Name",
       resolution: "Resolution",
       frameRate: "Frame Rate",
-      estimatedFileSize: "Estimated File Size",
+      outputSummary: "Output Summary",
+      sourceSize: "Source file size",
+      finalSizeDependsOnContent:
+        "Final size depends on the codec, motion and compression decisions made by FFmpeg during export.",
       clips: "Clips",
       exporting: "Exporting...",
       cancel: "Cancel",
       exportNow: "Export Now",
       preparing: "Preparing export...",
       exportComplete: "Export complete!",
+      ffmpegMissingTitle: "FFmpeg unavailable",
+      ffmpegMissingDescription:
+        "Export requires FFmpeg and FFprobe available in the desktop installation.",
       desktopOnly:
         "Export only works in the desktop app and requires at least one active clip.",
     },
@@ -347,6 +365,9 @@ const translations = {
       captions: "Subtitulos beta",
       captionsDescription:
         "Genera subtitulos con modelos en la nube o locales y opcionalmente incrustalos en la exportacion final.",
+      ffmpegMissingTitle: "Faltan dependencias de desktop",
+      ffmpegMissingDescription:
+        "Cliprithm necesita FFmpeg y FFprobe para importar, analizar y exportar videos dentro de la app desktop.",
     },
     mediaLibrary: {
       desktopOnly:
@@ -403,6 +424,12 @@ const translations = {
       resetSpeed: "Restaurar a 1×",
       reDetect: "Volver a detectar silencios",
       reDetecting: "Redetectando...",
+      redetectCountdown: "Recalculando en {{seconds}} s",
+      redetectCountdownDescription:
+        "Si sigues ajustando los parametros, la cuenta se reinicia para procesar solo la configuracion mas reciente.",
+      redetectQueued: "Ultimos cambios en cola",
+      redetectQueuedDescription:
+        "Todavia hay una deteccion en curso. Los parametros mas recientes se procesaran apenas termine ese calculo.",
       originalTimeline: "Timeline original",
       originalTimelineDescription:
         "Revisa los silencios detectados antes de convertirlos en clips editables.",
@@ -440,6 +467,9 @@ const translations = {
         "El WebView no pudo reproducir el archivo original ({{errorLabel}}). Generando un proxy compatible para el preview...",
       cannotPlayWithProxy:
         "No se pudo reproducir el video ({{errorLabel}}) y tambien fallo el proxy de preview: {{error}}",
+      ffmpegMissingTitle: "FFmpeg no disponible",
+      ffmpegMissingDescription:
+        "La deteccion, la generacion de previews y la exportacion necesitan FFmpeg y FFprobe disponibles en esta instalacion.",
     },
     timeline: {
       timeline: "Timeline",
@@ -454,13 +484,19 @@ const translations = {
       fileName: "Nombre del archivo",
       resolution: "Resolucion",
       frameRate: "Frame rate",
-      estimatedFileSize: "Tamano estimado",
+      outputSummary: "Resumen de salida",
+      sourceSize: "Tamano del archivo fuente",
+      finalSizeDependsOnContent:
+        "El tamano final depende del codec, del movimiento y de la compresion que FFmpeg aplique durante la exportacion.",
       clips: "Clips",
       exporting: "Exportando...",
       cancel: "Cancelar",
       exportNow: "Exportar ahora",
       preparing: "Preparando exportacion...",
       exportComplete: "Exportacion completada",
+      ffmpegMissingTitle: "FFmpeg no disponible",
+      ffmpegMissingDescription:
+        "La exportacion necesita FFmpeg y FFprobe disponibles dentro de la instalacion desktop.",
       desktopOnly:
         "La exportacion solo funciona en la app desktop y requiere al menos un clip activo.",
     },

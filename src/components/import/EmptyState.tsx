@@ -28,6 +28,7 @@ export function EmptyState() {
     setProgress,
     setProjectId,
     detectionSettings,
+    ffmpegStatus,
   } = useProjectStore();
   const [isDragOver, setIsDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +40,10 @@ export function EmptyState() {
       try {
         setError(null);
         setNotice(null);
+        if (ffmpegStatus && !ffmpegStatus.available) {
+          setError(ffmpegStatus.error ?? t("importView.ffmpegMissingDescription"));
+          return;
+        }
         setProcessedFilePath(null);
         setPreviewFilePath(null);
         setFilePath(path);
@@ -104,6 +109,7 @@ export function EmptyState() {
     },
     [
       detectionSettings,
+      ffmpegStatus,
       setDetectionResult,
       setFilePath,
       setProcessedFilePath,
@@ -233,10 +239,25 @@ export function EmptyState() {
                 {t("importView.dragDropDescription")}
               </p>
               <div className="flex flex-col gap-4 w-full px-12">
-                <Button variant="primary" className="w-full py-3" onClick={handleBrowse}>
+                <Button
+                  variant="primary"
+                  className="w-full py-3"
+                  onClick={handleBrowse}
+                  disabled={isDesktopRuntime() && ffmpegStatus?.available === false}
+                >
                   {t("importView.browseFiles")}
                 </Button>
               </div>
+              {isDesktopRuntime() && ffmpegStatus?.available === false && (
+                <div className="mt-4 w-full max-w-lg rounded-lg border border-error/30 bg-error/10 px-4 py-3 text-left">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-error mb-1">
+                    {t("importView.ffmpegMissingTitle")}
+                  </div>
+                  <p className="text-xs text-on-surface-variant leading-relaxed">
+                    {ffmpegStatus.error ?? t("importView.ffmpegMissingDescription")}
+                  </p>
+                </div>
+              )}
               {notice && (
                 <p className="mt-4 text-primary text-xs leading-relaxed">{notice}</p>
               )}

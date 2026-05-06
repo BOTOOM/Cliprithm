@@ -26,6 +26,8 @@ import { Tooltip } from "../ui/Tooltip";
 import { DetectionTimeline } from "../timeline/DetectionTimeline";
 import { Timeline } from "../timeline/Timeline";
 
+const AUTO_REDETECT_DELAY_MS = 5000;
+
 export function EditorView() {
   const { t } = useI18n();
   const {
@@ -53,6 +55,7 @@ export function EditorView() {
     setTimelineZoom,
     canUndo,
     undoLastEdit,
+    ffmpegStatus,
   } = useProjectStore();
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -63,8 +66,16 @@ export function EditorView() {
   const [isGeneratingSourceProxy, setIsGeneratingSourceProxy] = useState(false);
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [proxyRetryCount, setProxyRetryCount] = useState(0);
+  const [pendingRedetectSignature, setPendingRedetectSignature] = useState<string | null>(
+    null
+  );
+  const [redetectDeadline, setRedetectDeadline] = useState<number | null>(null);
+  const [redetectSecondsRemaining, setRedetectSecondsRemaining] = useState<number | null>(
+    null
+  );
   const lastDetectedSignatureRef = useRef<string | null>(null);
   const lastClipSignatureRef = useRef<string>("");
+  const activeRedetectRequestRef = useRef(0);
 
   const playVideoSafely = useCallback((video: HTMLVideoElement, reason: string) => {
     void video.play().catch((error) => {
@@ -123,6 +134,10 @@ export function EditorView() {
     minDuration: detectionSettings.minDuration,
     detectBreath: detectionSettings.detectBreath,
   });
+  const ffmpegUnavailable = ffmpegStatus?.available === false;
+  const hasPendingRedetect =
+    pendingRedetectSignature !== null &&
+    pendingRedetectSignature !== lastDetectedSignatureRef.current;
 
   useEffect(() => {
     setIsVideoReady(false);
@@ -321,8 +336,19 @@ export function EditorView() {
     }
   };
 
-  const handleRedetect = useCallback(async () => {
-    if (!filePath || filePath.startsWith("blob:")) return;
+  const clearPendingRedetect = useCallback(() => {
+    setPendingRedetectSignature(null);
+    setRedetectDeadline(null);
+    setRedetectSecondsRemaining(null);
+  }, []);
+
+  const handleRedetect = useCallback(async (requestedSignature?: string) => {
+    if (!filePath || filePath.startsWith("blob:") || ffmpegUnavailable) return;
+
+    const nextSignature = requestedSignature ?? detectionSignature;
+    const requestId = activeRedetectRequestRef.current + 1;
+    activeRedetectRequestRef.current = requestId;
+    clearPendingRedetect();
     setIsRedetecting(true);
     try {
       const result = await detectSilence(
@@ -330,23 +356,42 @@ export function EditorView() {
         detectionSettings.noiseThreshold,
         detectionSettings.minDuration
       );
+      if (requestId !== activeRedetectRequestRef.current) {
+        return;
+      }
       setDetectionResult(result);
-      lastDetectedSignatureRef.current = JSON.stringify({
-        noiseThreshold: detectionSettings.noiseThreshold,
-        minDuration: detectionSettings.minDuration,
-        detectBreath: detectionSettings.detectBreath,
-      });
+      lastDetectedSignatureRef.current = nextSignature;
       setPreviewMode("source");
       setView("detection");
     } catch (err) {
-      log.error("[silence]", "Re-detection failed:", err);
+      if (requestId === activeRedetectRequestRef.current) {
+        log.error("[silence]", "Re-detection failed:", err);
+      }
     } finally {
-      setIsRedetecting(false);
+      if (requestId === activeRedetectRequestRef.current) {
+        setIsRedetecting(false);
+      }
     }
-  }, [detectionSettings, filePath, setDetectionResult, setPreviewMode, setView]);
+  }, [
+    clearPendingRedetect,
+    detectionSettings.minDuration,
+    detectionSettings.noiseThreshold,
+    detectionSignature,
+    ffmpegUnavailable,
+    filePath,
+    setDetectionResult,
+    setPreviewMode,
+    setView,
+  ]);
 
   useEffect(() => {
-    if (!isDetectionReview || !filePath || filePath.startsWith("blob:")) {
+    if (
+      !isDetectionReview ||
+      !filePath ||
+      filePath.startsWith("blob:") ||
+      ffmpegUnavailable
+    ) {
+      clearPendingRedetect();
       return;
     }
 
@@ -356,15 +401,53 @@ export function EditorView() {
     }
 
     if (lastDetectedSignatureRef.current === detectionSignature) {
+      clearPendingRedetect();
       return;
     }
 
-    const timeout = window.setTimeout(() => {
-      void handleRedetect();
-    }, 450);
+    const deadline = Date.now() + AUTO_REDETECT_DELAY_MS;
+    setPendingRedetectSignature(detectionSignature);
+    setRedetectDeadline(deadline);
+    setRedetectSecondsRemaining(Math.ceil(AUTO_REDETECT_DELAY_MS / 1000));
+  }, [
+    clearPendingRedetect,
+    detectionSignature,
+    ffmpegUnavailable,
+    filePath,
+    isDetectionReview,
+  ]);
 
-    return () => window.clearTimeout(timeout);
-  }, [detectionSignature, filePath, handleRedetect, isDetectionReview]);
+  useEffect(() => {
+    if (!hasPendingRedetect || redetectDeadline === null) {
+      setRedetectSecondsRemaining(null);
+      return;
+    }
+
+    let triggered = false;
+    const updateCountdown = () => {
+      const remainingMs = Math.max(0, redetectDeadline - Date.now());
+      setRedetectSecondsRemaining(Math.ceil(remainingMs / 1000));
+      if (
+        !triggered &&
+        remainingMs <= 0 &&
+        !isRedetecting &&
+        pendingRedetectSignature
+      ) {
+        triggered = true;
+        void handleRedetect(pendingRedetectSignature);
+      }
+    };
+
+    updateCountdown();
+    const interval = window.setInterval(updateCountdown, 200);
+    return () => window.clearInterval(interval);
+  }, [
+    handleRedetect,
+    hasPendingRedetect,
+    isRedetecting,
+    pendingRedetectSignature,
+    redetectDeadline,
+  ]);
 
   const handleApplySuggestedCuts = useCallback(() => {
     applySuggestedCuts();
@@ -654,10 +737,21 @@ export function EditorView() {
             </p>
           </div>
 
-          <div className="space-y-8 flex-1">
-            <Slider
-              label={t("detection.threshold")}
-              value={detectionSettings.noiseThreshold}
+            <div className="space-y-8 flex-1">
+              {ffmpegUnavailable && (
+                <div className="rounded-lg border border-error/30 bg-error/10 px-4 py-3">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-error mb-1">
+                    {t("detection.ffmpegMissingTitle")}
+                  </div>
+                  <p className="text-xs text-on-surface-variant leading-relaxed">
+                    {ffmpegStatus?.error ?? t("detection.ffmpegMissingDescription")}
+                  </p>
+                </div>
+              )}
+
+              <Slider
+                label={t("detection.threshold")}
+                value={detectionSettings.noiseThreshold}
               min={-60}
               max={0}
               step={1}
@@ -802,12 +896,34 @@ export function EditorView() {
               </div>
             </div>
 
+            {isDetectionReview && hasPendingRedetect && !ffmpegUnavailable && (
+              <div className="rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 space-y-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-primary">
+                  {isRedetecting
+                    ? t("detection.redetectQueued")
+                    : t("detection.redetectCountdown", {
+                        seconds: redetectSecondsRemaining ?? 0,
+                      })}
+                </div>
+                <p className="text-xs text-on-surface-variant leading-relaxed">
+                  {isRedetecting
+                    ? t("detection.redetectQueuedDescription")
+                    : t("detection.redetectCountdownDescription")}
+                </p>
+              </div>
+            )}
+
             <Button
               variant="ghost"
               size="sm"
               className="w-full"
-              onClick={handleRedetect}
-              disabled={isRedetecting || !filePath || filePath.startsWith("blob:")}
+              onClick={() => void handleRedetect()}
+              disabled={
+                isRedetecting ||
+                ffmpegUnavailable ||
+                !filePath ||
+                filePath.startsWith("blob:")
+              }
             >
               {isRedetecting ? t("detection.reDetecting") : t("detection.reDetect")}
             </Button>

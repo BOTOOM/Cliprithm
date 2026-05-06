@@ -3,6 +3,7 @@ mod commands;
 use commands::app;
 use commands::ffmpeg;
 use commands::library;
+use commands::media_tools;
 use commands::media_server;
 use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -111,7 +112,7 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             app::get_distribution_context,
-            ffmpeg::check_ffmpeg,
+            media_tools::check_ffmpeg,
             ffmpeg::get_video_metadata,
             ffmpeg::detect_silence,
             ffmpeg::cut_silence,
