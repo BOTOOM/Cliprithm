@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.2.2...cliprithm-v1.3.0) (2026-05-06)
+
+
+### Features
+
+* integrate ffmpeg and ffprobe binaries, enhance media processing capabilities ([f60edc4](https://github.com/BOTOOM/Cliprithm/commit/f60edc4374f21ddfbc0fcbc2aa1df1fe23d7fb22))
+* integrate FFmpeg and FFprobe support ([fd049b1](https://github.com/BOTOOM/Cliprithm/commit/fd049b14c8d7abb3b3290b9070d6841341885c6b))
+
 ## [1.2.2](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.2.1...cliprithm-v1.2.2) (2026-04-29)
 
 
