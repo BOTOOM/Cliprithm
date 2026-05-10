@@ -10,8 +10,9 @@ import {
 import { useI18n } from "../../lib/i18n";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
-import { getVideoMetadata, detectSilence } from "../../services/tauriCommands";
+import { checkFFmpeg, getVideoMetadata, detectSilence } from "../../services/tauriCommands";
 import { createProject } from "../../services/database";
+import { openExternalUrl, APP_LINKS } from "../../lib/appInfo";
 import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
 import { MediaLibrary } from "./MediaLibrary";
@@ -29,11 +30,23 @@ export function EmptyState() {
     setProjectId,
     detectionSettings,
     ffmpegStatus,
+    setFfmpegStatus,
   } = useProjectStore();
   const [isDragOver, setIsDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleRetryFfmpeg = useCallback(async () => {
+    setRetrying(true);
+    try {
+      const status = await checkFFmpeg();
+      setFfmpegStatus(status);
+    } finally {
+      setRetrying(false);
+    }
+  }, [setFfmpegStatus]);
 
   const handleDesktopFile = useCallback(
     async (path: string) => {
@@ -253,9 +266,28 @@ export function EmptyState() {
                   <div className="text-[10px] font-bold uppercase tracking-widest text-error mb-1">
                     {t("importView.ffmpegMissingTitle")}
                   </div>
-                  <p className="text-xs text-on-surface-variant leading-relaxed">
+                  <p className="text-xs text-on-surface-variant leading-relaxed mb-3">
                     {ffmpegStatus.error ?? t("importView.ffmpegMissingDescription")}
                   </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="surface"
+                      size="sm"
+                      onClick={() => void handleRetryFfmpeg()}
+                      disabled={retrying}
+                    >
+                      <Icon name="refresh" className="text-sm" />
+                      {retrying ? "..." : t("importView.ffmpegRetry")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void openExternalUrl(APP_LINKS.github + "/releases/latest")}
+                    >
+                      <Icon name="download" className="text-sm" />
+                      {t("importView.ffmpegDownloadLink")}
+                    </Button>
+                  </div>
                 </div>
               )}
               {notice && (
