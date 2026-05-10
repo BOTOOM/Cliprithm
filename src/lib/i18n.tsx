@@ -63,6 +63,8 @@ const translations = {
       ffmpegMissingTitle: "Desktop dependencies missing",
       ffmpegMissingDescription:
         "Cliprithm needs FFmpeg and FFprobe to import, analyze and export videos in the desktop app.",
+      ffmpegRetry: "Retry",
+      ffmpegDownloadLink: "Download latest Cliprithm",
     },
     mediaLibrary: {
       desktopOnly:
@@ -368,6 +370,8 @@ const translations = {
       ffmpegMissingTitle: "Faltan dependencias de desktop",
       ffmpegMissingDescription:
         "Cliprithm necesita FFmpeg y FFprobe para importar, analizar y exportar videos dentro de la app desktop.",
+      ffmpegRetry: "Reintentar",
+      ffmpegDownloadLink: "Descargar la última versión de Cliprithm",
     },
     mediaLibrary: {
       desktopOnly:

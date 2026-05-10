@@ -84,6 +84,18 @@ jobs:
         if: matrix.platform == 'windows-latest'
         run: choco install ffmpeg -y
 
+      - name: Bundle FFmpeg binaries for sidecar (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
+          $ffmpegPath = (Get-Command ffmpeg -ErrorAction Stop).Source
+          $ffprobePath = (Get-Command ffprobe -ErrorAction Stop).Source
+          Copy-Item $ffmpegPath src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe
+          Copy-Item $ffprobePath src-tauri/binaries/ffprobe-x86_64-pc-windows-msvc.exe
+          Write-Host "Bundled FFmpeg: $ffmpegPath"
+          Write-Host "Bundled FFprobe: $ffprobePath"
+
       - name: Sync release version across app files
         shell: bash
         env:
@@ -274,7 +286,7 @@ jobs:
         include:
           - platform: macos-latest
             target: aarch64-apple-darwin
-          - platform: macos-latest
+          - platform: macos-13
             target: x86_64-apple-darwin
 
     runs-on: ${{ matrix.platform }}
@@ -303,6 +315,14 @@ jobs:
 
       - name: Install FFmpeg (macOS)
         run: brew install ffmpeg
+
+      - name: Bundle FFmpeg binaries for sidecar (macOS)
+        run: |
+          mkdir -p src-tauri/binaries
+          cp "$(which ffmpeg)" "src-tauri/binaries/ffmpeg-${{ matrix.target }}"
+          cp "$(which ffprobe)" "src-tauri/binaries/ffprobe-${{ matrix.target }}"
+          echo "Bundled FFmpeg: $(which ffmpeg)"
+          echo "Bundled FFprobe: $(which ffprobe)"
 
       - name: Sync release version across app files
         shell: bash
