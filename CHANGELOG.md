@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.3.0...cliprithm-v1.3.1) (2026-05-10)
+
+
+### Bug Fixes
+
+* bundle ffmpeg/ffprobe in Windows+macOS installer and add retry UX for missing ffmpeg ([ea4d9cf](https://github.com/BOTOOM/Cliprithm/commit/ea4d9cf4d92bf5ec8ad340c071f36bf1a0a6eca0))
+* bundle FFmpeg/FFprobe sidecars in Windows & macOS installers; add retry UX when missing ([fcd8074](https://github.com/BOTOOM/Cliprithm/commit/fcd8074fa74317cb3df3f799ff428d8f7c756b70))
+
 ## [1.3.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.2.2...cliprithm-v1.3.0) (2026-05-06)
 
 
