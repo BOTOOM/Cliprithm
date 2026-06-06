@@ -37,6 +37,31 @@ async function copyBinary(sourcePath, name, targetTriple) {
   console.log(`[ffmpeg-sidecar] Prepared ${path.relative(repoRoot, destination)}`);
 }
 
+async function hasExistingSidecars(targetTriple) {
+  const executableExtension = process.platform === "win32" ? ".exe" : "";
+  const ffmpegDestination = path.join(
+    binariesDir,
+    `ffmpeg-${targetTriple}${executableExtension}`
+  );
+  const ffprobeDestination = path.join(
+    binariesDir,
+    `ffprobe-${targetTriple}${executableExtension}`
+  );
+
+  try {
+    await Promise.all([
+      fs.access(ffmpegDestination),
+      fs.access(ffprobeDestination),
+    ]);
+    console.log(
+      `[ffmpeg-sidecar] Reusing existing ${targetTriple} FFmpeg sidecars`
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
   if (process.platform !== "win32" && process.platform !== "darwin") {
     console.log(
@@ -45,12 +70,16 @@ async function main() {
     return;
   }
 
+  const targetTriple = currentTargetTriple();
+  if (await hasExistingSidecars(targetTriple)) {
+    return;
+  }
+
   const ffprobePath = ffprobe.path;
   if (!ffmpegPath || !ffprobePath) {
     throw new Error("ffmpeg-static or ffprobe-static did not expose a binary path");
   }
 
-  const targetTriple = currentTargetTriple();
   await fs.mkdir(binariesDir, { recursive: true });
   await copyBinary(ffmpegPath, "ffmpeg", targetTriple);
   await copyBinary(ffprobePath, "ffprobe", targetTriple);
