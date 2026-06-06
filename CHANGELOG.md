@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.3.1...cliprithm-v1.3.2) (2026-06-06)
+
+
+### Bug Fixes
+
+* **aur:** harden package generation ([decde67](https://github.com/BOTOOM/Cliprithm/commit/decde670b1f46f5ca82e44b18c64d2e9b77af64e))
+
 ## [1.3.1](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.3.0...cliprithm-v1.3.1) (2026-05-10)
 
 
