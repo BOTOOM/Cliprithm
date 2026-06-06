@@ -9,7 +9,7 @@ fi
 version="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
 
 echo "==> Building Linux release artifacts for Cliprithm ${version}"
-npm run tauri build -- --bundles appimage,deb,rpm
+pnpm run tauri build -- --bundles appimage,deb,rpm
 
 appimage="src-tauri/target/release/bundle/appimage/Cliprithm_${version}_amd64.AppImage"
 deb="src-tauri/target/release/bundle/deb/Cliprithm_${version}_amd64.deb"

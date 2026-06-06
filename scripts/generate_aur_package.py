@@ -26,8 +26,8 @@ RUNTIME_DEPENDS = [
 SOURCE_MAKEDEPENDS = [
     "cargo",
     "nodejs",
-    "npm",
     "patchelf",
+    "pnpm",
     "rust",
 ]
 SOURCE_OPTIONS = ["!lto"]
@@ -190,15 +190,16 @@ def render_source_pkgbuild(
         prepare() {{
           cd "{src_root}"
           _setup_rust_toolchain
-          export npm_config_cache="$srcdir/npm-cache"
-          npm ci --cache "$npm_config_cache" --prefer-offline
+          export PNPM_HOME="$srcdir/pnpm-home"
+          export XDG_CACHE_HOME="$srcdir/pnpm-cache"
+          pnpm install --frozen-lockfile
         }}
 
         build() {{
           cd "{src_root}"
           _setup_rust_toolchain
           export CARGO_TARGET_DIR="$srcdir/target"
-          npm run tauri build -- --no-bundle --ci --no-sign
+          pnpm run tauri build -- --no-bundle --ci --no-sign
         }}
 
         package() {{

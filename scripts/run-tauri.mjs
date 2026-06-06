@@ -38,7 +38,8 @@ function syncTauriConfigVersion(version) {
 
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
 const version = packageJson.version;
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const args = rawArgs[1] === "--" ? [rawArgs[0], ...rawArgs.slice(2)] : rawArgs;
 
 const cargoSynced = syncCargoVersion(version);
 const tauriConfigSynced = syncTauriConfigVersion(version);
