@@ -35,6 +35,7 @@ fi
 build_release=0
 build_package=0
 appimage_path=""
+expected_bin_appimage_path=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,6 +48,8 @@ while [[ $# -gt 0 ]]; do
     --appimage)
       appimage_path="$2"
       shift
+      ;;
+    --)
       ;;
     *)
       echo "Unknown argument: $1" >&2
@@ -100,6 +103,8 @@ else
     exit 1
   fi
 
+  expected_bin_appimage_path="$(realpath "$appimage_path")"
+
   python3 scripts/generate_aur_package.py \
     --package bin \
     --version "$version" \
@@ -112,6 +117,58 @@ fi
 
 pushd "$workspace" >/dev/null
 
+verify_built_bin_package() {
+  local package_file
+  package_file="$(find "$PWD" -maxdepth 1 -type f -name 'cliprithm-bin-*.pkg.tar*' | sort | tail -n 1)"
+
+  if [[ -z "$package_file" || ! -f "$package_file" ]]; then
+    echo "Built cliprithm-bin package was not found." >&2
+    exit 1
+  fi
+
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"; cleanup' EXIT
+
+  bsdtar -xf "$package_file" -C "$tmp_dir" opt/cliprithm/cliprithm.AppImage
+
+  local packaged_appimage="$tmp_dir/opt/cliprithm/cliprithm.AppImage"
+  if [[ ! -f "$packaged_appimage" ]]; then
+    echo "Built package does not contain /opt/cliprithm/cliprithm.AppImage." >&2
+    exit 1
+  fi
+
+  local expected_size packaged_size expected_sha packaged_sha
+  expected_size="$(stat -c '%s' "$expected_bin_appimage_path")"
+  packaged_size="$(stat -c '%s' "$packaged_appimage")"
+  expected_sha="$(sha256sum "$expected_bin_appimage_path" | awk '{print $1}')"
+  packaged_sha="$(sha256sum "$packaged_appimage" | awk '{print $1}')"
+
+  if [[ "$packaged_size" != "$expected_size" ]]; then
+    echo "Packaged AppImage size mismatch: expected $expected_size bytes, got $packaged_size bytes." >&2
+    echo "This usually means makepkg stripped the AppImage and removed its SquashFS payload." >&2
+    exit 1
+  fi
+
+  if [[ "$packaged_sha" != "$expected_sha" ]]; then
+    echo "Packaged AppImage sha256 mismatch: expected $expected_sha, got $packaged_sha." >&2
+    exit 1
+  fi
+
+  (
+    cd "$tmp_dir"
+    ./opt/cliprithm/cliprithm.AppImage --appimage-extract >/dev/null
+  )
+
+  if [[ ! -d "$tmp_dir/squashfs-root" ]]; then
+    echo "Packaged AppImage did not extract a squashfs-root directory." >&2
+    exit 1
+  fi
+
+  rm -rf "$tmp_dir"
+  trap cleanup EXIT
+}
+
 echo "==> Validating generated .SRCINFO"
 makepkg --printsrcinfo > .SRCINFO.generated
 diff -u .SRCINFO .SRCINFO.generated
@@ -123,6 +180,11 @@ makepkg --verifysource
 if [[ "$build_package" -eq 1 ]]; then
   echo "==> Building package with makepkg -f"
   makepkg -f
+
+  if [[ "$package_kind" == "bin" ]]; then
+    echo "==> Verifying packaged AppImage payload"
+    verify_built_bin_package
+  fi
 fi
 
 popd >/dev/null

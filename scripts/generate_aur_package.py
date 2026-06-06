@@ -30,6 +30,8 @@ SOURCE_MAKEDEPENDS = [
     "patchelf",
     "rust",
 ]
+SOURCE_OPTIONS = ["!lto"]
+BIN_OPTIONS = ["!strip"]
 OPTDEPENDS = [
     "xdg-desktop-portal: improved desktop integration for file dialogs and portals",
 ]
@@ -173,18 +175,28 @@ def render_source_pkgbuild(
         conflicts=('cliprithm-bin')
         source=("{src_filename}::{src_url}")
         sha256sums=('{source_sha256}')
-        options=('!lto')
+        options={quote_array(SOURCE_OPTIONS)}
+
+        _setup_rust_toolchain() {{
+          export CARGO_HOME="$srcdir/cargo-home"
+
+          if command -v rustup >/dev/null 2>&1; then
+            export RUSTUP_HOME="$srcdir/rustup-home"
+            export RUSTUP_TOOLCHAIN=stable
+            rustup toolchain install stable --profile minimal --no-self-update
+          fi
+        }}
 
         prepare() {{
           cd "{src_root}"
-          export CARGO_HOME="$srcdir/cargo-home"
+          _setup_rust_toolchain
           export npm_config_cache="$srcdir/npm-cache"
           npm ci --cache "$npm_config_cache" --prefer-offline
         }}
 
         build() {{
           cd "{src_root}"
-          export CARGO_HOME="$srcdir/cargo-home"
+          _setup_rust_toolchain
           export CARGO_TARGET_DIR="$srcdir/target"
           npm run tauri build -- --no-bundle --ci --no-sign
         }}
@@ -264,6 +276,7 @@ def render_bin_pkgbuild(
         source={quote_source_array(sources)}
         sha256sums={quote_array(sha256sums)}
         noextract=('{artifact_name}')
+        options={quote_array(BIN_OPTIONS)}
 
         package() {{
           install -Dm755 "$srcdir/{artifact_name}" "$pkgdir/opt/cliprithm/cliprithm.AppImage"
@@ -331,7 +344,7 @@ def render_source_srcinfo(
         *maybe_srcinfo_lines("optdepends", OPTDEPENDS),
         "\tprovides = cliprithm",
         "\tconflicts = cliprithm-bin",
-        "\toptions = !lto",
+        *maybe_srcinfo_lines("options", SOURCE_OPTIONS),
         f"\tsource = {src_filename}::{src_url}",
         f"\tsha256sums = {source_sha256}",
         "",
@@ -368,6 +381,7 @@ def render_bin_srcinfo(
         "\tprovides = cliprithm",
         "\tconflicts = cliprithm",
         f"\tnoextract = {artifact_name}",
+        *maybe_srcinfo_lines("options", BIN_OPTIONS),
         *[f"\tsource = {source}" for source in sources],
         *[f"\tsha256sums = {sha256}" for sha256 in sha256sums],
         "",
