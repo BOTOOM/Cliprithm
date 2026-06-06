@@ -17,6 +17,8 @@ Cliprithm should maintain two AUR packages:
 - `cliprithm` consumes the tagged GitHub source tarball.
 - `cliprithm-bin` consumes the release AppImage.
 - The `cliprithm-bin` wrapper exports `APPIMAGE_EXTRACT_AND_RUN=1`, `WEBKIT_DISABLE_DMABUF_RENDERER=1`, `WEBKIT_DISABLE_COMPOSITING_MODE=1`, and `LIBGL_ALWAYS_SOFTWARE=1` to avoid common AppImage / EGL problems on Arch-family systems.
+- `cliprithm-bin` must set `options=('!strip')`. AppImages are ELF runtimes with an appended SquashFS payload, and default `makepkg` stripping can remove that payload and leave a broken runtime-only file.
+- `cliprithm` supports builders whose `rust`/`cargo` dependency is satisfied by `rustup` without a configured default toolchain by selecting a build-local stable toolchain.
 - Both wrappers now also export **distribution-channel env vars** so the app knows it was installed from AUR and switches to **store-managed** update guidance instead of self-updating from GitHub.
 - `cliprithm` / `cliprithm-bin` can now surface newer package versions through the **AUR RPC API**.
 
@@ -40,11 +42,33 @@ bash scripts/verify_aur_package.sh source --build-package
 bash scripts/verify_aur_package.sh bin --build-package
 ```
 
+The binary package verification must inspect the built `.pkg.tar.*` and confirm `/opt/cliprithm/cliprithm.AppImage` still matches the release AppImage and can be extracted. A package around 1 MiB is invalid for `cliprithm-bin`; the AppImage payload should remain the full release artifact.
+
 ## Publishing notes
 
 - Keep `cliprithm` and `cliprithm-bin` in separate AUR git repositories.
 - The release workflow can publish both packages with the same `AUR_SSH_PRIVATE_KEY` as long as that key is authorized in both AUR repositories.
 - Bump `pkgrel` when the PKGBUILD changes but the upstream app version does not.
+
+For a packaging-only fix to an already published version:
+
+```bash
+version="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
+tag="cliprithm-v${version}"
+
+python3 scripts/generate_aur_package.py --package source --version "$version" --tag "$tag" --pkgrel 2 --output-dir .artifacts/aur/source
+python3 scripts/generate_aur_package.py --package bin --version "$version" --tag "$tag" --pkgrel 2 --output-dir .artifacts/aur/bin
+```
+
+Then copy each generated `PKGBUILD` and `.SRCINFO` to the matching AUR git repository, commit, and push.
+
+If users have a stale broken local build cached, ask them to clean the yay package artifact before reinstalling:
+
+```bash
+yay -Rnc cliprithm-bin || true
+rm -rf ~/.cache/yay/cliprithm-bin
+yay -S cliprithm-bin
+```
 
 ## GitHub configuration
 
