@@ -388,7 +388,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: gh release upload "$RELEASE_TAG" latest.json --clobber
+          REPOSITORY: ${{ github.repository }}
+        run: gh release upload "$RELEASE_TAG" latest.json --repo "$REPOSITORY" --clobber
 
   # Step 3: Build macOS artifacts for every created release
   build-macos:
