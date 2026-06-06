@@ -33,6 +33,7 @@ A desktop application for automatic silence detection and removal in videos. Bui
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) >= 22
+- [pnpm](https://pnpm.io/) >= 10
 - [Rust](https://rustup.rs/) (stable)
 - [FFmpeg](https://ffmpeg.org/) installed and in PATH
 - System dependencies for Tauri:
@@ -43,26 +44,28 @@ A desktop application for automatic silence detection and removal in videos. Bui
 
 ```bash
 # Install dependencies
-npm install
+corepack enable
+corepack prepare pnpm@10.33.0 --activate
+pnpm install --frozen-lockfile
 
 # Run in development mode
-npm run tauri dev
+pnpm run tauri dev
 
 # Build for production
-npm run tauri build
+pnpm run tauri build
 
 # Remove generated build/debug artifacts
-npm run clean
+pnpm run clean
 
 # Validate the Linux release bundle locally before publishing
-npm run verify:linux-release
+pnpm run verify:linux-release
 
 # Validate both AUR package variants locally
-npm run verify:aur:source
-npm run verify:aur:bin
+pnpm run verify:aur:source
+pnpm run verify:aur:bin
 ```
 
-On local Linux builds, `npm run tauri build` now auto-enables the AppImage fallback used by `linuxdeploy`, skips the problematic `strip` pass, and disables updater artifacts when no signing key is configured. That makes unsigned local builds work more reliably on distros like Arch/Manjaro.
+On local Linux builds, `pnpm run tauri build` now auto-enables the AppImage fallback used by `linuxdeploy`, skips the problematic `strip` pass, and disables updater artifacts when no signing key is configured. That makes unsigned local builds work more reliably on distros like Arch/Manjaro.
 
 ## Installing from Releases
 
@@ -167,13 +170,13 @@ Local validation flow:
 
 ```bash
 # Build the Linux artifacts that users will receive
-npm run verify:linux-release
+pnpm run verify:linux-release
 
 # Validate source AUR metadata and sources
-npm run verify:aur:source
+pnpm run verify:aur:source
 
 # Validate binary AUR metadata against the locally built AppImage
-npm run verify:aur:bin
+pnpm run verify:aur:bin
 ```
 
 When updating only the AUR packaging for an already published app version, regenerate the AUR files with an incremented `pkgrel` and push both AUR repositories so users receive the fixed package metadata.
@@ -202,7 +205,7 @@ Packaging scaffolding added in this repo:
 When the project starts consuming too much disk space again, use:
 
 ```bash
-npm run clean
+pnpm run clean
 ```
 
 That removes `dist`, `src-tauri/gen`, `src-tauri/target`, and Snapcraft build artifacts under `packaging/snap/` (`.snapcraft`, `parts`, `prime`, `stage`, and generated `.snap` files).
@@ -210,10 +213,10 @@ That removes `dist`, `src-tauri/gen`, `src-tauri/target`, and Snapcraft build ar
 If you also want to remove `node_modules`:
 
 ```bash
-npm run clean:full
+pnpm run clean:full
 ```
 
-`npm run clean:full` also removes `node_modules` and `.playwright-mcp`.
+`pnpm run clean:full` also removes `node_modules` and `.playwright-mcp`.
 
 ## Project Structure
 

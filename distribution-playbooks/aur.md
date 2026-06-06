@@ -26,13 +26,13 @@ Cliprithm should maintain two AUR packages:
 
 ```bash
 # Build the exact Linux artifacts shipped to users
-npm run verify:linux-release
+pnpm run verify:linux-release
 
 # Validate the source AUR package metadata and sources
-npm run verify:aur:source
+pnpm run verify:aur:source
 
 # Validate the binary AUR package against the locally built AppImage
-npm run verify:aur:bin
+pnpm run verify:aur:bin
 ```
 
 Optional full package build:

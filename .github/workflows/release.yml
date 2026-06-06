@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing release tag to rebuild, e.g. cliprithm-v1.3.2'
+        required: false
+        default: ''
+      release_version:
+        description: 'Existing release version to rebuild, e.g. 1.3.2'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -20,9 +29,11 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
-      version: ${{ steps.release.outputs.version }}
+      release_created: ${{ steps.release.outputs.release_created || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '' && inputs.release_version != '') }}
+      tag_name: ${{ steps.release.outputs.tag_name || inputs.release_tag }}
+      version: ${{ steps.release.outputs.version || inputs.release_version }}
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -71,10 +82,14 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: 'npm'
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Install FFmpeg (Ubuntu)
         if: matrix.platform == 'ubuntu-22.04'
@@ -137,30 +152,48 @@ jobs:
         run: |
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ] || [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
             echo "::error::Missing TAURI_SIGNING_PRIVATE_KEY and/or TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets."
-            echo "::error::Generate them with: npm run tauri signer generate -- -w ~/.tauri/cliprithm.key"
+            echo "::error::Generate them with: pnpm run tauri signer generate -- -w ~/.tauri/cliprithm.key"
             echo "::error::Store the private key content or path in TAURI_SIGNING_PRIVATE_KEY and the passphrase in TAURI_SIGNING_PRIVATE_KEY_PASSWORD."
             exit 1
           fi
 
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@action-v0.6.2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ needs.release-please.outputs.tag_name }}
-          releaseName: 'Cliprithm ${{ needs.release-please.outputs.version }}'
-          releaseBody: ''
-          releaseDraft: false
-          prerelease: false
-          args: --target ${{ matrix.target }}
+        run: pnpm run tauri build -- --target ${{ matrix.target }}
+
+      - name: Upload release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          mapfile -t assets < <(
+            find src-tauri/target -type f -path '*/release/bundle/*' \
+              \( -name '*.AppImage' -o -name '*.AppImage.sig' \
+              -o -name '*.deb' -o -name '*.deb.sig' \
+              -o -name '*.rpm' -o -name '*.rpm.sig' \
+              -o -name '*.exe' -o -name '*.exe.sig' \
+              -o -name '*.msi' -o -name '*.msi.sig' \) \
+              | sort
+          )
+
+          if [[ "${#assets[@]}" -eq 0 ]]; then
+            echo "::error::No release assets were generated."
+            exit 1
+          fi
+
+          printf 'Uploading release assets:\n'
+          printf '  %s\n' "${assets[@]}"
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
 
   publish-aur:
     needs:
       - release-please
       - build-linux-windows
-    if: ${{ needs.release-please.outputs.release_created }}
+      - publish-latest-json
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -274,6 +307,89 @@ jobs:
           git -C /tmp/aur-cliprithm-bin commit -m "cliprithm-bin ${RELEASE_VERSION}"
           git -C /tmp/aur-cliprithm-bin push origin HEAD
 
+  publish-latest-json:
+    needs:
+      - release-please
+      - build-linux-windows
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Generate updater metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import subprocess
+          import urllib.request
+          from pathlib import Path
+
+          repository = os.environ["REPOSITORY"]
+          tag = os.environ["RELEASE_TAG"]
+          version = os.environ["RELEASE_VERSION"]
+
+          release = json.loads(
+              subprocess.check_output(
+                  ["gh", "api", f"/repos/{repository}/releases/tags/{tag}"],
+                  text=True,
+              )
+          )
+          assets = {asset["name"]: asset for asset in release["assets"]}
+          platforms = {}
+
+          def signature_for(asset_name: str) -> str:
+              sig_asset = assets[f"{asset_name}.sig"]
+              with urllib.request.urlopen(sig_asset["browser_download_url"]) as response:
+                  return base64.b64encode(response.read()).decode("ascii")
+
+          def add_platform(keys: list[str], asset_name: str) -> None:
+              if asset_name not in assets or f"{asset_name}.sig" not in assets:
+                  return
+
+              entry = {
+                  "signature": signature_for(asset_name),
+                  "url": assets[asset_name]["browser_download_url"],
+              }
+              for key in keys:
+                  platforms[key] = entry
+
+          add_platform(
+              ["linux-x86_64", "linux-x86_64-appimage"],
+              f"Cliprithm_{version}_amd64.AppImage",
+          )
+          add_platform(["linux-x86_64-deb"], f"Cliprithm_{version}_amd64.deb")
+          add_platform(["linux-x86_64-rpm"], f"Cliprithm-{version}-1.x86_64.rpm")
+          add_platform(
+              ["windows-x86_64", "windows-x86_64-msi"],
+              f"Cliprithm_{version}_x64_en-US.msi",
+          )
+          add_platform(["windows-x86_64-nsis"], f"Cliprithm_{version}_x64-setup.exe")
+
+          if not platforms:
+              raise SystemExit("No signed updater platforms were found in release assets")
+
+          latest = {
+              "version": version,
+              "notes": release.get("body") or "",
+              "pub_date": release["published_at"],
+              "platforms": platforms,
+          }
+          Path("latest.json").write_text(json.dumps(latest, indent=2) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload updater metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: gh release upload "$RELEASE_TAG" latest.json --clobber
+
   # Step 3: Build macOS artifacts for every created release
   build-macos:
     needs: release-please
@@ -308,10 +424,14 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: 'npm'
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Install FFmpeg (macOS)
         run: brew install ffmpeg
@@ -365,21 +485,35 @@ jobs:
         run: |
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ] || [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
             echo "::error::Missing TAURI_SIGNING_PRIVATE_KEY and/or TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets."
-            echo "::error::Generate them with: npm run tauri signer generate -- -w ~/.tauri/cliprithm.key"
+            echo "::error::Generate them with: pnpm run tauri signer generate -- -w ~/.tauri/cliprithm.key"
             echo "::error::Store the private key content or path in TAURI_SIGNING_PRIVATE_KEY and the passphrase in TAURI_SIGNING_PRIVATE_KEY_PASSWORD."
             exit 1
           fi
 
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@action-v0.6.2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ needs.release-please.outputs.tag_name }}
-          releaseName: 'Cliprithm ${{ needs.release-please.outputs.version }}'
-          releaseBody: ''
-          releaseDraft: false
-          prerelease: false
-          args: --target ${{ matrix.target }}
+        run: pnpm run tauri build -- --target ${{ matrix.target }}
+
+      - name: Upload release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          mapfile -t assets < <(
+            find src-tauri/target -type f -path '*/release/bundle/*' \
+              \( -name '*.dmg' -o -name '*.dmg.sig' \
+              -o -name '*.app.tar.gz' -o -name '*.app.tar.gz.sig' \) \
+              | sort
+          )
+
+          if [[ "${#assets[@]}" -eq 0 ]]; then
+            echo "::error::No macOS release assets were generated."
+            exit 1
+          fi
+
+          printf 'Uploading release assets:\n'
+          printf '  %s\n' "${assets[@]}"
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
