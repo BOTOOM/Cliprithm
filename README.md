@@ -92,7 +92,7 @@ chmod +x Cliprithm_<version>_amd64.AppImage
 On Arch / Manjaro, if direct AppImage mounting fails, install the compatibility package once:
 
 ```bash
-sudo pacman -S fuse2
+yay -S --needed fuse2
 ```
 
 If the AppImage opens with a blank or white window on Arch / Manjaro, run it in **one single line**:
@@ -102,6 +102,16 @@ APPIMAGE_EXTRACT_AND_RUN=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPO
 ```
 
 For Arch-based distros, `cliprithm-bin` is the preferred package because it already wraps the AppImage in the recommended AUR launcher.
+
+If `cliprithm-bin` fails with `This doesn't look like a squashfs image`, remove any stale locally built package and reinstall:
+
+```bash
+yay -Rnc cliprithm-bin || true
+rm -rf ~/.cache/yay/cliprithm-bin
+yay -S cliprithm-bin
+```
+
+That error means the AppImage payload was stripped while packaging, leaving only the small AppImage runtime instead of the full release artifact.
 
 ### Windows
 
@@ -165,6 +175,8 @@ npm run verify:aur:source
 # Validate binary AUR metadata against the locally built AppImage
 npm run verify:aur:bin
 ```
+
+When updating only the AUR packaging for an already published app version, regenerate the AUR files with an incremented `pkgrel` and push both AUR repositories so users receive the fixed package metadata.
 
 See `distribution-playbooks/aur.md` for the full strategy and the notes for `cliprithm-bin`.
 
