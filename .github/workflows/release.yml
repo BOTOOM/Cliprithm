@@ -393,7 +393,7 @@ jobs:
   # Step 3: Build macOS artifacts for every created release
   build-macos:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: ${{ false && needs.release-please.outputs.release_created }}
     permissions:
       contents: write
     strategy:
