@@ -68,7 +68,13 @@ def quote_array(values: list[str]) -> str:
 
 
 def quote_source_array(entries: list[tuple[str, str]]) -> str:
-    return "(" + " ".join(f'"{name}::{url}"' for name, url in entries) + ")"
+    parts = []
+    for name, url in entries:
+        if url:
+            parts.append(f'"{name}::{url}"')
+        else:
+            parts.append(f'"{name}"')
+    return "(" + " ".join(parts) + ")"
 
 
 def source_root(repo: str, tag: str) -> str:
@@ -152,6 +158,8 @@ def render_source_pkgbuild(
     repo: str,
     maintainer: str,
     source_sha256: str,
+    launcher_sha256: str,
+    desktop_sha256: str,
 ) -> str:
     src_filename = source_filename(pkgname, version)
     src_url = source_tarball_url(owner, repo, tag)
@@ -173,8 +181,12 @@ def render_source_pkgbuild(
         optdepends={quote_array(OPTDEPENDS)}
         provides=('cliprithm')
         conflicts=('cliprithm-bin')
-        source=("{src_filename}::{src_url}")
-        sha256sums=('{source_sha256}')
+        source=("{src_filename}::{src_url}"
+                "cliprithm"
+                "cliprithm.desktop")
+        sha256sums=('{source_sha256}'
+                    '{launcher_sha256}'
+                    '{desktop_sha256}')
         options={quote_array(SOURCE_OPTIONS)}
 
         _setup_rust_toolchain() {{
@@ -209,34 +221,8 @@ def render_source_pkgbuild(
           install -Dm644 "src-tauri/icons/128x128.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/cliprithm.png"
           install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 
-          cat > "$srcdir/cliprithm" <<'EOF'
-        #!/usr/bin/env bash
-        set -euo pipefail
-        export CLIPRITHM_DISTRIBUTION_CHANNEL=aur
-        export CLIPRITHM_UPDATE_STRATEGY=store-managed
-        export CLIPRITHM_PACKAGE_NAME=cliprithm
-        export CLIPRITHM_STORE_NAME=AUR
-        export CLIPRITHM_STORE_URL=https://aur.archlinux.org/packages/cliprithm
-        export CLIPRITHM_STORE_INSTRUCTIONS='yay -Syu cliprithm'
-        export CLIPRITHM_VERSION_SOURCE_TYPE=aur-rpc
-        export CLIPRITHM_VERSION_SOURCE_URL=https://aur.archlinux.org/rpc/v5/info/cliprithm
-        exec /usr/lib/cliprithm/cliprithm "$@"
-        EOF
           install -Dm755 "$srcdir/cliprithm" "$pkgdir/usr/bin/cliprithm"
-
-          cat > "$srcdir/$pkgname.desktop" <<'EOF'
-        [Desktop Entry]
-        Type=Application
-        Name=Cliprithm
-        Comment=Smart video silence remover and clip editor
-        Exec=cliprithm
-        Icon=cliprithm
-        Categories=AudioVideo;AudioVideoEditing;Video;
-        Terminal=false
-        StartupWMClass=cliprithm
-        EOF
-
-          install -Dm644 "$srcdir/$pkgname.desktop" "$pkgdir/usr/share/applications/$pkgname.desktop"
+          install -Dm644 "$srcdir/cliprithm.desktop" "$pkgdir/usr/share/applications/cliprithm.desktop"
         }}
         """
     )
@@ -257,6 +243,8 @@ def render_bin_pkgbuild(
         (artifact_name, artifact_url),
         ("cliprithm.png", icon_url),
         ("LICENSE", license_url),
+        ("cliprithm", ""),
+        ("cliprithm.desktop", ""),
     ]
 
     return textwrap.dedent(
@@ -284,38 +272,8 @@ def render_bin_pkgbuild(
           install -Dm644 "$srcdir/cliprithm.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/cliprithm.png"
           install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 
-          cat > "$srcdir/cliprithm" <<'EOF'
-        #!/usr/bin/env bash
-        set -euo pipefail
-        export CLIPRITHM_DISTRIBUTION_CHANNEL=aur-bin
-        export CLIPRITHM_UPDATE_STRATEGY=store-managed
-        export CLIPRITHM_PACKAGE_NAME=cliprithm-bin
-        export CLIPRITHM_STORE_NAME=AUR
-        export CLIPRITHM_STORE_URL=https://aur.archlinux.org/packages/cliprithm-bin
-        export CLIPRITHM_STORE_INSTRUCTIONS='yay -Syu cliprithm-bin'
-        export CLIPRITHM_VERSION_SOURCE_TYPE=aur-rpc
-        export CLIPRITHM_VERSION_SOURCE_URL=https://aur.archlinux.org/rpc/v5/info/cliprithm-bin
-        export APPIMAGE_EXTRACT_AND_RUN=1
-        export WEBKIT_DISABLE_DMABUF_RENDERER=1
-        export WEBKIT_DISABLE_COMPOSITING_MODE=1
-        export LIBGL_ALWAYS_SOFTWARE=1
-        exec /opt/cliprithm/cliprithm.AppImage "$@"
-        EOF
           install -Dm755 "$srcdir/cliprithm" "$pkgdir/usr/bin/cliprithm"
-
-          cat > "$srcdir/$pkgname.desktop" <<'EOF'
-        [Desktop Entry]
-        Type=Application
-        Name=Cliprithm
-        Comment=Smart video silence remover and clip editor
-        Exec=cliprithm
-        Icon=cliprithm
-        Categories=AudioVideo;AudioVideoEditing;Video;
-        Terminal=false
-        StartupWMClass=cliprithm
-        EOF
-
-          install -Dm644 "$srcdir/$pkgname.desktop" "$pkgdir/usr/share/applications/$pkgname.desktop"
+          install -Dm644 "$srcdir/cliprithm.desktop" "$pkgdir/usr/share/applications/cliprithm.desktop"
         }}
         """
     )
@@ -329,6 +287,8 @@ def render_source_srcinfo(
     repo: str,
     tag: str,
     source_sha256: str,
+    launcher_sha256: str,
+    desktop_sha256: str,
 ) -> str:
     src_filename = source_filename(pkgname, version)
     src_url = source_tarball_url(owner, repo, tag)
@@ -347,7 +307,11 @@ def render_source_srcinfo(
         "\tconflicts = cliprithm-bin",
         *maybe_srcinfo_lines("options", SOURCE_OPTIONS),
         f"\tsource = {src_filename}::{src_url}",
+        "\tsource = cliprithm",
+        "\tsource = cliprithm.desktop",
         f"\tsha256sums = {source_sha256}",
+        f"\tsha256sums = {launcher_sha256}",
+        f"\tsha256sums = {desktop_sha256}",
         "",
         f"pkgname = {pkgname}",
     ]
@@ -368,6 +332,8 @@ def render_bin_srcinfo(
         f"{artifact_name}::{artifact_url}",
         f"cliprithm.png::{icon_url}",
         f"LICENSE::{license_url}",
+        "cliprithm",
+        "cliprithm.desktop",
     ]
     lines = [
         f"pkgbase = {pkgname}",
@@ -401,6 +367,46 @@ def main() -> None:
         tarball_url = source_tarball_url(args.owner, args.repo, args.tag)
         source_sha256 = sha256_for_url(tarball_url)
 
+        # Generate launcher script and desktop file
+        launcher_content = textwrap.dedent(
+            f"""\
+            #!/usr/bin/env bash
+            # This script is a wrapper for Cliprithm installed via AUR.
+            # It configures distribution channel and update strategy variables.
+            # The app itself does not auto-update or run update commands;
+            # these variables are only used to show manual update instructions in the UI.
+            set -euo pipefail
+            export CLIPRITHM_DISTRIBUTION_CHANNEL=aur
+            export CLIPRITHM_UPDATE_STRATEGY=store-managed
+            export CLIPRITHM_PACKAGE_NAME={pkgname}
+            export CLIPRITHM_STORE_NAME=AUR
+            export CLIPRITHM_STORE_URL=https://aur.archlinux.org/packages/{pkgname}
+            export CLIPRITHM_STORE_INSTRUCTIONS='yay -Syu {pkgname}'
+            export CLIPRITHM_VERSION_SOURCE_TYPE=aur-rpc
+            export CLIPRITHM_VERSION_SOURCE_URL=https://aur.archlinux.org/rpc/v5/info/{pkgname}
+            exec /usr/lib/cliprithm/cliprithm "$@"
+            """
+        )
+        desktop_content = textwrap.dedent(
+            """\
+            [Desktop Entry]
+            Type=Application
+            Name=Cliprithm
+            Comment=Smart video silence remover and clip editor
+            Exec=cliprithm
+            Icon=cliprithm
+            Categories=AudioVideo;AudioVideoEditing;Video;
+            Terminal=false
+            StartupWMClass=cliprithm
+            """
+        )
+
+        (output_dir / "cliprithm").write_text(launcher_content, encoding="utf-8")
+        (output_dir / "cliprithm.desktop").write_text(desktop_content, encoding="utf-8")
+
+        launcher_sha256 = hashlib.sha256(launcher_content.encode("utf-8")).hexdigest()
+        desktop_sha256 = hashlib.sha256(desktop_content.encode("utf-8")).hexdigest()
+
         pkgbuild = render_source_pkgbuild(
             pkgname,
             args.version,
@@ -410,6 +416,8 @@ def main() -> None:
             args.repo,
             args.maintainer,
             source_sha256,
+            launcher_sha256,
+            desktop_sha256,
         )
         srcinfo = render_source_srcinfo(
             pkgname,
@@ -419,6 +427,8 @@ def main() -> None:
             args.repo,
             args.tag,
             source_sha256,
+            launcher_sha256,
+            desktop_sha256,
         )
 
         source_summary = [("Source URL", tarball_url), ("sha256", source_sha256)]
@@ -430,10 +440,57 @@ def main() -> None:
         icon_url = args.icon_url or release_icon_url(args.owner, args.repo, args.tag)
         license_url = args.license_url or release_license_url(args.owner, args.repo, args.tag)
         artifact_name = Path(urlparse(artifact_url).path).name or f"Cliprithm_{args.version}_amd64.AppImage"
+
+        # Generate launcher script and desktop file
+        launcher_content = textwrap.dedent(
+            f"""\
+            #!/usr/bin/env bash
+            # This script is a wrapper for Cliprithm installed via AUR (binary package).
+            # It configures distribution channel and update strategy variables.
+            # The app itself does not auto-update or run update commands;
+            # these variables are only used to show manual update instructions in the UI.
+            set -euo pipefail
+            export CLIPRITHM_DISTRIBUTION_CHANNEL=aur-bin
+            export CLIPRITHM_UPDATE_STRATEGY=store-managed
+            export CLIPRITHM_PACKAGE_NAME={pkgname}
+            export CLIPRITHM_STORE_NAME=AUR
+            export CLIPRITHM_STORE_URL=https://aur.archlinux.org/packages/{pkgname}
+            export CLIPRITHM_STORE_INSTRUCTIONS='yay -Syu {pkgname}'
+            export CLIPRITHM_VERSION_SOURCE_TYPE=aur-rpc
+            export CLIPRITHM_VERSION_SOURCE_URL=https://aur.archlinux.org/rpc/v5/info/{pkgname}
+            export APPIMAGE_EXTRACT_AND_RUN=1
+            export WEBKIT_DISABLE_DMABUF_RENDERER=1
+            export WEBKIT_DISABLE_COMPOSITING_MODE=1
+            export LIBGL_ALWAYS_SOFTWARE=1
+            exec /opt/cliprithm/cliprithm.AppImage "$@"
+            """
+        )
+        desktop_content = textwrap.dedent(
+            """\
+            [Desktop Entry]
+            Type=Application
+            Name=Cliprithm
+            Comment=Smart video silence remover and clip editor
+            Exec=cliprithm
+            Icon=cliprithm
+            Categories=AudioVideo;AudioVideoEditing;Video;
+            Terminal=false
+            StartupWMClass=cliprithm
+            """
+        )
+
+        (output_dir / "cliprithm").write_text(launcher_content, encoding="utf-8")
+        (output_dir / "cliprithm.desktop").write_text(desktop_content, encoding="utf-8")
+
+        launcher_sha256 = hashlib.sha256(launcher_content.encode("utf-8")).hexdigest()
+        desktop_sha256 = hashlib.sha256(desktop_content.encode("utf-8")).hexdigest()
+
         sha256sums = [
             sha256_for_url(artifact_url),
             sha256_for_url(icon_url),
             sha256_for_url(license_url),
+            launcher_sha256,
+            desktop_sha256,
         ]
 
         pkgbuild = render_bin_pkgbuild(

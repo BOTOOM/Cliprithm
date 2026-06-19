@@ -259,12 +259,11 @@ jobs:
         run: |
           REPO_URL="${AUR_PACKAGE_REPO_SSH_URL:-ssh://aur@aur.archlinux.org/cliprithm.git}"
           git clone "$REPO_URL" /tmp/aur-cliprithm
-          cp .artifacts/aur/source/PKGBUILD /tmp/aur-cliprithm/PKGBUILD
-          cp .artifacts/aur/source/.SRCINFO /tmp/aur-cliprithm/.SRCINFO
+          cp -f .artifacts/aur/source/* /tmp/aur-cliprithm/
 
           git -C /tmp/aur-cliprithm config user.name "github-actions[bot]"
           git -C /tmp/aur-cliprithm config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C /tmp/aur-cliprithm add PKGBUILD .SRCINFO
+          git -C /tmp/aur-cliprithm add PKGBUILD .SRCINFO cliprithm cliprithm.desktop
 
           if git -C /tmp/aur-cliprithm diff --cached --quiet; then
             echo "AUR package repository already up to date."
@@ -292,12 +291,11 @@ jobs:
               ;;
           esac
           git clone "$REPO_URL" /tmp/aur-cliprithm-bin
-          cp .artifacts/aur/bin/PKGBUILD /tmp/aur-cliprithm-bin/PKGBUILD
-          cp .artifacts/aur/bin/.SRCINFO /tmp/aur-cliprithm-bin/.SRCINFO
+          cp -f .artifacts/aur/bin/* /tmp/aur-cliprithm-bin/
 
           git -C /tmp/aur-cliprithm-bin config user.name "github-actions[bot]"
           git -C /tmp/aur-cliprithm-bin config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C /tmp/aur-cliprithm-bin add PKGBUILD .SRCINFO
+          git -C /tmp/aur-cliprithm-bin add PKGBUILD .SRCINFO cliprithm cliprithm.desktop
 
           if git -C /tmp/aur-cliprithm-bin diff --cached --quiet; then
             echo "AUR binary package repository already up to date."
