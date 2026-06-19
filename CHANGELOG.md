@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.3](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.3.2...cliprithm-v1.3.3) (2026-06-19)
+
+
+### Bug Fixes
+
+* **build:** align Tauri pnpm tooling ([b6d2372](https://github.com/BOTOOM/Cliprithm/commit/b6d237239b74aac578c3e706f196f640a47f9c7f))
+* **build:** reuse prebundled ffmpeg sidecars ([d9204a1](https://github.com/BOTOOM/Cliprithm/commit/d9204a1b9cefc13f8ac9f4f3209be8900fd8e2a4))
+* **ci:** ensure release_created evaluates to a boolean ([eeca7b8](https://github.com/BOTOOM/Cliprithm/commit/eeca7b8d9e60a36540fde7af1afde86856f508ad))
+* **ci:** fix release_created condition in build job ([d1ffc48](https://github.com/BOTOOM/Cliprithm/commit/d1ffc489c59dc0237a10acbd1cc34e92af7c40bd))
+
 ## [1.3.2](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.3.1...cliprithm-v1.3.2) (2026-06-06)
 
 
