@@ -45,7 +45,7 @@ jobs:
   # Step 2: Build Linux + Windows (always when release is created)
   build-linux-windows:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
     permissions:
       contents: write
     strategy:
