@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.4](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.3.3...cliprithm-v1.3.4) (2026-06-23)
+
+
+### Bug Fixes
+
+* **ci:** copy hidden files explicitly when publishing to AUR ([b26b449](https://github.com/BOTOOM/Cliprithm/commit/b26b449a1f4ba7f7225e460246634a984546a643))
+
 ## [1.3.3](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.3.2...cliprithm-v1.3.3) (2026-06-19)
 
 
