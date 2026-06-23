@@ -259,7 +259,10 @@ jobs:
         run: |
           REPO_URL="${AUR_PACKAGE_REPO_SSH_URL:-ssh://aur@aur.archlinux.org/cliprithm.git}"
           git clone "$REPO_URL" /tmp/aur-cliprithm
-          cp -f .artifacts/aur/source/* /tmp/aur-cliprithm/
+          cp -f .artifacts/aur/source/PKGBUILD /tmp/aur-cliprithm/
+          cp -f .artifacts/aur/source/.SRCINFO /tmp/aur-cliprithm/
+          cp -f .artifacts/aur/source/cliprithm /tmp/aur-cliprithm/
+          cp -f .artifacts/aur/source/cliprithm.desktop /tmp/aur-cliprithm/
 
           git -C /tmp/aur-cliprithm config user.name "github-actions[bot]"
           git -C /tmp/aur-cliprithm config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -291,7 +294,10 @@ jobs:
               ;;
           esac
           git clone "$REPO_URL" /tmp/aur-cliprithm-bin
-          cp -f .artifacts/aur/bin/* /tmp/aur-cliprithm-bin/
+          cp -f .artifacts/aur/bin/PKGBUILD /tmp/aur-cliprithm-bin/
+          cp -f .artifacts/aur/bin/.SRCINFO /tmp/aur-cliprithm-bin/
+          cp -f .artifacts/aur/bin/cliprithm /tmp/aur-cliprithm-bin/
+          cp -f .artifacts/aur/bin/cliprithm.desktop /tmp/aur-cliprithm-bin/
 
           git -C /tmp/aur-cliprithm-bin config user.name "github-actions[bot]"
           git -C /tmp/aur-cliprithm-bin config user.email "41898282+github-actions[bot]@users.noreply.github.com"
