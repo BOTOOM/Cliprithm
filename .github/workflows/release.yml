@@ -129,6 +129,11 @@ jobs:
 
           version = os.environ["RELEASE_VERSION"]
 
+          package_json_path = Path("package.json")
+          package_json = json.loads(package_json_path.read_text(encoding="utf-8"))
+          package_json["version"] = version
+          package_json_path.write_text(json.dumps(package_json, indent=2) + "\n", encoding="utf-8")
+
           tauri_conf_path = Path("src-tauri/tauri.conf.json")
           tauri_conf = json.loads(tauri_conf_path.read_text(encoding="utf-8"))
           tauri_conf["version"] = version
@@ -172,13 +177,15 @@ jobs:
       - name: Purge system libraries from AppImage (Linux)
         if: matrix.platform == 'ubuntu-22.04'
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
         run: |
           # 1. Download appimagetool
           wget -O /tmp/appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x /tmp/appimagetool
 
           # 2. Find the generated AppImage
-          appimage_path=$(find src-tauri/target -type f -path '*/release/bundle/appimage/*.AppImage' | head -n 1)
+          appimage_path=$(find src-tauri/target -type f -path "*/release/bundle/appimage/Cliprithm_${RELEASE_VERSION}_amd64.AppImage" | head -n 1)
           if [ -z "$appimage_path" ]; then
             echo "No AppImage found to purge!"
             exit 1
@@ -189,7 +196,7 @@ jobs:
           appimage_dir=$(dirname "$appimage_path")
           cd "$appimage_dir"
           appimage_filename=$(basename "$appimage_path")
-          ./"$appimage_filename" --appimage-extract
+          APPIMAGE_EXTRACT_AND_RUN=1 ./"$appimage_filename" --appimage-extract
 
           # 4. Purge all bundled system libraries
           rm -rf squashfs-root/usr/lib/*.so* squashfs-root/usr/lib/x86_64-linux-gnu
@@ -208,14 +215,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
         run: |
           mapfile -t assets < <(
             find src-tauri/target -type f -path '*/release/bundle/*' \
-              \( -name '*.AppImage' -o -name '*.AppImage.sig' \
-              -o -name '*.deb' -o -name '*.deb.sig' \
-              -o -name '*.rpm' -o -name '*.rpm.sig' \
-              -o -name '*.exe' -o -name '*.exe.sig' \
-              -o -name '*.msi' -o -name '*.msi.sig' \) \
+              \( -name "*${RELEASE_VERSION}*.AppImage" -o -name "*${RELEASE_VERSION}*.AppImage.sig" \
+              -o -name "*${RELEASE_VERSION}*.deb" -o -name "*${RELEASE_VERSION}*.deb.sig" \
+              -o -name "*${RELEASE_VERSION}*.rpm" -o -name "*${RELEASE_VERSION}*.rpm.sig" \
+              -o -name "*${RELEASE_VERSION}*.exe" -o -name "*${RELEASE_VERSION}*.exe.sig" \
+              -o -name "*${RELEASE_VERSION}*.msi" -o -name "*${RELEASE_VERSION}*.msi.sig" \) \
               | sort
           )
 
@@ -506,6 +514,11 @@ jobs:
 
           version = os.environ["RELEASE_VERSION"]
 
+          package_json_path = Path("package.json")
+          package_json = json.loads(package_json_path.read_text(encoding="utf-8"))
+          package_json["version"] = version
+          package_json_path.write_text(json.dumps(package_json, indent=2) + "\n", encoding="utf-8")
+
           tauri_conf_path = Path("src-tauri/tauri.conf.json")
           tauri_conf = json.loads(tauri_conf_path.read_text(encoding="utf-8"))
           tauri_conf["version"] = version
@@ -550,11 +563,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
         run: |
           mapfile -t assets < <(
             find src-tauri/target -type f -path '*/release/bundle/*' \
-              \( -name '*.dmg' -o -name '*.dmg.sig' \
-              -o -name '*.app.tar.gz' -o -name '*.app.tar.gz.sig' \) \
+              \( -name "*${RELEASE_VERSION}*.dmg" -o -name "*${RELEASE_VERSION}*.dmg.sig" \
+              -o -name "*${RELEASE_VERSION}*.app.tar.gz" -o -name "*${RELEASE_VERSION}*.app.tar.gz.sig" \) \
               | sort
           )
 
