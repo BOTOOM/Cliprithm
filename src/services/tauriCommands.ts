@@ -6,6 +6,7 @@ import type {
   DetectionResult,
   ExportOptions,
   FfmpegStatus,
+  PreviewSegment,
   VideoMetadata,
 } from "../types";
 
@@ -30,7 +31,7 @@ export async function getFFmpegStatus(): Promise<FfmpegStatus> {
 }
 
 export async function getVideoMetadata(filePath: string): Promise<VideoMetadata> {
-  assertDesktop("La lectura de metadata");
+  assertDesktop("Video metadata reading");
   log.debug("[ffmpeg]", "Getting metadata for:", filePath);
   const meta = await invoke<VideoMetadata>("get_video_metadata", { filePath });
   log.info(
@@ -45,7 +46,7 @@ export async function detectSilence(
   noiseThreshold: number,
   minDuration: number
 ): Promise<DetectionResult> {
-  assertDesktop("La detección de silencios");
+  assertDesktop("Silence detection");
   log.info(
     "[silence]",
     `Detecting silence — threshold:${noiseThreshold}dB minDur:${minDuration}s`
@@ -65,7 +66,7 @@ export async function detectSilence(
 }
 
 export async function exportVideo(options: ExportOptions): Promise<string> {
-  assertDesktop("La exportación");
+  assertDesktop("Export");
   log.info(
     "[export]",
     `Exporting → ${options.output_path} | clips:${options.segments_to_keep.length}`
@@ -75,11 +76,33 @@ export async function exportVideo(options: ExportOptions): Promise<string> {
   return result;
 }
 
+export async function generateExportPreview(options: {
+  inputPath: string;
+  outputPath: string;
+  segmentsToKeep: PreviewSegment[];
+  targetWidth?: number | null;
+  targetHeight?: number | null;
+  resizeMode?: "original" | "fit" | "crop" | "stretch" | null;
+}): Promise<string> {
+  assertDesktop("Export preview generation");
+  log.info("[export-preview]", `Generating still preview → ${options.outputPath}`);
+  const result = await invoke<string>("generate_export_preview", {
+    inputPath: options.inputPath,
+    outputPath: options.outputPath,
+    segmentsToKeep: options.segmentsToKeep,
+    targetWidth: options.targetWidth ?? null,
+    targetHeight: options.targetHeight ?? null,
+    resizeMode: options.resizeMode ?? null,
+  });
+  log.info("[export-preview]", "Still preview ready:", result);
+  return result;
+}
+
 export async function generatePreviewProxy(
   videoPath: string,
   outputPath: string
 ): Promise<string> {
-  assertDesktop("La generación del proxy de preview");
+  assertDesktop("Preview proxy generation");
   log.info("[preview]", `Generating preview proxy → ${outputPath}`);
   const result = await invoke<string>("generate_preview_proxy", {
     videoPath,
@@ -94,7 +117,7 @@ export async function generateEditedSequencePreview(
   outputPath: string,
   segmentsToKeep: Array<{ start: number; end: number }>
 ): Promise<string> {
-  assertDesktop("La generación del preview editado");
+  assertDesktop("Edited preview generation");
   log.info(
     "[preview]",
     `Generating edited sequence preview → ${outputPath} | clips:${segmentsToKeep.length}`
@@ -114,6 +137,6 @@ export async function getMediaServerPort(): Promise<number> {
 }
 
 export async function getDistributionContext(): Promise<DistributionContext> {
-  assertDesktop("Contexto de distribución");
+  assertDesktop("Distribution context");
   return invoke<DistributionContext>("get_distribution_context");
 }

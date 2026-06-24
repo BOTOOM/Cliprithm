@@ -45,6 +45,10 @@ pub struct ExportOptions {
     pub output_path: String,
     pub segments_to_keep: Vec<(f64, f64)>,
     pub resolution: Option<String>,
+    pub target_width: Option<u32>,
+    pub target_height: Option<u32>,
+    pub sizing_mode: Option<String>,
+    pub resize_mode: Option<String>,
     pub fps: Option<u32>,
     pub mode: String,
     pub speed_multiplier: Option<f64>,
@@ -55,6 +59,14 @@ pub struct ExportOptions {
 pub struct PreviewSegment {
     pub start: f64,
     pub end: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExportResizeMode {
+    Original,
+    Fit,
+    Crop,
+    Stretch,
 }
 
 #[tauri::command]
@@ -151,7 +163,7 @@ pub async fn detect_silence(
     let threshold_str = format!("{}dB", noise_threshold);
     let duration_str = format!("{}", min_duration);
 
-    emit_progress(&window, 0.0, "analyzing", "Iniciando detección de silencios...");
+    emit_progress(&window, 0.0, "analyzing", "");
 
     let output = ffmpeg_output(
         &window.app_handle(),
@@ -175,7 +187,7 @@ pub async fn detect_silence(
     let preview_start = stderr.len().saturating_sub(500);
     debug!("[silence] FFmpeg stderr tail: ...{}", &stderr[preview_start..]);
 
-    emit_progress(&window, 50.0, "analyzing", "Analizando output de FFmpeg...");
+    emit_progress(&window, 50.0, "analyzing", "");
 
     let segments = parse_silence_output(&stderr);
     let metadata = get_video_metadata(window.clone(), file_path.clone()).await?;
@@ -190,8 +202,7 @@ pub async fn detect_silence(
         debug!("[silence]   [{}] {:.3}s → {:.3}s ({:.3}s)", i, seg.start, seg.end, seg.duration);
     }
 
-    emit_progress(&window, 100.0, "complete",
-        &format!("Encontrados {} segmentos de silencio", segments.len()));
+    emit_progress(&window, 100.0, "complete", "");
 
     Ok(DetectionResult {
         segments,
@@ -236,7 +247,7 @@ pub async fn cut_silence(
         debug!("[cut]   keep[{}] {:.3}s → {:.3}s", i, s, e);
     }
 
-    emit_progress(&window, 10.0, "cutting", "Preparando segmentos...");
+    emit_progress(&window, 10.0, "cutting", "");
 
     let mut filter_parts: Vec<String> = Vec::new();
     let num_segments = segments_to_keep.len();
@@ -259,7 +270,7 @@ pub async fn cut_silence(
     );
 
     debug!("[cut] Filter complex: {} chars", filter.len());
-    emit_progress(&window, 30.0, "cutting", "Cortando y uniendo segmentos...");
+    emit_progress(&window, 30.0, "cutting", "");
 
     info!("[cut] Running FFmpeg...");
     let output = ffmpeg_output(
@@ -300,7 +311,7 @@ pub async fn cut_silence(
     }
 
     info!("[cut] Done — {}", output_path);
-    emit_progress(&window, 100.0, "complete", "¡Procesamiento completo!");
+    emit_progress(&window, 100.0, "complete", "");
     Ok(output_path)
 }
 
@@ -311,7 +322,7 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
         options.input_path, options.output_path, options.resolution, options.fps
     );
 
-    emit_named_progress(&window, "export-progress", 5.0, "exporting", "Preparando exportación...");
+    emit_named_progress(&window, "export-progress", 5.0, "exporting", "");
 
     let metadata = get_video_metadata(window.clone(), options.input_path.clone()).await?;
     let mut segments_to_keep = options.segments_to_keep.clone();
@@ -321,7 +332,7 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
     segments_to_keep.retain(|(start, end)| end - start >= 0.08);
 
     if segments_to_keep.is_empty() {
-        return Err("No hay clips activos para exportar.".to_string());
+        return Err("No active clips available to export.".to_string());
     }
 
     let raw_duration: f64 = segments_to_keep
@@ -339,12 +350,17 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
         "export-progress",
         12.0,
         "exporting",
-        "Construyendo timeline final...",
+        "",
     );
 
     let (filter, video_output_label) = build_export_filter(
         &segments_to_keep,
+        metadata.width,
+        metadata.height,
+        options.target_width,
+        options.target_height,
         options.resolution.as_deref(),
+        options.resize_mode.as_deref(),
         options.fps,
         options.playback_rate,
     );
@@ -377,7 +393,7 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
         "export-progress",
         20.0,
         "encoding",
-        "Iniciando FFmpeg...",
+        "",
     );
 
     info!("[export] Running FFmpeg ({} args)...", args.len());
@@ -391,8 +407,61 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
     .await?;
 
     info!("[export] Done — {}", options.output_path);
-    emit_named_progress(&window, "export-progress", 100.0, "complete", "¡Exportación completa!");
+    emit_named_progress(&window, "export-progress", 100.0, "complete", "");
     Ok(options.output_path)
+}
+
+#[tauri::command]
+pub async fn generate_export_preview(
+    window: Window,
+    input_path: String,
+    output_path: String,
+    segments_to_keep: Vec<PreviewSegment>,
+    target_width: Option<u32>,
+    target_height: Option<u32>,
+    resize_mode: Option<String>,
+) -> Result<String, String> {
+    if let Some(parent) = std::path::Path::new(&output_path).parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create export preview directory: {}", e))?;
+    }
+
+    let metadata = get_video_metadata(window.clone(), input_path.clone()).await?;
+    let frame_time = choose_preview_frame_time(&segments_to_keep, metadata.duration);
+    let video_filter = build_still_preview_filter(
+        metadata.width,
+        metadata.height,
+        target_width,
+        target_height,
+        resize_mode.as_deref(),
+    )?;
+
+    let output = ffmpeg_output(
+        &window.app_handle(),
+        vec![
+            "-y".into(),
+            "-i".into(),
+            input_path,
+            "-ss".into(),
+            format!("{:.3}", frame_time),
+            "-vframes".into(),
+            "1".into(),
+            "-vf".into(),
+            video_filter,
+            "-q:v".into(),
+            "5".into(),
+            output_path.clone(),
+        ],
+    )
+    .await
+    .map_err(|e| format!("FFmpeg export preview error: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Export preview generation failed: {}", stderr));
+    }
+
+    Ok(output_path)
 }
 
 #[tauri::command]
@@ -521,25 +590,151 @@ fn emit_named_progress(
 
 fn build_export_filter(
     segments_to_keep: &[(f64, f64)],
+    source_width: u32,
+    source_height: u32,
+    target_width: Option<u32>,
+    target_height: Option<u32>,
     resolution: Option<&str>,
+    resize_mode: Option<&str>,
     fps: Option<u32>,
     playback_rate: Option<f64>,
 ) -> (String, String) {
-    let mut transforms: Vec<String> = Vec::new();
-
-    if let Some(resolution) = resolution {
-        transforms.push(match resolution {
-            "1080p" => "scale=-2:1080".to_string(),
-            "4k" => "scale=-2:2160".to_string(),
-            _ => "scale=-2:1080".to_string(),
-        });
-    }
+    let (legacy_width, legacy_height) = legacy_target_dimensions(resolution, source_width, source_height);
+    let resolved_width = target_width.or(legacy_width);
+    let resolved_height = target_height.or(legacy_height);
+    let mut transforms = build_video_transforms(
+        source_width,
+        source_height,
+        resolved_width,
+        resolved_height,
+        resize_mode,
+    );
 
     if let Some(fps) = fps {
         transforms.push(format!("fps={}", fps));
     }
 
     build_concat_filter(segments_to_keep, &transforms, playback_rate)
+}
+
+fn build_still_preview_filter(
+    source_width: u32,
+    source_height: u32,
+    target_width: Option<u32>,
+    target_height: Option<u32>,
+    resize_mode: Option<&str>,
+) -> Result<String, String> {
+    let mut transforms = build_video_transforms(
+        source_width,
+        source_height,
+        target_width,
+        target_height,
+        resize_mode,
+    );
+
+    if transforms.is_empty() {
+        transforms.push("setsar=1".to_string());
+    }
+
+    Ok(transforms.join(","))
+}
+
+fn build_video_transforms(
+    source_width: u32,
+    source_height: u32,
+    target_width: Option<u32>,
+    target_height: Option<u32>,
+    resize_mode: Option<&str>,
+) -> Vec<String> {
+    let mut transforms = Vec::new();
+    let resize_mode = parse_resize_mode(resize_mode);
+
+    let Some(width) = target_width.filter(|value| *value > 0) else {
+        return transforms;
+    };
+    let Some(height) = target_height.filter(|value| *value > 0) else {
+        return transforms;
+    };
+
+    if resize_mode == ExportResizeMode::Original
+        || (width == source_width && height == source_height)
+    {
+        transforms.push("setsar=1".to_string());
+        return transforms;
+    }
+
+    let target_width = width;
+    let target_height = height;
+
+    let resize_filter = match resize_mode {
+        ExportResizeMode::Fit => format!(
+            "scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=black",
+            target_width, target_height, target_width, target_height
+        ),
+        ExportResizeMode::Crop => format!(
+            "scale={}:{}:force_original_aspect_ratio=increase,crop={}:{}",
+            target_width, target_height, target_width, target_height
+        ),
+        ExportResizeMode::Stretch => format!("scale={}:{}", target_width, target_height),
+        ExportResizeMode::Original => "setsar=1".to_string(),
+    };
+
+    transforms.push(resize_filter);
+    transforms.push("setsar=1".to_string());
+    transforms
+}
+
+fn legacy_target_dimensions(
+    resolution: Option<&str>,
+    source_width: u32,
+    source_height: u32,
+) -> (Option<u32>, Option<u32>) {
+    match resolution {
+        Some("1080p") => {
+            if source_height >= source_width {
+                (Some(1080), Some(1920))
+            } else {
+                (Some(1920), Some(1080))
+            }
+        }
+        Some("4k") => {
+            if source_height >= source_width {
+                (Some(2160), Some(3840))
+            } else {
+                (Some(3840), Some(2160))
+            }
+        }
+        _ => (None, None),
+    }
+}
+
+fn parse_resize_mode(value: Option<&str>) -> ExportResizeMode {
+    match value {
+        Some("original") => ExportResizeMode::Original,
+        Some("crop") => ExportResizeMode::Crop,
+        Some("stretch") => ExportResizeMode::Stretch,
+        _ => ExportResizeMode::Fit,
+    }
+}
+
+fn choose_preview_frame_time(segments_to_keep: &[PreviewSegment], total_duration: f64) -> f64 {
+    let fallback = (total_duration * 0.2).clamp(0.5, total_duration.max(0.5));
+
+    let Some(first_clip) = segments_to_keep
+        .iter()
+        .find(|segment| segment.end - segment.start >= 0.25)
+    else {
+        return fallback;
+    };
+
+    let clip_duration = (first_clip.end - first_clip.start).max(0.0);
+    for offset in [2.0_f64, 5.0_f64] {
+        if clip_duration > offset {
+            return first_clip.start + offset;
+        }
+    }
+
+    (first_clip.start + (clip_duration / 2.0)).clamp(0.0, total_duration.max(0.0))
 }
 
 fn build_concat_filter(
@@ -662,7 +857,7 @@ async fn run_ffmpeg_with_progress(
                             event_name,
                             clamped,
                             stage,
-                            &format!("Codificando video... {:.0}%", clamped),
+                            "",
                         );
                         last_percent = clamped;
                     }
@@ -745,8 +940,7 @@ async fn cut_with_speed(
         filter_parts.join(";"), concat_inputs, num_segments
     );
 
-    emit_progress(window, 30.0, "time-warp",
-        &format!("Aplicando {}x de velocidad a los silencios...", speed));
+    emit_progress(window, 30.0, "timewarp", "");
 
     info!("[timewarp] Running FFmpeg...");
     let output = ffmpeg_output(
@@ -787,7 +981,7 @@ async fn cut_with_speed(
     }
 
     info!("[timewarp] Done — {}", output_path);
-    emit_progress(window, 100.0, "complete", "¡Time-warp completo!");
+    emit_progress(window, 100.0, "complete", "");
     Ok(output_path.to_string())
 }
 
