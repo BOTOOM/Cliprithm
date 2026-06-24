@@ -25,6 +25,10 @@ fn configure_linux_release_runtime() {
     if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
     }
+    // Force X11 backend by default to avoid Wayland EGL driver bugs
+    if std::env::var_os("GDK_BACKEND").is_none() {
+        std::env::set_var("GDK_BACKEND", "x11");
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
