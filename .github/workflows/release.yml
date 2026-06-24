@@ -169,6 +169,39 @@ jobs:
           LINUXDEPLOY_EXCLUDE_LIBS: "libwebkit2gtk-4.1.so.0;libjavascriptcoregtk-4.1.so.0;libwayland-client.so.0;libwayland-egl.so.1;libwayland-server.so.0;libwayland-cursor.so.0;libepoxy.so.0;libEGL.so.1;libGL.so.1;libgbm.so.1;libgtk-3.so.0;libgdk-3.so.0;libpango-1.0.so.0;libpangocairo-1.0.so.0;libpangoft2-1.0.so.0;libcairo.so.2;libcairo-gobject.so.2;libgdk_pixbuf-2.0.so.0;libatk-1.0.so.0;libatk-bridge-2.0.so.0;libffi.so.8;libffi.so.7;libglapi.so.0;libGLX.so.0;libGLdispatch.so.0;libX11.so.6"
         run: pnpm run tauri build -- --target ${{ matrix.target }}
 
+      - name: Purge system libraries from AppImage (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          # 1. Download appimagetool
+          wget -O /tmp/appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /tmp/appimagetool
+
+          # 2. Find the generated AppImage
+          appimage_path=$(find src-tauri/target/release/bundle/appimage/ -name "*.AppImage" | head -n 1)
+          if [ -z "$appimage_path" ]; then
+            echo "No AppImage found to purge!"
+            exit 1
+          fi
+          echo "Found generated AppImage: $appimage_path"
+
+          # 3. Extract the AppImage
+          cd src-tauri/target/release/bundle/appimage/
+          appimage_filename=$(basename "$appimage_path")
+          ./"$appimage_filename" --appimage-extract
+
+          # 4. Purge all bundled system libraries
+          rm -rf squashfs-root/usr/lib/*.so* squashfs-root/usr/lib/x86_64-linux-gnu
+
+          # 5. Repack the AppImage
+          rm -f "$appimage_filename"
+          ARCH=x86_64 /tmp/appimagetool squashfs-root "$appimage_filename"
+          chmod +x "$appimage_filename"
+
+          # 6. Clean up extracted directory
+          rm -rf squashfs-root
+          cd -
+
       - name: Upload release assets
         shell: bash
         env:
