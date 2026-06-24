@@ -19,35 +19,38 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 ### Prerequisites
 
 - **Node.js** 22+
+- **pnpm** 10+ (`corepack enable && corepack prepare pnpm@10.33.0 --activate`)
 - **Rust** (latest stable via [rustup](https://rustup.rs/))
-- **FFmpeg** installed and available in PATH
 - **Tauri prerequisites** for your OS: [Tauri setup guide](https://v2.tauri.app/start/prerequisites/)
+- **FFmpeg**:
+  - **Windows / macOS**: no manual installation needed — `pnpm install` fetches FFmpeg via `ffmpeg-static` and it is automatically placed as a bundled sidecar before `dev` or `build`.
+  - **Linux**: install from your package manager (`sudo pacman -S ffmpeg`, `sudo apt install ffmpeg`, `sudo dnf install ffmpeg`).
 
 ### Install & Run
 
 ```bash
 # Install frontend dependencies
-npm install
+pnpm install
 
 # Start dev mode (Vite + Tauri)
-npm run tauri dev
+pnpm run tauri dev
 ```
 
 ### Build
 
 ```bash
 # Build frontend
-npm run build
+pnpm run build
 
 # Build Tauri app
-npm run tauri build
+pnpm run tauri build
 ```
 
 ### Type Check
 
 ```bash
 # Frontend
-npx tsc --noEmit
+pnpm exec tsc --noEmit
 
 # Rust
 cd src-tauri && cargo check
