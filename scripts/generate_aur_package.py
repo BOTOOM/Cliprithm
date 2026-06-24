@@ -384,7 +384,24 @@ def main() -> None:
             export CLIPRITHM_STORE_INSTRUCTIONS='yay -Syu {pkgname}'
             export CLIPRITHM_VERSION_SOURCE_TYPE=aur-rpc
             export CLIPRITHM_VERSION_SOURCE_URL=https://aur.archlinux.org/rpc/v5/info/{pkgname}
-            exec /usr/lib/cliprithm/cliprithm "$@"
+
+            # Try running the app, capture stderr to detect EGL initialization issues
+            STDERR_LOG=$(mktemp)
+            trap 'rm -f "$STDERR_LOG"' EXIT
+
+            # Disable exit on error temporarily so we can handle the failure and retry
+            set +e
+            /usr/lib/cliprithm/cliprithm "$@" 2> >(tee "$STDERR_LOG" >&2)
+            EXIT_CODE=$?
+            set -e
+
+            if [ $EXIT_CODE -ne 0 ] && grep -q "Could not create default EGL display" "$STDERR_LOG"; then
+                echo "==> Cliprithm: EGL initialization failed. Retrying with X11 backend fallback..." >&2
+                export GDK_BACKEND=x11
+                exec /usr/lib/cliprithm/cliprithm "$@"
+            fi
+
+            exit $EXIT_CODE
             """
         )
         desktop_content = textwrap.dedent(
@@ -462,7 +479,24 @@ def main() -> None:
             export WEBKIT_DISABLE_DMABUF_RENDERING=1
             export WEBKIT_DISABLE_COMPOSITING_MODE=1
             export LIBGL_ALWAYS_SOFTWARE=1
-            exec /opt/cliprithm/cliprithm.AppImage "$@"
+
+            # Try running the app, capture stderr to detect EGL initialization issues
+            STDERR_LOG=$(mktemp)
+            trap 'rm -f "$STDERR_LOG"' EXIT
+
+            # Disable exit on error temporarily so we can handle the failure and retry
+            set +e
+            /opt/cliprithm/cliprithm.AppImage "$@" 2> >(tee "$STDERR_LOG" >&2)
+            EXIT_CODE=$?
+            set -e
+
+            if [ $EXIT_CODE -ne 0 ] && grep -q "Could not create default EGL display" "$STDERR_LOG"; then
+                echo "==> Cliprithm: EGL initialization failed. Retrying with X11 backend fallback..." >&2
+                export GDK_BACKEND=x11
+                exec /opt/cliprithm/cliprithm.AppImage "$@"
+            fi
+
+            exit $EXIT_CODE
             """
         )
         desktop_content = textwrap.dedent(
