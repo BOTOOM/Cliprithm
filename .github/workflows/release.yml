@@ -166,6 +166,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          LINUXDEPLOY_EXCLUDE_LIBS: "libwebkit2gtk-4.1.so.0;libjavascriptcoregtk-4.1.so.0;libwayland-client.so.0;libwayland-egl.so.1;libwayland-server.so.0;libwayland-cursor.so.0;libepoxy.so.0;libEGL.so.1;libGL.so.1;libgbm.so.1;libgtk-3.so.0;libgdk-3.so.0;libpango-1.0.so.0;libpangocairo-1.0.so.0;libpangoft2-1.0.so.0;libcairo.so.2;libcairo-gobject.so.2;libgdk_pixbuf-2.0.so.0;libatk-1.0.so.0;libatk-bridge-2.0.so.0;libffi.so.8;libffi.so.7;libglapi.so.0;libGLX.so.0;libGLdispatch.so.0;libX11.so.6"
         run: pnpm run tauri build -- --target ${{ matrix.target }}
 
       - name: Upload release assets
