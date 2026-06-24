@@ -178,7 +178,7 @@ jobs:
           chmod +x /tmp/appimagetool
 
           # 2. Find the generated AppImage
-          appimage_path=$(find src-tauri/target/release/bundle/appimage/ -name "*.AppImage" | head -n 1)
+          appimage_path=$(find src-tauri/target -type f -path '*/release/bundle/appimage/*.AppImage' | head -n 1)
           if [ -z "$appimage_path" ]; then
             echo "No AppImage found to purge!"
             exit 1
@@ -186,7 +186,8 @@ jobs:
           echo "Found generated AppImage: $appimage_path"
 
           # 3. Extract the AppImage
-          cd src-tauri/target/release/bundle/appimage/
+          appimage_dir=$(dirname "$appimage_path")
+          cd "$appimage_dir"
           appimage_filename=$(basename "$appimage_path")
           ./"$appimage_filename" --appimage-extract
 
