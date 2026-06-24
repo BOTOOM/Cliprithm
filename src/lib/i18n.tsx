@@ -149,6 +149,8 @@ const translations = {
       redetectQueued: "Latest changes queued",
       redetectQueuedDescription:
         "A detection pass is still running. The newest parameters will be processed as soon as that pass finishes.",
+      redetectProgressDescription:
+        "Cliprithm is analyzing the audio again with your latest silence settings.",
       originalTimeline: "Original timeline",
       originalTimelineDescription:
         "Review the detected silence spans before converting them into editable clips.",
@@ -535,6 +537,8 @@ const translations = {
       redetectQueued: "Ultimos cambios en cola",
       redetectQueuedDescription:
         "Todavia hay una deteccion en curso. Los parametros mas recientes se procesaran apenas termine ese calculo.",
+      redetectProgressDescription:
+        "Cliprithm esta analizando otra vez el audio con tus ajustes mas recientes de silencios.",
       originalTimeline: "Timeline original",
       originalTimelineDescription:
         "Revisa los silencios detectados antes de convertirlos en clips editables.",

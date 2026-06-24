@@ -63,13 +63,18 @@ export function EmptyState() {
         setFilePath(path);
         setView("processing");
         setProgress({
-          percent: 10,
+          percent: 8,
           stage: "metadata",
           message: "",
         });
 
         const metadata = await getVideoMetadata(path);
         setVideoMetadata(metadata);
+        setProgress({
+          percent: 11,
+          stage: "metadata",
+          message: "",
+        });
 
         const fileName = getFileName(path);
         let thumbnailPath: string | null = null;
@@ -104,11 +109,6 @@ export function EmptyState() {
           log.warn("[db]", "Failed to save project:", dbError);
         }
 
-        setProgress({
-          percent: 25,
-          stage: "analyzing",
-          message: "",
-        });
         const result = await detectSilence(
           path,
           detectionSettings.noiseThreshold,
