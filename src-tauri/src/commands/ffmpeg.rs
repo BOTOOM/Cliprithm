@@ -163,34 +163,20 @@ pub async fn detect_silence(
     let threshold_str = format!("{}dB", noise_threshold);
     let duration_str = format!("{}", min_duration);
 
-    emit_progress(&window, 0.0, "analyzing", "");
-
-    let output = ffmpeg_output(
-        &window.app_handle(),
-        vec![
-            "-i".into(),
-            file_path.clone(),
-            "-af".into(),
-            format!("silencedetect=noise={}:d={}", threshold_str, duration_str),
-            "-f".into(),
-            "null".into(),
-            "-".into(),
-        ],
-    )
-    .await
-    .map_err(|e| {
-        error!("[silence] Failed to run FFmpeg: {}", e);
-        e
-    })?;
-
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let preview_start = stderr.len().saturating_sub(500);
-    debug!("[silence] FFmpeg stderr tail: ...{}", &stderr[preview_start..]);
-
-    emit_progress(&window, 50.0, "analyzing", "");
-
-    let segments = parse_silence_output(&stderr);
     let metadata = get_video_metadata(window.clone(), file_path.clone()).await?;
+    emit_progress(&window, 12.0, "analyzing", "");
+
+    let segments = run_silence_detection_with_progress(
+        &window,
+        &file_path,
+        &threshold_str,
+        &duration_str,
+        metadata.duration,
+    )
+    .await?;
+
+    emit_progress(&window, 97.0, "analyzing", "");
+
     let total_silence: f64 = segments.iter().map(|s| s.duration).sum();
     let estimated_output = metadata.duration - total_silence;
 
@@ -210,6 +196,92 @@ pub async fn detect_silence(
         original_duration: metadata.duration,
         estimated_output_duration: estimated_output,
     })
+}
+
+async fn run_silence_detection_with_progress(
+    window: &Window,
+    file_path: &str,
+    threshold_str: &str,
+    duration_str: &str,
+    expected_duration: f64,
+) -> Result<Vec<SilenceSegment>, String> {
+    let (mut spawn, child) = ffmpeg_spawn(
+        &window.app_handle(),
+        vec![
+            "-i".into(),
+            file_path.to_string(),
+            "-af".into(),
+            format!("silencedetect=noise={}:d={}", threshold_str, duration_str),
+            "-f".into(),
+            "null".into(),
+            "-".into(),
+        ],
+    )
+    .await
+    .map_err(|e| {
+        error!("[silence] Failed to run FFmpeg: {}", e);
+        e
+    })?;
+
+    let time_re = Regex::new(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)").unwrap();
+    let start_re = Regex::new(r"silence_start:\s*(-?[\d.]+)").unwrap();
+    let end_re = Regex::new(r"silence_end:\s*(-?[\d.]+)\s*\|\s*silence_duration:\s*(-?[\d.]+)").unwrap();
+    let progress_step = if expected_duration > 0.0 && expected_duration < 5.0 { 6.0 } else { 1.0 };
+    let mut last_percent = 12.0;
+    let mut stderr_lines: Vec<String> = Vec::new();
+    let mut pending_start: Option<f64> = None;
+    let mut segments: Vec<SilenceSegment> = Vec::new();
+
+    while let Some(event) = spawn.receiver.recv().await {
+        match event {
+            CommandEvent::Stderr(line) | CommandEvent::Stdout(line) => {
+                let line = String::from_utf8_lossy(&line).trim().to_string();
+                if line.is_empty() {
+                    continue;
+                }
+
+                debug!("[silence] {}", line);
+                stderr_lines.push(line.clone());
+                if stderr_lines.len() > 300 {
+                    stderr_lines.remove(0);
+                }
+
+                parse_silence_line(
+                    &line,
+                    &start_re,
+                    &end_re,
+                    &mut pending_start,
+                    &mut segments,
+                );
+
+                if let Some(current_seconds) = parse_ffmpeg_progress_seconds(&time_re, &line) {
+                    let progress = if expected_duration > 0.0 {
+                        12.0 + ((current_seconds / expected_duration) * 83.0)
+                    } else {
+                        50.0
+                    };
+
+                    if progress - last_percent >= progress_step {
+                        let clamped = progress.clamp(12.0, 95.0);
+                        emit_progress(window, clamped, "analyzing", "");
+                        last_percent = clamped;
+                    }
+                }
+            }
+            CommandEvent::Error(error_message) => stderr_lines.push(error_message),
+            CommandEvent::Terminated(payload) => {
+                if payload.code != Some(0) {
+                    let stderr_tail = stderr_lines.join("\n");
+                    error!("[silence] FFmpeg failed:\n{}", stderr_tail);
+                    return Err(format!("Silence detection failed: {}", stderr_tail));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let _child = child;
+    Ok(segments)
 }
 
 #[tauri::command]
@@ -1004,28 +1076,25 @@ fn build_speed_segments(silence_segments: &[SilenceSegment], total_duration: f64
     result
 }
 
-fn parse_silence_output(stderr: &str) -> Vec<SilenceSegment> {
-    let start_re = Regex::new(r"silence_start:\s*(-?[\d.]+)").unwrap();
-    let end_re = Regex::new(r"silence_end:\s*(-?[\d.]+)\s*\|\s*silence_duration:\s*(-?[\d.]+)").unwrap();
-
-    let starts: Vec<f64> = start_re
-        .captures_iter(stderr)
-        .filter_map(|cap| cap[1].parse().ok())
-        .collect();
-
-    debug!("[parse] {} silence_start markers", starts.len());
-
-    let mut segments: Vec<SilenceSegment> = Vec::new();
-
-    for (i, cap) in end_re.captures_iter(stderr).enumerate() {
-        if let (Ok(end), Ok(duration)) = (cap[1].parse::<f64>(), cap[2].parse::<f64>()) {
-            let start = if i < starts.len() { starts[i] } else { end - duration };
-            segments.push(SilenceSegment { start, end, duration });
+fn parse_silence_line(
+    line: &str,
+    start_re: &Regex,
+    end_re: &Regex,
+    pending_start: &mut Option<f64>,
+    segments: &mut Vec<SilenceSegment>,
+) {
+    if let Some(captures) = start_re.captures(line) {
+        if let Ok(start) = captures[1].parse::<f64>() {
+            *pending_start = Some(start);
         }
     }
 
-    debug!("[parse] {} complete segments", segments.len());
-    segments
+    if let Some(captures) = end_re.captures(line) {
+        if let (Ok(end), Ok(duration)) = (captures[1].parse::<f64>(), captures[2].parse::<f64>()) {
+            let start = pending_start.take().unwrap_or(end - duration);
+            segments.push(SilenceSegment { start, end, duration });
+        }
+    }
 }
 
 fn invert_segments(silence: &[SilenceSegment], total_duration: f64) -> Vec<(f64, f64)> {
