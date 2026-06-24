@@ -8,7 +8,7 @@ export function ProcessingView() {
     useProjectStore();
 
   const percent = Math.round(progress.percent);
-  const fileName = filePath?.split("/").pop() ?? "unknown";
+  const fileName = filePath?.split(/[\\/]/).pop() ?? t("processing.unknownFile");
   const cutsDetected = detectionResult?.segments.length ?? 0;
   const normalizedPercent = Math.min(100, Math.max(0, percent));
   const progressAngle = (normalizedPercent / 100) * 360;
@@ -16,12 +16,22 @@ export function ProcessingView() {
   const orbitRadius = 104;
   const orbitX = Math.cos(orbitAngle) * orbitRadius;
   const orbitY = Math.sin(orbitAngle) * orbitRadius;
-  const progressTitle =
+  const stageLabel =
     progress.stage === "metadata"
       ? t("mediaLibrary.loadingProject")
       : progress.stage === "analyzing"
-        ? t("processing.defaultMessage")
-        : progress.message || t("processing.defaultMessage");
+        ? t("processing.analyzing")
+        : progress.stage === "cutting"
+          ? t("processing.cutting")
+          : progress.stage === "exporting"
+            ? t("processing.exporting")
+            : progress.stage === "encoding"
+              ? t("processing.encoding")
+              : progress.stage === "timewarp"
+                ? t("processing.timewarp")
+                : progress.stage === "complete"
+                  ? t("processing.stageComplete")
+                  : progress.message || t("processing.defaultMessage");
 
   return (
     <div className="flex-1 relative flex flex-col items-center justify-center p-8 overflow-hidden h-full">
@@ -97,14 +107,14 @@ export function ProcessingView() {
         {/* Text feedback */}
         <div className="text-center space-y-3">
           <h2 className="text-2xl font-bold text-on-surface tracking-tight">
-             {progressTitle}
+             {stageLabel}
           </h2>
           <div className="flex items-center justify-center gap-6">
             <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high rounded-full border border-outline-variant/10">
               <Icon name="timer" className="text-sm text-primary" />
               <span className="text-xs font-medium text-on-surface-variant">
                 {t("processing.stage")}:{" "}
-                <span className="text-on-surface">{progress.stage}</span>
+                <span className="text-on-surface">{stageLabel}</span>
               </span>
             </div>
             <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high rounded-full border border-outline-variant/10">

@@ -33,6 +33,13 @@ const translations = {
       silenceRemoved: "Silence Removed",
       complete: "Complete",
       defaultMessage: "Analyzing video for silence...",
+      analyzing: "Analyzing video for silence...",
+      cutting: "Cutting and joining segments...",
+      exporting: "Preparing export...",
+      encoding: "Encoding video...",
+      timewarp: "Applying time warp...",
+      stageComplete: "Processing complete!",
+      unknownFile: "unknown",
       stage: "Stage",
       cutsDetected: "Cuts detected",
       sourceFile: "Source File",
@@ -63,8 +70,23 @@ const translations = {
       ffmpegMissingTitle: "Desktop dependencies missing",
       ffmpegMissingDescription:
         "Cliprithm needs FFmpeg and FFprobe to import, analyze and export videos in the desktop app.",
+      ffmpegMissingWindows:
+        "FFmpeg is bundled with the official Windows installer. If it is missing, reinstall Cliprithm or run this command:",
+      ffmpegMissingMac:
+        "FFmpeg is bundled with the official macOS app. If it is missing, reinstall Cliprithm or run this command:",
+      ffmpegMissingLinux:
+        "Install FFmpeg from your Linux package manager, then reopen Cliprithm:",
       ffmpegRetry: "Retry",
+      ffmpegCopyCommand: "Copy command",
+      ffmpegCommandCopied: "Copied",
+      ffmpegRestartApp: "Restart app",
+      ffmpegOpenTerminalHint:
+        "Run the command in a terminal, then restart Cliprithm so it can detect FFmpeg again.",
       ffmpegDownloadLink: "Download latest Cliprithm",
+      desktopImportFailed:
+        "Cliprithm could not import or analyze this video. Check the logs and try again.",
+      browserImportFailed:
+        "The browser preview could not load this file. Try another video or use the desktop app.",
     },
     mediaLibrary: {
       desktopOnly:
@@ -127,6 +149,8 @@ const translations = {
       redetectQueued: "Latest changes queued",
       redetectQueuedDescription:
         "A detection pass is still running. The newest parameters will be processed as soon as that pass finishes.",
+      redetectProgressDescription:
+        "Cliprithm is analyzing the audio again with your latest silence settings.",
       originalTimeline: "Original timeline",
       originalTimelineDescription:
         "Review the detected silence spans before converting them into editable clips.",
@@ -172,15 +196,67 @@ const translations = {
       timeline: "Timeline",
       activeClips: "Active clips: {{count}}",
       silencesRemoved: "Silences removed: {{count}}",
+      zoomOut: "Zoom out timeline",
+      zoomIn: "Zoom in timeline",
     },
     exportModal: {
       title: "Export Video",
       presets: "Presets",
+      tiktokShorts: "TikTok / Shorts",
+      instagramReels: "Instagram Reels",
       custom: "Custom",
       manualSettings: "Manual Settings",
+      verticalRatio: "9:16 ratio",
       fileName: "File Name",
       resolution: "Resolution",
       frameRate: "Frame Rate",
+      fullHd: "1080p (Full HD)",
+      ultraHd: "4K (Ultra HD)",
+      fpsSmooth: "60fps (Smooth)",
+      fpsStandard: "30fps (Standard)",
+      customCanvas: "Custom Canvas",
+      customCanvasDescription:
+        "Choose how the source video fits inside the exported frame.",
+      sourceDimensions: "Source Dimensions",
+      outputFrame: "Output Frame",
+      sizeMode: "Target Size",
+      sizeModeOriginal: "Original",
+      sizeModePreset: "Creator Preset",
+      sizeModeCustom: "Custom Size",
+      creatorTargets: "Creator Targets",
+      creatorTargetVertical: "Vertical Social",
+      creatorTargetVerticalDescription: "1080 × 1920",
+      creatorTargetYoutube: "YouTube Landscape",
+      creatorTargetYoutubeDescription: "1920 × 1080",
+      creatorTargetSquare: "Square Social",
+      creatorTargetSquareDescription: "1080 × 1080",
+      creatorTargetLandscape4k: "4K Landscape",
+      creatorTargetLandscape4kDescription: "3840 × 2160",
+      creatorTargetVertical4k: "4K Vertical",
+      creatorTargetVertical4kDescription: "2160 × 3840",
+      width: "Width",
+      height: "Height",
+      resizeMode: "Resize Mode",
+      resizeModeOriginalLabel: "Original",
+      resizeModeOriginalDescription:
+        "Preserve the source dimensions without scaling or reframing.",
+      resizeModeFitLabel: "Fit with bars",
+      resizeModeFitDescription:
+        "Keep the whole frame visible and add black bars when aspect ratios do not match.",
+      resizeModeCropLabel: "Crop to fill",
+      resizeModeCropDescription:
+        "Fill the entire target frame by cropping overflow from the center.",
+      resizeModeStretchLabel: "Stretch",
+      resizeModeStretchDescription:
+        "Force the video into the target frame even if it distorts the aspect ratio.",
+      previewTitle: "Framing Preview",
+      previewDescription:
+        "Preview the export framing using a still frame from the edited sequence.",
+      previewLoading: "Generating preview...",
+      previewUnavailable:
+        "The preview could not be generated right now. You can still export with the selected settings.",
+      invalidDimensions:
+        "Width and height must be greater than zero before exporting.",
       outputSummary: "Output Summary",
       sourceSize: "Source file size",
       finalSizeDependsOnContent:
@@ -196,6 +272,8 @@ const translations = {
         "Export requires FFmpeg and FFprobe available in the desktop installation.",
       desktopOnly:
         "Export only works in the desktop app and requires at least one active clip.",
+      exportFailed:
+        "Cliprithm could not export this video. Check the logs and try again.",
     },
     updates: {
       checking: "Checking for updates...",
@@ -318,6 +396,9 @@ const translations = {
       noErrorDetails: "No additional error details are available.",
       recentLogs: "Recent logs",
     },
+    ui: {
+      clickToTypeSpeed: "Click to type a custom speed",
+    },
   },
   es: {
     app: {
@@ -340,6 +421,13 @@ const translations = {
       silenceRemoved: "Silencio eliminado",
       complete: "Completado",
       defaultMessage: "Analizando el video para detectar silencios...",
+      analyzing: "Analizando el video para detectar silencios...",
+      cutting: "Cortando y uniendo segmentos...",
+      exporting: "Preparando exportacion...",
+      encoding: "Codificando video...",
+      timewarp: "Aplicando time warp...",
+      stageComplete: "Procesamiento completado",
+      unknownFile: "desconocido",
       stage: "Etapa",
       cutsDetected: "Cortes detectados",
       sourceFile: "Archivo fuente",
@@ -370,8 +458,23 @@ const translations = {
       ffmpegMissingTitle: "Faltan dependencias de desktop",
       ffmpegMissingDescription:
         "Cliprithm necesita FFmpeg y FFprobe para importar, analizar y exportar videos dentro de la app desktop.",
+      ffmpegMissingWindows:
+        "FFmpeg viene incluido con el instalador oficial de Windows. Si no aparece, reinstala Cliprithm o ejecuta este comando:",
+      ffmpegMissingMac:
+        "FFmpeg viene incluido con la app oficial de macOS. Si no aparece, reinstala Cliprithm o ejecuta este comando:",
+      ffmpegMissingLinux:
+        "Instala FFmpeg desde tu gestor de paquetes de Linux y luego vuelve a abrir Cliprithm:",
       ffmpegRetry: "Reintentar",
+      ffmpegCopyCommand: "Copiar comando",
+      ffmpegCommandCopied: "Copiado",
+      ffmpegRestartApp: "Reiniciar app",
+      ffmpegOpenTerminalHint:
+        "Ejecuta el comando en una terminal y luego reinicia Cliprithm para que vuelva a detectar FFmpeg.",
       ffmpegDownloadLink: "Descargar la última versión de Cliprithm",
+      desktopImportFailed:
+        "Cliprithm no pudo importar o analizar este video. Revisa los logs y vuelve a intentarlo.",
+      browserImportFailed:
+        "El preview del navegador no pudo cargar este archivo. Prueba otro video o usa la app de escritorio.",
     },
     mediaLibrary: {
       desktopOnly:
@@ -434,6 +537,8 @@ const translations = {
       redetectQueued: "Ultimos cambios en cola",
       redetectQueuedDescription:
         "Todavia hay una deteccion en curso. Los parametros mas recientes se procesaran apenas termine ese calculo.",
+      redetectProgressDescription:
+        "Cliprithm esta analizando otra vez el audio con tus ajustes mas recientes de silencios.",
       originalTimeline: "Timeline original",
       originalTimelineDescription:
         "Revisa los silencios detectados antes de convertirlos en clips editables.",
@@ -479,15 +584,67 @@ const translations = {
       timeline: "Timeline",
       activeClips: "Clips activos: {{count}}",
       silencesRemoved: "Silencios eliminados: {{count}}",
+      zoomOut: "Alejar timeline",
+      zoomIn: "Acercar timeline",
     },
     exportModal: {
       title: "Exportar video",
       presets: "Presets",
+      tiktokShorts: "TikTok / Shorts",
+      instagramReels: "Instagram Reels",
       custom: "Personalizado",
       manualSettings: "Ajustes manuales",
+      verticalRatio: "Relacion 9:16",
       fileName: "Nombre del archivo",
       resolution: "Resolucion",
       frameRate: "Frame rate",
+      fullHd: "1080p (Full HD)",
+      ultraHd: "4K (Ultra HD)",
+      fpsSmooth: "60fps (Suave)",
+      fpsStandard: "30fps (Estandar)",
+      customCanvas: "Lienzo personalizado",
+      customCanvasDescription:
+        "Elige como encaja el video fuente dentro del cuadro exportado.",
+      sourceDimensions: "Dimensiones fuente",
+      outputFrame: "Cuadro de salida",
+      sizeMode: "Tamano objetivo",
+      sizeModeOriginal: "Original",
+      sizeModePreset: "Preset para creadores",
+      sizeModeCustom: "Tamano personalizado",
+      creatorTargets: "Formatos para creadores",
+      creatorTargetVertical: "Vertical social",
+      creatorTargetVerticalDescription: "1080 × 1920",
+      creatorTargetYoutube: "YouTube horizontal",
+      creatorTargetYoutubeDescription: "1920 × 1080",
+      creatorTargetSquare: "Cuadrado social",
+      creatorTargetSquareDescription: "1080 × 1080",
+      creatorTargetLandscape4k: "4K horizontal",
+      creatorTargetLandscape4kDescription: "3840 × 2160",
+      creatorTargetVertical4k: "4K vertical",
+      creatorTargetVertical4kDescription: "2160 × 3840",
+      width: "Ancho",
+      height: "Alto",
+      resizeMode: "Modo de ajuste",
+      resizeModeOriginalLabel: "Original",
+      resizeModeOriginalDescription:
+        "Mantiene las dimensiones fuente sin escalar ni reencuadrar.",
+      resizeModeFitLabel: "Ajustar con franjas",
+      resizeModeFitDescription:
+        "Mantiene todo el cuadro visible y agrega franjas negras cuando las proporciones no coinciden.",
+      resizeModeCropLabel: "Recortar para llenar",
+      resizeModeCropDescription:
+        "Llena todo el cuadro objetivo recortando el sobrante desde el centro.",
+      resizeModeStretchLabel: "Estirar",
+      resizeModeStretchDescription:
+        "Fuerza el video al cuadro objetivo aunque deforme la proporcion.",
+      previewTitle: "Preview de encuadre",
+      previewDescription:
+        "Previsualiza el encuadre final con un fotograma fijo de la secuencia editada.",
+      previewLoading: "Generando preview...",
+      previewUnavailable:
+        "No se pudo generar el preview ahora mismo. Aun puedes exportar con estos ajustes.",
+      invalidDimensions:
+        "El ancho y el alto deben ser mayores que cero antes de exportar.",
       outputSummary: "Resumen de salida",
       sourceSize: "Tamano del archivo fuente",
       finalSizeDependsOnContent:
@@ -503,6 +660,8 @@ const translations = {
         "La exportacion necesita FFmpeg y FFprobe disponibles dentro de la instalacion desktop.",
       desktopOnly:
         "La exportacion solo funciona en la app desktop y requiere al menos un clip activo.",
+      exportFailed:
+        "Cliprithm no pudo exportar este video. Revisa los logs y vuelve a intentarlo.",
     },
     updates: {
       checking: "Buscando actualizaciones...",
@@ -624,6 +783,9 @@ const translations = {
       errorDetails: "Detalles del error",
       noErrorDetails: "No hay detalles adicionales del error.",
       recentLogs: "Logs recientes",
+    },
+    ui: {
+      clickToTypeSpeed: "Haz clic para escribir una velocidad personalizada",
     },
   },
 } as const;

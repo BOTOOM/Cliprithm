@@ -25,6 +25,7 @@ import { Toggle } from "../ui/Toggle";
 import { Tooltip } from "../ui/Tooltip";
 import { DetectionTimeline } from "../timeline/DetectionTimeline";
 import { Timeline } from "../timeline/Timeline";
+import { FfmpegHelpPanel } from "../shared/FfmpegHelpPanel";
 
 const AUTO_REDETECT_DELAY_MS = 5000;
 
@@ -55,6 +56,8 @@ export function EditorView() {
     setTimelineZoom,
     canUndo,
     undoLastEdit,
+    progress,
+    setProgress,
     ffmpegStatus,
   } = useProjectStore();
 
@@ -117,6 +120,10 @@ export function EditorView() {
 
   const gapCount = removedSegments.length;
   const estimatedDuration = editedDuration || detectionResult?.estimated_output_duration || duration;
+  const previewAspectRatio =
+    videoMetadata && videoMetadata.width > 0 && videoMetadata.height > 0
+      ? `${videoMetadata.width} / ${videoMetadata.height}`
+      : "9 / 16";
 
   // Video source: use local HTTP server for streaming with Range request support
   const videoSrc = useMemo(() => {
@@ -138,6 +145,16 @@ export function EditorView() {
   const hasPendingRedetect =
     pendingRedetectSignature !== null &&
     pendingRedetectSignature !== lastDetectedSignatureRef.current;
+  const showRedetectPanel = !ffmpegUnavailable && (hasPendingRedetect || isRedetecting);
+  const redetectProgressPercent = Math.max(0, Math.min(100, Math.round(progress.percent)));
+  const redetectStageLabel =
+    progress.stage === "metadata"
+      ? t("mediaLibrary.loadingProject")
+      : progress.stage === "analyzing"
+        ? t("processing.analyzing")
+        : progress.stage === "complete"
+          ? t("processing.stageComplete")
+          : progress.message || t("processing.defaultMessage");
 
   useEffect(() => {
     setIsVideoReady(false);
@@ -350,6 +367,11 @@ export function EditorView() {
     activeRedetectRequestRef.current = requestId;
     clearPendingRedetect();
     setIsRedetecting(true);
+    setProgress({
+      percent: 12,
+      stage: "analyzing",
+      message: "",
+    });
     try {
       const result = await detectSilence(
         filePath,
@@ -380,6 +402,7 @@ export function EditorView() {
     ffmpegUnavailable,
     filePath,
     setDetectionResult,
+    setProgress,
     setPreviewMode,
     setView,
   ]);
@@ -610,12 +633,15 @@ export function EditorView() {
                )}
              </div>
 
-            <div className="h-full aspect-[9/16] bg-surface-container-lowest rounded-xl shadow-[0_0_100px_rgba(186,158,255,0.05)] overflow-hidden relative border border-outline-variant/10 flex items-center justify-center">
+            <div
+              className="h-full max-w-full bg-surface-container-lowest rounded-xl shadow-[0_0_100px_rgba(186,158,255,0.05)] overflow-hidden relative border border-outline-variant/10 flex items-center justify-center"
+              style={{ aspectRatio: previewAspectRatio }}
+            >
               {videoSrc ? (
                 <video
                   ref={videoRef}
                   src={videoSrc}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain"
                   onTimeUpdate={handleTimeUpdate}
                   onEnded={() => setIsPlaying(false)}
                   onPlay={() => setIsPlaying(true)}
@@ -739,14 +765,11 @@ export function EditorView() {
 
             <div className="space-y-8 flex-1">
               {ffmpegUnavailable && (
-                <div className="rounded-lg border border-error/30 bg-error/10 px-4 py-3">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-error mb-1">
-                    {t("detection.ffmpegMissingTitle")}
-                  </div>
-                  <p className="text-xs text-on-surface-variant leading-relaxed">
-                    {ffmpegStatus?.error ?? t("detection.ffmpegMissingDescription")}
-                  </p>
-                </div>
+                <FfmpegHelpPanel
+                  status={ffmpegStatus ?? null}
+                  title={t("detection.ffmpegMissingTitle")}
+                  description={t("detection.ffmpegMissingDescription")}
+                />
               )}
 
               <Slider
@@ -896,20 +919,52 @@ export function EditorView() {
               </div>
             </div>
 
-            {isDetectionReview && hasPendingRedetect && !ffmpegUnavailable && (
-              <div className="rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 space-y-1.5">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-primary">
-                  {isRedetecting
-                    ? t("detection.redetectQueued")
-                    : t("detection.redetectCountdown", {
-                        seconds: redetectSecondsRemaining ?? 0,
-                      })}
+            {showRedetectPanel && (
+              <div className="rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1.5">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-primary">
+                      {isRedetecting
+                        ? t("detection.reDetecting")
+                        : t("detection.redetectCountdown", {
+                            seconds: redetectSecondsRemaining ?? 0,
+                          })}
+                    </div>
+                    <p className="text-xs text-on-surface-variant leading-relaxed">
+                      {isRedetecting
+                        ? hasPendingRedetect
+                          ? t("detection.redetectQueuedDescription")
+                          : t("detection.redetectProgressDescription")
+                        : t("detection.redetectCountdownDescription")}
+                    </p>
+                  </div>
+
+                  {isRedetecting && (
+                    <div className="text-right">
+                      <div className="text-lg font-semibold text-on-surface">
+                        {redetectProgressPercent}%
+                      </div>
+                      <div className="text-[10px] uppercase tracking-widest text-on-surface-variant">
+                        {redetectStageLabel}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <p className="text-xs text-on-surface-variant leading-relaxed">
-                  {isRedetecting
-                    ? t("detection.redetectQueuedDescription")
-                    : t("detection.redetectCountdownDescription")}
-                </p>
+
+                {isRedetecting && (
+                  <>
+                    <div className="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary shimmer rounded-full transition-all duration-300"
+                        style={{ width: `${redetectProgressPercent}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3 text-[11px] text-on-surface-variant">
+                      <span>{redetectStageLabel}</span>
+                      {hasPendingRedetect ? <span>{t("detection.redetectQueued")}</span> : null}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 

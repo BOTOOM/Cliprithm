@@ -16,6 +16,7 @@ import { openExternalUrl, APP_LINKS } from "../../lib/appInfo";
 import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
 import { MediaLibrary } from "./MediaLibrary";
+import { FfmpegHelpPanel } from "../shared/FfmpegHelpPanel";
 
 export function EmptyState() {
   const { t, tList } = useI18n();
@@ -54,7 +55,7 @@ export function EmptyState() {
         setError(null);
         setNotice(null);
         if (ffmpegStatus && !ffmpegStatus.available) {
-          setError(ffmpegStatus.error ?? t("importView.ffmpegMissingDescription"));
+          setError(t("importView.ffmpegMissingDescription"));
           return;
         }
         setProcessedFilePath(null);
@@ -62,13 +63,18 @@ export function EmptyState() {
         setFilePath(path);
         setView("processing");
         setProgress({
-          percent: 10,
+          percent: 8,
           stage: "metadata",
-          message: "Reading video metadata...",
+          message: "",
         });
 
         const metadata = await getVideoMetadata(path);
         setVideoMetadata(metadata);
+        setProgress({
+          percent: 11,
+          stage: "metadata",
+          message: "",
+        });
 
         const fileName = getFileName(path);
         let thumbnailPath: string | null = null;
@@ -103,11 +109,6 @@ export function EmptyState() {
           log.warn("[db]", "Failed to save project:", dbError);
         }
 
-        setProgress({
-          percent: 25,
-          stage: "analyzing",
-          message: t("mediaLibrary.detectingSilence"),
-        });
         const result = await detectSilence(
           path,
           detectionSettings.noiseThreshold,
@@ -116,7 +117,8 @@ export function EmptyState() {
         setDetectionResult(result);
         setView("detection");
       } catch (err) {
-        setError(String(err));
+        log.error("[import]", "Desktop import failed:", err);
+        setError(t("importView.desktopImportFailed"));
         setView("import");
       }
     },
@@ -149,7 +151,8 @@ export function EmptyState() {
         setDetectionResult(null);
         setView("editor");
       } catch (err) {
-        setError(String(err));
+        log.error("[import]", "Browser import failed:", err);
+        setError(t("importView.browserImportFailed"));
       }
     },
     [
@@ -262,32 +265,16 @@ export function EmptyState() {
                 </Button>
               </div>
               {isDesktopRuntime() && ffmpegStatus?.available === false && (
-                <div className="mt-4 w-full max-w-lg rounded-lg border border-error/30 bg-error/10 px-4 py-3 text-left">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-error mb-1">
-                    {t("importView.ffmpegMissingTitle")}
-                  </div>
-                  <p className="text-xs text-on-surface-variant leading-relaxed mb-3">
-                    {ffmpegStatus.error ?? t("importView.ffmpegMissingDescription")}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="surface"
-                      size="sm"
-                      onClick={() => void handleRetryFfmpeg()}
-                      disabled={retrying}
-                    >
-                      <Icon name="refresh" className="text-sm" />
-                      {retrying ? "..." : t("importView.ffmpegRetry")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void openExternalUrl(APP_LINKS.github + "/releases/latest")}
-                    >
-                      <Icon name="download" className="text-sm" />
-                      {t("importView.ffmpegDownloadLink")}
-                    </Button>
-                  </div>
+                <div className="mt-4 w-full max-w-lg">
+                  <FfmpegHelpPanel
+                    status={ffmpegStatus}
+                    title={t("importView.ffmpegMissingTitle")}
+                    description={t("importView.ffmpegMissingDescription")}
+                    onRetry={handleRetryFfmpeg}
+                    retrying={retrying}
+                    showDownloadButton
+                    onDownload={() => openExternalUrl(APP_LINKS.github + "/releases/latest")}
+                  />
                 </div>
               )}
               {notice && (

@@ -35,10 +35,14 @@ A desktop application for automatic silence detection and removal in videos. Bui
 - [Node.js](https://nodejs.org/) >= 22
 - [pnpm](https://pnpm.io/) >= 10
 - [Rust](https://rustup.rs/) (stable)
-- [FFmpeg](https://ffmpeg.org/) installed and in PATH
-- System dependencies for Tauri:
+- System dependencies for Tauri (see the [official Tauri prerequisites guide](https://v2.tauri.app/start/prerequisites/) for the most up-to-date steps):
+  - **Windows**: [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) and [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (usually pre-installed on Windows 10/11)
+  - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
   - **Ubuntu/Debian**: `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf`
   - **Arch/Manjaro**: `webkit2gtk-4.1 gtk3 librsvg`
+- **FFmpeg**:
+  - **Windows / macOS**: No manual installation needed. `pnpm install` downloads FFmpeg via the `ffmpeg-static` npm package and it is automatically prepared as a bundled sidecar when you run `pnpm run tauri dev` or `pnpm run tauri build`.
+  - **Linux**: Install FFmpeg from your package manager — e.g. `sudo pacman -S ffmpeg`, `sudo apt install ffmpeg`, or `sudo dnf install ffmpeg`. The app discovers it at runtime.
 
 ## Setup
 
@@ -120,6 +124,16 @@ That error means the AppImage payload was stripped while packaging, leaving only
 
 - Use `Cliprithm_<version>_x64-setup.exe` for the normal interactive installer
 - Use `Cliprithm_<version>_x64_en-US.msi` for managed or silent MSI deployment
+
+FFmpeg is **bundled inside the installer** — no separate FFmpeg installation is required.
+
+If for any reason the app reports a missing FFmpeg (e.g. after a corrupt install), you can install it as a fallback using [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) — no PATH configuration is needed:
+
+```powershell
+winget install ffmpeg
+```
+
+Alternatively, download a pre-built Windows build from the [official FFmpeg website](https://ffmpeg.org/download.html) or from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) and add the `bin` folder to your PATH manually. Reinstalling Cliprithm from a fresh download is usually simpler.
 
 ### macOS
 
