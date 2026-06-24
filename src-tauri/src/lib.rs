@@ -16,8 +16,8 @@ fn configure_linux_release_runtime() {
 
     // AppImage builds can render as a blank window on some Arch/Manjaro setups
     // unless WebKitGTK falls back to the safer software-rendered path.
-    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERING").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERING", "1");
     }
     if std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
         std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");

@@ -16,7 +16,7 @@ Cliprithm should maintain two AUR packages:
 
 - `cliprithm` consumes the tagged GitHub source tarball.
 - `cliprithm-bin` consumes the release AppImage.
-- The `cliprithm-bin` wrapper exports `APPIMAGE_EXTRACT_AND_RUN=1`, `WEBKIT_DISABLE_DMABUF_RENDERER=1`, `WEBKIT_DISABLE_COMPOSITING_MODE=1`, and `LIBGL_ALWAYS_SOFTWARE=1` to avoid common AppImage / EGL problems on Arch-family systems.
+- The `cliprithm-bin` wrapper exports `APPIMAGE_EXTRACT_AND_RUN=1`, `WEBKIT_DISABLE_DMABUF_RENDERING=1`, `WEBKIT_DISABLE_COMPOSITING_MODE=1`, and `LIBGL_ALWAYS_SOFTWARE=1` to avoid common AppImage / EGL problems on Arch-family systems.
 - `cliprithm-bin` must set `options=('!strip')`. AppImages are ELF runtimes with an appended SquashFS payload, and default `makepkg` stripping can remove that payload and leave a broken runtime-only file.
 - `cliprithm` supports builders whose `rust`/`cargo` dependency is satisfied by `rustup` without a configured default toolchain by selecting a build-local stable toolchain.
 - Both wrappers now also export **distribution-channel env vars** so the app knows it was installed from AUR and switches to **store-managed** update guidance instead of self-updating from GitHub.

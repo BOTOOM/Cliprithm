@@ -101,7 +101,7 @@ yay -S --needed fuse2
 If the AppImage opens with a blank or white window on Arch / Manjaro, run it in **one single line**:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 ./Cliprithm_<version>_amd64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 WEBKIT_DISABLE_DMABUF_RENDERING=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 ./Cliprithm_<version>_amd64.AppImage
 ```
 
 For Arch-based distros, `cliprithm-bin` is the preferred package because it already wraps the AppImage in the recommended AUR launcher.
