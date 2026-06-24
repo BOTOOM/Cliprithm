@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.4.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.3.6...cliprithm-v1.4.0) (2026-06-24)
+
+
+### Features
+
+* **desktop:** improve ffmpeg guidance and localized video workflows ([674a277](https://github.com/BOTOOM/Cliprithm/commit/674a2778c48f606a26d6c98324b19d21f69463ef))
+* **editor:** surface silence reanalysis progress ([09971e4](https://github.com/BOTOOM/Cliprithm/commit/09971e49bd00ff863b0fe719458e76956a47f232))
+* **export:** add custom framing controls and still previews ([b4dc1e5](https://github.com/BOTOOM/Cliprithm/commit/b4dc1e5b3caa73312272dfeeba5992c41550bac3))
+* improve desktop video workflow, export framing, and processing feedback ([18d5468](https://github.com/BOTOOM/Cliprithm/commit/18d5468961b2dfbc8cc4990e56d6d439a5d95deb))
+* **processing:** stream silence detection progress ([7817345](https://github.com/BOTOOM/Cliprithm/commit/78173455d1a696baccb055e7ab2b837180948be5))
+
 ## [1.3.5](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.3.4...cliprithm-v1.3.5) (2026-06-24)
 
 
