@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.5](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.3.4...cliprithm-v1.3.5) (2026-06-24)
+
+
+### Bug Fixes
+
+* **aur:** add automatic X11 fallback to generated AUR launchers ([6928e65](https://github.com/BOTOOM/Cliprithm/commit/6928e6567575da623acfb40845d0830d6b7248fb))
+* **linux:** force GDK_BACKEND=x11 by default on Linux to bypass Wayland EGL bugs ([dcecc9a](https://github.com/BOTOOM/Cliprithm/commit/dcecc9a7b04a31360aab153b8a4ae41334d72a12))
+* **linux:** resolve WebKitGTK bad EGL display abort crash ([b694535](https://github.com/BOTOOM/Cliprithm/commit/b694535ad27225d93e3534894348c4c85b27f80c))
+
 ## [1.3.4](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.3.3...cliprithm-v1.3.4) (2026-06-23)
 
 
