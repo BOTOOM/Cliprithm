@@ -159,6 +159,10 @@ const defaultExportSettings: ExportSettings = {
   preset: "custom",
   fileName: "output",
   resolution: "1080p",
+  width: 1920,
+  height: 1080,
+  sizingMode: "original",
+  resizeMode: "original",
   fps: 30,
 };
 

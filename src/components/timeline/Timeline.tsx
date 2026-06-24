@@ -139,7 +139,7 @@ export function Timeline({
           <button
             className="p-2 rounded-md hover:bg-surface-container-highest hover:text-white transition-colors"
             onClick={() => onZoomChange(Math.max(MIN_ZOOM, zoom - 2))}
-            aria-label="Zoom out timeline"
+            aria-label={t("timeline.zoomOut")}
           >
             <Icon name="zoom_out" className="text-lg" />
           </button>
@@ -149,7 +149,7 @@ export function Timeline({
           <button
             className="p-2 rounded-md hover:bg-surface-container-highest hover:text-white transition-colors"
             onClick={() => onZoomChange(Math.min(MAX_ZOOM, zoom + 2))}
-            aria-label="Zoom in timeline"
+            aria-label={t("timeline.zoomIn")}
           >
             <Icon name="zoom_in" className="text-lg" />
           </button>

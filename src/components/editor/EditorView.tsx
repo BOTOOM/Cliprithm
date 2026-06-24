@@ -25,6 +25,7 @@ import { Toggle } from "../ui/Toggle";
 import { Tooltip } from "../ui/Tooltip";
 import { DetectionTimeline } from "../timeline/DetectionTimeline";
 import { Timeline } from "../timeline/Timeline";
+import { FfmpegHelpPanel } from "../shared/FfmpegHelpPanel";
 
 const AUTO_REDETECT_DELAY_MS = 5000;
 
@@ -117,6 +118,10 @@ export function EditorView() {
 
   const gapCount = removedSegments.length;
   const estimatedDuration = editedDuration || detectionResult?.estimated_output_duration || duration;
+  const previewAspectRatio =
+    videoMetadata && videoMetadata.width > 0 && videoMetadata.height > 0
+      ? `${videoMetadata.width} / ${videoMetadata.height}`
+      : "9 / 16";
 
   // Video source: use local HTTP server for streaming with Range request support
   const videoSrc = useMemo(() => {
@@ -610,12 +615,15 @@ export function EditorView() {
                )}
              </div>
 
-            <div className="h-full aspect-[9/16] bg-surface-container-lowest rounded-xl shadow-[0_0_100px_rgba(186,158,255,0.05)] overflow-hidden relative border border-outline-variant/10 flex items-center justify-center">
+            <div
+              className="h-full max-w-full bg-surface-container-lowest rounded-xl shadow-[0_0_100px_rgba(186,158,255,0.05)] overflow-hidden relative border border-outline-variant/10 flex items-center justify-center"
+              style={{ aspectRatio: previewAspectRatio }}
+            >
               {videoSrc ? (
                 <video
                   ref={videoRef}
                   src={videoSrc}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain"
                   onTimeUpdate={handleTimeUpdate}
                   onEnded={() => setIsPlaying(false)}
                   onPlay={() => setIsPlaying(true)}
@@ -739,14 +747,11 @@ export function EditorView() {
 
             <div className="space-y-8 flex-1">
               {ffmpegUnavailable && (
-                <div className="rounded-lg border border-error/30 bg-error/10 px-4 py-3">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-error mb-1">
-                    {t("detection.ffmpegMissingTitle")}
-                  </div>
-                  <p className="text-xs text-on-surface-variant leading-relaxed">
-                    {ffmpegStatus?.error ?? t("detection.ffmpegMissingDescription")}
-                  </p>
-                </div>
+                <FfmpegHelpPanel
+                  status={ffmpegStatus ?? null}
+                  title={t("detection.ffmpegMissingTitle")}
+                  description={t("detection.ffmpegMissingDescription")}
+                />
               )}
 
               <Slider

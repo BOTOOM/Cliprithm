@@ -25,6 +25,11 @@ export interface ClipSegment {
   duration: number;
 }
 
+export interface PreviewSegment {
+  start: number;
+  end: number;
+}
+
 export interface DetectionResult {
   segments: SilenceSegment[];
   total_silence_duration: number;
@@ -41,6 +46,7 @@ export interface ProcessingProgress {
 export interface FfmpegStatus {
   available: boolean;
   source: "bundled" | "system" | "missing";
+  platform: "windows" | "macos" | "linux";
   ffmpeg_path: string | null;
   ffprobe_path: string | null;
   version: string | null;
@@ -52,11 +58,19 @@ export interface ExportOptions {
   output_path: string;
   segments_to_keep: [number, number][];
   resolution: string | null;
+  target_width?: number | null;
+  target_height?: number | null;
+  sizing_mode?: ExportSizingMode | null;
+  resize_mode?: ExportResizeMode | null;
   fps: number | null;
   mode: string;
   speed_multiplier: number | null;
   playback_rate: number | null;
 }
+
+export type ExportSizingMode = "preset" | "custom" | "original";
+
+export type ExportResizeMode = "original" | "fit" | "crop" | "stretch";
 
 export interface DetectionSettings {
   noiseThreshold: number;
@@ -69,9 +83,13 @@ export interface DetectionSettings {
 }
 
 export interface ExportSettings {
-  preset: "tiktok" | "reels" | "custom";
+  preset: "tiktok" | "reels" | "youtube" | "square" | "custom";
   fileName: string;
   resolution: "1080p" | "4k";
+  width: number;
+  height: number;
+  sizingMode: ExportSizingMode;
+  resizeMode: ExportResizeMode;
   fps: 30 | 60;
 }
 

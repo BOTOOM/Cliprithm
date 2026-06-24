@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useI18n } from "../../lib/i18n";
 
 // 0.5→2.0 step 0.1, then 2.0→4.0 step 0.5
 const SPEED_STOPS = [
@@ -29,6 +30,7 @@ interface SpeedControlProps {
 }
 
 export function SpeedControl({ value, onChange }: SpeedControlProps) {
+  const { t } = useI18n();
   const [isEditing, setIsEditing] = useState(false);
   const [inputText, setInputText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -105,7 +107,7 @@ export function SpeedControl({ value, onChange }: SpeedControlProps) {
           <button
             onClick={startEditing}
             className="text-xs font-mono text-primary hover:text-primary-dim transition-colors cursor-text px-1 py-0.5 rounded hover:bg-surface-container"
-            title="Click to type a custom speed"
+            title={t("ui.clickToTypeSpeed")}
           >
             {value}×
           </button>

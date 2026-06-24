@@ -11,7 +11,7 @@ import { ExportModal } from "../export/ExportModal";
 import { SettingsPanel } from "../editor/SettingsPanel";
 import { AboutView } from "../about/AboutView";
 import { DiagnosticsView } from "../diagnostics/DiagnosticsView";
-import { isDesktopRuntime } from "../../lib/runtime";
+import { guessRuntimePlatform, isDesktopRuntime } from "../../lib/runtime";
 import { getFFmpegStatus, getMediaServerPort } from "../../services/tauriCommands";
 import { useAutoSave } from "../../hooks/useAutoSave";
 import type { ProcessingProgress } from "../../types";
@@ -44,6 +44,7 @@ export function MainLayout() {
         setFfmpegStatus({
           available: false,
           source: "missing",
+          platform: guessRuntimePlatform(),
           ffmpeg_path: null,
           ffprobe_path: null,
           version: null,

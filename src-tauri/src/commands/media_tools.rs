@@ -10,6 +10,7 @@ use tauri_plugin_shell::{
 pub struct FfmpegStatus {
     pub available: bool,
     pub source: String,
+    pub platform: String,
     pub ffmpeg_path: Option<String>,
     pub ffprobe_path: Option<String>,
     pub version: Option<String>,
@@ -57,6 +58,8 @@ pub async fn check_ffmpeg(app: AppHandle) -> FfmpegStatus {
 }
 
 pub async fn inspect_ffmpeg_runtime<R: Runtime>(app: &AppHandle<R>) -> FfmpegStatus {
+    let platform = current_platform().to_string();
+
     match resolve_binary(app, BinaryKind::Ffmpeg).await {
         Ok(ffmpeg) => {
             let ffprobe = match resolve_binary(app, BinaryKind::Ffprobe).await {
@@ -65,6 +68,7 @@ pub async fn inspect_ffmpeg_runtime<R: Runtime>(app: &AppHandle<R>) -> FfmpegSta
                     return FfmpegStatus {
                         available: false,
                         source: "missing".to_string(),
+                        platform,
                         ffmpeg_path: Some(ffmpeg.path),
                         ffprobe_path: None,
                         version: None,
@@ -81,6 +85,7 @@ pub async fn inspect_ffmpeg_runtime<R: Runtime>(app: &AppHandle<R>) -> FfmpegSta
             FfmpegStatus {
                 available: true,
                 source: ffmpeg.source.to_string(),
+                platform,
                 ffmpeg_path: Some(ffmpeg.path),
                 ffprobe_path: Some(ffprobe.path),
                 version,
@@ -90,6 +95,7 @@ pub async fn inspect_ffmpeg_runtime<R: Runtime>(app: &AppHandle<R>) -> FfmpegSta
         Err(error) => FfmpegStatus {
             available: false,
             source: "missing".to_string(),
+            platform,
             ffmpeg_path: None,
             ffprobe_path: None,
             version: None,
@@ -122,7 +128,7 @@ pub async fn ffmpeg_spawn<R: Runtime>(
     let command = build_command(app, &binary, args)?;
     let (rx, child) = command
         .spawn()
-        .map_err(|error| format!("No se pudo iniciar FFmpeg: {}", error))?;
+        .map_err(|error| format!("Failed to start FFmpeg: {}", error))?;
 
     Ok((
         ResolvedSpawn {
@@ -161,6 +167,16 @@ async fn resolve_binary<R: Runtime>(
 
 fn prefers_sidecar() -> bool {
     cfg!(target_os = "windows") || cfg!(target_os = "macos")
+}
+
+fn current_platform() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "linux"
+    }
 }
 
 async fn probe_sidecar<R: Runtime>(
@@ -231,7 +247,7 @@ fn build_command<R: Runtime>(
         ResolvedProgram::Sidecar(name) => app
             .shell()
             .sidecar(name)
-            .map_err(|error| format!("No se pudo preparar el sidecar {}: {}", name, error))?,
+            .map_err(|error| format!("Failed to prepare sidecar {}: {}", name, error))?,
         ResolvedProgram::System(program) => app.shell().command(program.clone()),
     };
     command = command.args(args);
@@ -247,7 +263,7 @@ async fn command_output<R: Runtime>(
     command
         .output()
         .await
-        .map_err(|error| format!("No se pudo ejecutar {}: {}", binary.path, error))
+        .map_err(|error| format!("Failed to execute {}: {}", binary.path, error))
 }
 
 fn first_non_empty_line(bytes: &[u8]) -> Option<String> {
@@ -260,22 +276,13 @@ fn first_non_empty_line(bytes: &[u8]) -> Option<String> {
 fn missing_binary_message(kind: BinaryKind) -> String {
     let tool = kind.label();
     if cfg!(target_os = "windows") {
-        return format!(
-            "No se encontro {}. Si instalaste Cliprithm con el instalador oficial, reinstala o actualiza la app para recuperar los binarios empaquetados. Si estas ejecutando el proyecto desde codigo fuente, instala FFmpeg y agrega sus binarios al PATH de Windows.",
-            tool
-        );
+        return format!("{} was not found in this Windows installation.", tool);
     }
 
     if cfg!(target_os = "macos") {
-        return format!(
-            "No se encontro {}. Si usas la app empaquetada, reinstalala o actualizala para recuperar los binarios incluidos. Si ejecutas desde codigo fuente, instala FFmpeg con Homebrew (`brew install ffmpeg`) y vuelve a abrir Cliprithm.",
-            tool
-        );
+        return format!("{} was not found in this macOS installation.", tool);
     }
 
     warn!("[{}] Missing runtime dependency", tool);
-    format!(
-        "No se encontro {}. Instala FFmpeg/FFprobe desde tu gestor de paquetes y vuelve a abrir Cliprithm. Ejemplos: `sudo pacman -S ffmpeg`, `sudo apt install ffmpeg` o `sudo dnf install ffmpeg`.",
-        tool
-    )
+    format!("{} was not found in this Linux installation.", tool)
 }
