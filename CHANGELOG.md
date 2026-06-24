@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.1](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.4.0...cliprithm-v1.4.1) (2026-06-24)
+
+
+### Bug Fixes
+
+* **ci:** harden release asset rebuild workflow ([c965d4c](https://github.com/BOTOOM/Cliprithm/commit/c965d4ca5a6646bbbda1e441f42986db8db9f680))
+* **ci:** locate AppImage from target bundle path ([a294f80](https://github.com/BOTOOM/Cliprithm/commit/a294f80b5707877bd43e45074aeff7eeb438db61))
+* **ci:** resolve Linux AppImage purge path ([ad91725](https://github.com/BOTOOM/Cliprithm/commit/ad9172591bb62e9ddef68ccae3eab77831f915e3))
+
 ## [1.4.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.3.6...cliprithm-v1.4.0) (2026-06-24)
 
 
