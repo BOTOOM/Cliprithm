@@ -89,8 +89,8 @@ def source_filename(pkgname: str, version: str) -> str:
     return f"{pkgname}-{version}.tar.gz"
 
 
-def release_appimage_url(owner: str, repo: str, tag: str, version: str) -> str:
-    return f"https://github.com/{owner}/{repo}/releases/download/{tag}/Cliprithm_{version}_amd64.AppImage"
+def release_deb_url(owner: str, repo: str, tag: str, version: str) -> str:
+    return f"https://github.com/{owner}/{repo}/releases/download/{tag}/cliprithm_{version}_amd64.deb"
 
 
 def release_icon_url(owner: str, repo: str, tag: str) -> str:
@@ -264,14 +264,33 @@ def render_bin_pkgbuild(
         conflicts=('cliprithm')
         source={quote_source_array(sources)}
         sha256sums={quote_array(sha256sums)}
-        noextract=('{artifact_name}')
         options={quote_array(BIN_OPTIONS)}
 
         package() {{
-          install -Dm755 "$srcdir/{artifact_name}" "$pkgdir/opt/cliprithm/cliprithm.AppImage"
+          # Extract the .deb file
+          bsdtar -xf "$srcdir/{artifact_name}" -C "$srcdir" data.tar.gz || bsdtar -xf "$srcdir/{artifact_name}" -C "$srcdir" data.tar.xz
+          
+          # Extract the data archive directly into the pkgdir
+          if [ -f "$srcdir/data.tar.gz" ]; then
+            bsdtar -xf "$srcdir/data.tar.gz" -C "$pkgdir/"
+          elif [ -f "$srcdir/data.tar.xz" ]; then
+            bsdtar -xf "$srcdir/data.tar.xz" -C "$pkgdir/"
+          fi
+          
+          # Clean up the extracted deb directories we don't need or want to overwrite
+          rm -rf "$pkgdir/usr/share/applications/cliprithm.desktop"
+          rm -rf "$pkgdir/usr/share/applications/Cliprithm.desktop"
+          
+          # Install our custom launcher, icon, and desktop file
           install -Dm644 "$srcdir/cliprithm.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/cliprithm.png"
           install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 
+          # Move the native binary extracted from deb to avoid conflicts with our wrapper
+          if [ -f "$pkgdir/usr/bin/cliprithm" ]; then
+             mv "$pkgdir/usr/bin/cliprithm" "$pkgdir/usr/bin/cliprithm-bin"
+          fi
+          
+          # Install our custom launcher
           install -Dm755 "$srcdir/cliprithm" "$pkgdir/usr/bin/cliprithm"
           install -Dm644 "$srcdir/cliprithm.desktop" "$pkgdir/usr/share/applications/cliprithm.desktop"
         }}
@@ -347,7 +366,6 @@ def render_bin_srcinfo(
         *maybe_srcinfo_lines("optdepends", OPTDEPENDS),
         "\tprovides = cliprithm",
         "\tconflicts = cliprithm",
-        f"\tnoextract = {artifact_name}",
         *maybe_srcinfo_lines("options", BIN_OPTIONS),
         *[f"\tsource = {source}" for source in sources],
         *[f"\tsha256sums = {sha256}" for sha256 in sha256sums],
@@ -436,12 +454,12 @@ def main() -> None:
         source_summary = [("Source URL", tarball_url), ("sha256", source_sha256)]
     else:
         pkgname = args.package_name or "cliprithm-bin"
-        artifact_url = args.artifact_url or release_appimage_url(
+        artifact_url = args.artifact_url or release_deb_url(
             args.owner, args.repo, args.tag, args.version
         )
         icon_url = args.icon_url or release_icon_url(args.owner, args.repo, args.tag)
         license_url = args.license_url or release_license_url(args.owner, args.repo, args.tag)
-        artifact_name = Path(urlparse(artifact_url).path).name or f"Cliprithm_{args.version}_amd64.AppImage"
+        artifact_name = Path(urlparse(artifact_url).path).name or f"cliprithm_{args.version}_amd64.deb"
 
         # Generate launcher script and desktop file
         launcher_content = textwrap.dedent(
@@ -460,13 +478,12 @@ def main() -> None:
             export CLIPRITHM_STORE_INSTRUCTIONS='yay -Syu {pkgname}'
             export CLIPRITHM_VERSION_SOURCE_TYPE=aur-rpc
             export CLIPRITHM_VERSION_SOURCE_URL=https://aur.archlinux.org/rpc/v5/info/{pkgname}
-            export APPIMAGE_EXTRACT_AND_RUN=1
             export WEBKIT_DISABLE_DMABUF_RENDERING=1
             export WEBKIT_DISABLE_COMPOSITING_MODE=1
             export LIBGL_ALWAYS_SOFTWARE=1
             # Force X11 backend by default to avoid Wayland EGL driver bugs
             export GDK_BACKEND=x11
-            exec /opt/cliprithm/cliprithm.AppImage "$@"
+            exec /usr/bin/cliprithm-bin "$@"
             """
         )
         desktop_content = textwrap.dedent(
