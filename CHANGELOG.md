@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.2](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.4.1...cliprithm-v1.4.2) (2026-06-25)
+
+
+### Bug Fixes
+
+* **ci:** update workflow runtimes and linux release deps ([d11cd1a](https://github.com/BOTOOM/Cliprithm/commit/d11cd1a6516a87539f0b0f88e3d2c35fe2f1f413))
+* **ci:** update workflow runtimes and linux release deps ([2bda2b5](https://github.com/BOTOOM/Cliprithm/commit/2bda2b54b54348fa661bd3fcc383b3b96a268703))
+
 ## [1.4.1](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.4.0...cliprithm-v1.4.1) (2026-06-24)
 
 
