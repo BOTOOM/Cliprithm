@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.3](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.4.2...cliprithm-v1.4.3) (2026-06-25)
+
+
+### Bug Fixes
+
+* **aur:** migrate binary package from AppImage to native deb extraction ([8b9b524](https://github.com/BOTOOM/Cliprithm/commit/8b9b52477ad9a911b0f4051b407c5e2b1e7492a0))
+* **aur:** migrate binary package from AppImage to native deb extraction ([10bd0ee](https://github.com/BOTOOM/Cliprithm/commit/10bd0eee57591a27d8be5aad8324004e6eebdcfb))
+
 ## [1.4.2](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.4.1...cliprithm-v1.4.2) (2026-06-25)
 
 
