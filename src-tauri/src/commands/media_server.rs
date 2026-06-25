@@ -101,10 +101,10 @@ async fn handle_connection(mut stream: tokio::net::TcpStream) {
 
     match range {
         Some((start, end)) => {
-            serve_range(&mut stream, &path, start, end, file_size, &content_type, is_head).await;
+            serve_range(&mut stream, &path, start, end, file_size, content_type, is_head).await;
         }
         None => {
-            serve_full(&mut stream, &path, file_size, &content_type, is_head).await;
+            serve_full(&mut stream, &path, file_size, content_type, is_head).await;
         }
     }
 }
