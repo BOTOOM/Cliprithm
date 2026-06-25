@@ -19,7 +19,7 @@ pub async fn generate_thumbnail(
     }
 
     let output = ffmpeg_output(
-        &window.app_handle(),
+        window.app_handle(),
         vec![
             "-y".into(),
             "-i".into(),
@@ -58,7 +58,7 @@ pub async fn generate_preview_proxy(
     }
 
     let output = ffmpeg_output(
-        &window.app_handle(),
+        window.app_handle(),
         vec![
             "-y".into(),
             "-i".into(),

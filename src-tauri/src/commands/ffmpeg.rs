@@ -73,7 +73,7 @@ enum ExportResizeMode {
 pub async fn get_video_metadata(window: Window, file_path: String) -> Result<VideoMetadata, String> {
     info!("[ffprobe] Getting metadata for: {}", file_path);
     let output = ffprobe_output(
-        &window.app_handle(),
+        window.app_handle(),
         vec![
             "-v".into(),
             "quiet".into(),
@@ -120,8 +120,35 @@ pub async fn get_video_metadata(window: Window, file_path: String) -> Result<Vid
         .and_then(|d| d.parse::<f64>().ok())
         .unwrap_or(0.0);
 
-    let width = video_stream["width"].as_u64().unwrap_or(0) as u32;
-    let height = video_stream["height"].as_u64().unwrap_or(0) as u32;
+    let mut width = video_stream["width"].as_u64().unwrap_or(0) as u32;
+    let mut height = video_stream["height"].as_u64().unwrap_or(0) as u32;
+
+    // Check for rotation in metadata (tags.rotate or side_data_list)
+    let mut rotation = 0;
+    
+    // Check tags.rotate first
+    if let Some(rotate_str) = video_stream.pointer("/tags/rotate").and_then(|v| v.as_str()) {
+        rotation = rotate_str.parse::<i32>().unwrap_or(0);
+    } else if let Some(side_data) = video_stream["side_data_list"].as_array() {
+        // Fallback to side_data_list if tags.rotate is not present
+        for data in side_data {
+            if let Some(rot) = data["rotation"].as_i64() {
+                rotation = rot as i32;
+                break;
+            }
+        }
+    }
+
+    // Normalize rotation
+    rotation %= 360;
+    if rotation < 0 {
+        rotation += 360;
+    }
+
+    // Swap width and height if rotated 90 or 270 degrees
+    if rotation == 90 || rotation == 270 {
+        std::mem::swap(&mut width, &mut height);
+    }
 
     let fps_str = video_stream["r_frame_rate"].as_str().unwrap_or("30/1");
     let fps = parse_frame_rate(fps_str);
@@ -206,7 +233,7 @@ async fn run_silence_detection_with_progress(
     expected_duration: f64,
 ) -> Result<Vec<SilenceSegment>, String> {
     let (mut spawn, child) = ffmpeg_spawn(
-        &window.app_handle(),
+        window.app_handle(),
         vec![
             "-i".into(),
             file_path.to_string(),
@@ -346,7 +373,7 @@ pub async fn cut_silence(
 
     info!("[cut] Running FFmpeg...");
     let output = ffmpeg_output(
-        &window.app_handle(),
+        window.app_handle(),
         vec![
             "-y".into(),
             "-i".into(),
@@ -437,7 +464,7 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
         options.playback_rate,
     );
 
-    let mut args: Vec<String> = vec![
+    let args: Vec<String> = vec![
         "-y".into(),
         "-i".into(),
         options.input_path.clone(),
@@ -473,7 +500,7 @@ pub async fn export_video(window: Window, options: ExportOptions) -> Result<Stri
         &window,
         "export-progress",
         "encoding",
-        &mut args,
+        &args,
         expected_duration,
     )
     .await?;
@@ -509,7 +536,7 @@ pub async fn generate_export_preview(
     )?;
 
     let output = ffmpeg_output(
-        &window.app_handle(),
+        window.app_handle(),
         vec![
             "-y".into(),
             "-i".into(),
@@ -579,7 +606,7 @@ pub async fn generate_sequence_preview(
     let (filter, video_output_label) = build_concat_filter(&keep_ranges, &transforms, None);
 
     let output = ffmpeg_output(
-        &window.app_handle(),
+        window.app_handle(),
         vec![
             "-y".into(),
             "-i".into(),
@@ -891,7 +918,7 @@ async fn run_ffmpeg_with_progress(
     args: &[String],
     expected_duration: f64,
 ) -> Result<(), String> {
-    let (mut spawn, child) = ffmpeg_spawn(&window.app_handle(), args.to_vec())
+    let (mut spawn, child) = ffmpeg_spawn(window.app_handle(), args.to_vec())
         .await
         .map_err(|e| {
             error!("[export] FFmpeg error: {}", e);
@@ -1016,7 +1043,7 @@ async fn cut_with_speed(
 
     info!("[timewarp] Running FFmpeg...");
     let output = ffmpeg_output(
-        &window.app_handle(),
+        window.app_handle(),
         vec![
             "-y".into(),
             "-i".into(),
