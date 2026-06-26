@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.4](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.4.3...cliprithm-v1.4.4) (2026-06-25)
+
+
+### Bug Fixes
+
+* **video:** dynamically read rotation from ffprobe to support vertical videos ([a3fe8e5](https://github.com/BOTOOM/Cliprithm/commit/a3fe8e55365df0ca5cc8ffed27ab7d9cba6e5ab0))
+* **video:** dynamically read rotation from ffprobe to support vertical videos ([999a1d9](https://github.com/BOTOOM/Cliprithm/commit/999a1d9a01c34ce3c69eb5b9d6427714b198a552))
+
 ## [1.4.3](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.4.2...cliprithm-v1.4.3) (2026-06-25)
 
 
