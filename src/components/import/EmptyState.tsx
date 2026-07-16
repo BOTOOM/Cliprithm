@@ -212,7 +212,8 @@ export function EmptyState() {
           <MediaLibrary />
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center p-12 bg-surface-container-low">
+        <div className="flex-1 min-w-0 overflow-y-auto bg-surface-container-low @container">
+          <div className="min-h-full flex flex-col items-center justify-center p-6 @lg:p-12 gap-8 @lg:gap-12">
           <input
             ref={fileInputRef}
             type="file"
@@ -234,7 +235,7 @@ export function EmptyState() {
             }}
             onDragLeave={() => setIsDragOver(false)}
             onDrop={handleDrop}
-            className={`w-full max-w-4xl aspect-video glass-panel rounded-xl flex flex-col items-center justify-center border-2 border-dashed transition-all duration-500 relative group ${
+            className={`w-full max-w-4xl min-h-64 glass-panel rounded-xl flex flex-col items-center justify-center gap-8 p-8 border-2 border-dashed transition-all duration-500 relative group ${
               isDragOver
                 ? "border-primary/60 bg-surface-container-high/60"
                 : "border-outline-variant/30 hover:border-primary/40 hover:bg-surface-container-high/40"
@@ -282,7 +283,7 @@ export function EmptyState() {
               )}
               {error && <p className="mt-4 text-error text-xs">{error}</p>}
             </div>
-            <div className="absolute bottom-8 flex gap-8">
+            <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2">
               {tList("importView.specs").map((text) => (
                 <div
                   key={text}
@@ -295,7 +296,7 @@ export function EmptyState() {
             </div>
           </div>
 
-          <div className="mt-12 w-full max-w-4xl grid grid-cols-3 gap-6">
+          <div className="w-full max-w-4xl grid grid-cols-1 @lg:grid-cols-2 @2xl:grid-cols-3 gap-4">
             {[
               {
                 icon: "auto_fix_high",
@@ -329,6 +330,7 @@ export function EmptyState() {
                 </p>
               </div>
             ))}
+          </div>
           </div>
         </div>
       </div>
