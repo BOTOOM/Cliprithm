@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.5](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.4.4...cliprithm-v1.4.5) (2026-07-18)
+
+
+### Bug Fixes
+
+* **ui:** make import view responsive to avoid side menu overlap on resize ([df0ef3b](https://github.com/BOTOOM/Cliprithm/commit/df0ef3b99bbd5c9174ef2fbf5dd13086838ca91e))
+* **ui:** make import view responsive to avoid side menu overlap on resize ([5fa3f13](https://github.com/BOTOOM/Cliprithm/commit/5fa3f13fdad9e7484ac076b22106ccb9d794bc84)), closes [#26](https://github.com/BOTOOM/Cliprithm/issues/26)
+
 ## [1.4.4](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.4.3...cliprithm-v1.4.4) (2026-06-25)
 
 
