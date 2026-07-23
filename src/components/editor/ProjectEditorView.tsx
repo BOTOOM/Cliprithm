@@ -24,6 +24,7 @@ import type { MediaAsset, SilenceSegment } from "../../types";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 import { Toggle } from "../ui/Toggle";
+import { Tooltip } from "../ui/Tooltip";
 
 const MIN_ZOOM = 4;
 const MAX_ZOOM = 40;
@@ -399,13 +400,16 @@ export function ProjectEditorView() {
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "history.undo" })} disabled={!canUndoTimeline} aria-label={t("editor.undo")}>
             <Icon name="undo" className="text-base" />
+            <Tooltip content={t("editor.undoTooltip")} />
           </Button>
           <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "history.redo" })} aria-label={t("editor.redo")}>
             <Icon name="redo" className="text-base" />
+            <Tooltip content={t("editor.redoTooltip")} />
           </Button>
           <Button variant="surface" size="sm" onClick={() => void handleAddVideo()}>
             <Icon name="video_call" className="text-base" />
             {t("editor.addVideo")}
+            <Tooltip content={t("editor.addVideoTooltip")} />
           </Button>
         </div>
       </div>
@@ -522,10 +526,13 @@ export function ProjectEditorView() {
             <div className="mt-1 text-[11px] text-on-surface-variant">{formatTime(selectedClip.timelineDuration)} · {formatTime(selectedClip.sourceEnd - selectedClip.sourceStart)} source</div>
           </div>
           <div className="space-y-3 rounded-xl bg-surface-container p-3">
-            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-on-surface-variant">{t("editor.trim")}</div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-on-surface-variant">{t("editor.trim")}</span>
+              <Tooltip content={t("editor.trimTooltip")} />
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <label className="space-y-1 text-[10px] text-on-surface-variant">
-                <span>{t("editor.start")}</span>
+                <span className="flex items-center gap-1">{t("editor.start")}<Tooltip content={t("editor.startTooltip")} /></span>
                 <input
                   aria-label={t("editor.start")}
                   type="number"
@@ -538,7 +545,7 @@ export function ProjectEditorView() {
                 />
               </label>
               <label className="space-y-1 text-[10px] text-on-surface-variant">
-                <span>{t("editor.end")}</span>
+                <span className="flex items-center gap-1">{t("editor.end")}<Tooltip content={t("editor.endTooltip")} /></span>
                 <input
                   aria-label={t("editor.end")}
                   type="number"
@@ -551,7 +558,7 @@ export function ProjectEditorView() {
               </label>
             </div>
             <div className="flex items-center justify-between gap-3 text-xs text-on-surface-variant">
-              <span>{t("editor.speed")}</span>
+              <span className="flex items-center gap-1">{t("editor.speed")}<Tooltip content={t("editor.speedTooltip")} /></span>
               <div className="flex items-center overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-lowest shadow-inner shadow-black/20">
                 <input
                   aria-label={t("editor.speed")}
@@ -600,7 +607,7 @@ export function ProjectEditorView() {
           <div className="space-y-3 rounded-xl bg-surface-container p-3">
             <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-on-surface-variant">{t("editor.silenceDetection")}</div>
             <label className="space-y-1 text-[10px] text-on-surface-variant">
-              <span>{t("detection.threshold")}</span>
+              <span className="flex items-center gap-1">{t("detection.threshold")}<Tooltip content={t("detection.thresholdTooltip")} /></span>
               <input
                 aria-label={t("detection.threshold")}
                 type="range"
@@ -614,7 +621,7 @@ export function ProjectEditorView() {
               <span className="font-mono text-on-surface">{detectionSettings.noiseThreshold} dB</span>
             </label>
             <label className="space-y-1 text-[10px] text-on-surface-variant">
-              <span>{t("detection.minDuration")}</span>
+              <span className="flex items-center gap-1">{t("detection.minDuration")}<Tooltip content={t("detection.minDurationTooltip")} /></span>
               <input
                 aria-label={t("detection.minDuration")}
                 type="range"
@@ -631,9 +638,10 @@ export function ProjectEditorView() {
               label={t("detection.detectBreath")}
               checked={detectionSettings.detectBreath}
               onChange={(value) => updateDetectionSettings({ detectBreath: value })}
+              tooltip={t("detection.detectBreathTooltip")}
             />
             <div className="space-y-1">
-              <div className="text-[10px] text-on-surface-variant">{t("detection.mode")}</div>
+              <div className="flex items-center gap-1 text-[10px] text-on-surface-variant">{t("detection.mode")}<Tooltip content={t("detection.modeTooltip")} /></div>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -653,7 +661,7 @@ export function ProjectEditorView() {
             </div>
             {detectionSettings.mode === "speed" && (
               <label className="space-y-1 text-[10px] text-on-surface-variant">
-                <span>{t("detection.speedMultiplier")}</span>
+                <span className="flex items-center gap-1">{t("detection.speedMultiplier")}<Tooltip content={t("detection.speedMultiplierTooltip")} /></span>
                 <input
                   aria-label={t("detection.speedMultiplier")}
                   type="range"
@@ -670,9 +678,10 @@ export function ProjectEditorView() {
             <Button variant="surface" size="sm" className="w-full" onClick={() => void handleDetectSilence()} disabled={candidateBusy}>
               <Icon name="graphic_eq" className="text-sm" />
               {candidateBusy ? t("editor.analyzing") : t("editor.detectSilence")}
+              <Tooltip content={t("editor.detectSilenceTooltip")} />
             </Button>
             <label className="flex items-center justify-between text-[11px] text-on-surface-variant">
-              <span>{t("editor.analysisScope")}</span>
+              <span className="flex items-center gap-1">{t("editor.analysisScope")}<Tooltip content={t("editor.analysisScopeTooltip")} /></span>
               <select
                 value={analysisScope}
                 onChange={(event) => {
@@ -730,11 +739,11 @@ export function ProjectEditorView() {
             <span className="text-xs font-bold uppercase tracking-[0.16em] text-on-surface-variant">{t("timeline.timeline")}</span>
             <span className="rounded bg-surface-container-high px-2 py-1 text-[10px] text-secondary">{t("timeline.activeClips", { count: positionedClips.length })}</span>
             <div className="flex items-center gap-1">
-              <Button variant="surface" size="sm" onClick={() => dispatchEditorAction({ type: "clip.splitAtPlayhead", clipId: selectedClip.id, timelineTime: playhead })} aria-label={t("editor.split")}><Icon name="content_cut" className="text-sm" /></Button>
-              <Button variant="surface" size="sm" onClick={() => dispatchEditorAction({ type: "clip.duplicate", clipId: selectedClip.id })} aria-label={t("editor.duplicate")}><Icon name="content_copy" className="text-sm" /></Button>
-              <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "clip.move", clipId: selectedClip.id, destinationIndex: Math.max(0, positionedClips.findIndex((clip) => clip.id === selectedClip.id) - 1) })} aria-label={t("editor.moveLeft")}><Icon name="chevron_left" className="text-sm" /></Button>
-              <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "clip.move", clipId: selectedClip.id, destinationIndex: positionedClips.findIndex((clip) => clip.id === selectedClip.id) + 1 })} aria-label={t("editor.moveRight")}><Icon name="chevron_right" className="text-sm" /></Button>
-              <Button variant="ghost" size="sm" className="text-error" onClick={() => dispatchEditorAction({ type: "clip.delete", clipId: selectedClip.id })} aria-label={t("editor.delete")}><Icon name="delete" className="text-sm" /></Button>
+              <Button variant="surface" size="sm" onClick={() => dispatchEditorAction({ type: "clip.splitAtPlayhead", clipId: selectedClip.id, timelineTime: playhead })} aria-label={t("editor.split")}><Icon name="content_cut" className="text-sm" /><Tooltip content={t("editor.splitTooltip")} /></Button>
+              <Button variant="surface" size="sm" onClick={() => dispatchEditorAction({ type: "clip.duplicate", clipId: selectedClip.id })} aria-label={t("editor.duplicate")}><Icon name="content_copy" className="text-sm" /><Tooltip content={t("editor.duplicateTooltip")} /></Button>
+              <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "clip.move", clipId: selectedClip.id, destinationIndex: Math.max(0, positionedClips.findIndex((clip) => clip.id === selectedClip.id) - 1) })} aria-label={t("editor.moveLeft")}><Icon name="chevron_left" className="text-sm" /><Tooltip content={t("editor.moveLeftTooltip")} /></Button>
+              <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "clip.move", clipId: selectedClip.id, destinationIndex: positionedClips.findIndex((clip) => clip.id === selectedClip.id) + 1 })} aria-label={t("editor.moveRight")}><Icon name="chevron_right" className="text-sm" /><Tooltip content={t("editor.moveRightTooltip")} /></Button>
+              <Button variant="ghost" size="sm" className="text-error" onClick={() => dispatchEditorAction({ type: "clip.delete", clipId: selectedClip.id })} aria-label={t("editor.delete")}><Icon name="delete" className="text-sm" /><Tooltip content={t("editor.deleteTooltip")} /></Button>
             </div>
           </div>
           <div className="flex items-center gap-1">
