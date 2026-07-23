@@ -8,7 +8,7 @@ import process from "node:process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const [targetTriple, bundleDirectory] = process.argv.slice(2);
+const [targetTriple, bundleDirectory] = process.argv.slice(2).filter((arg) => arg !== "--");
 
 if (!targetTriple || !bundleDirectory) {
   console.error("Usage: verify_linux_packages.mjs <target-triple> <bundle-directory>");
