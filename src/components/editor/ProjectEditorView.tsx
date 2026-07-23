@@ -23,6 +23,7 @@ import { isDesktopRuntime } from "../../lib/runtime";
 import type { MediaAsset, SilenceSegment } from "../../types";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
+import { Toggle } from "../ui/Toggle";
 
 const MIN_ZOOM = 4;
 const MAX_ZOOM = 40;
@@ -533,7 +534,7 @@ export function ProjectEditorView() {
                   step="0.01"
                   defaultValue={selectedClip.sourceStart.toFixed(2)}
                   onBlur={(event) => dispatchEditorAction({ type: "clip.trim", clipId: selectedClip.id, sourceStart: Number(event.target.value), sourceEnd: selectedClip.sourceEnd })}
-                  className="w-full rounded bg-surface-container-lowest px-2 py-1 font-mono text-on-surface outline-none focus:ring-1 focus:ring-primary"
+                  className="w-full rounded border border-outline-variant/20 bg-surface-container-lowest px-2 py-1.5 font-mono text-sm text-on-surface outline-none focus:ring-1 focus:ring-primary [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [appearance:textfield]"
                 />
               </label>
               <label className="space-y-1 text-[10px] text-on-surface-variant">
@@ -545,7 +546,7 @@ export function ProjectEditorView() {
                   step="0.01"
                   defaultValue={selectedClip.sourceEnd.toFixed(2)}
                   onBlur={(event) => dispatchEditorAction({ type: "clip.trim", clipId: selectedClip.id, sourceStart: selectedClip.sourceStart, sourceEnd: Number(event.target.value) })}
-                  className="w-full rounded bg-surface-container-lowest px-2 py-1 font-mono text-on-surface outline-none focus:ring-1 focus:ring-primary"
+                  className="w-full rounded border border-outline-variant/20 bg-surface-container-lowest px-2 py-1.5 font-mono text-sm text-on-surface outline-none focus:ring-1 focus:ring-primary [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [appearance:textfield]"
                 />
               </label>
             </div>
@@ -626,15 +627,11 @@ export function ProjectEditorView() {
               />
               <span className="font-mono text-on-surface">{detectionSettings.minDuration}s</span>
             </label>
-            <label className="flex items-center justify-between text-[11px] text-on-surface-variant">
-              <span>{t("detection.detectBreath")}</span>
-              <input
-                type="checkbox"
-                checked={detectionSettings.detectBreath}
-                onChange={(event) => updateDetectionSettings({ detectBreath: event.target.checked })}
-                className="accent-[var(--color-primary)]"
-              />
-            </label>
+            <Toggle
+              label={t("detection.detectBreath")}
+              checked={detectionSettings.detectBreath}
+              onChange={(value) => updateDetectionSettings({ detectBreath: value })}
+            />
             <div className="space-y-1">
               <div className="text-[10px] text-on-surface-variant">{t("detection.mode")}</div>
               <div className="flex gap-2">
@@ -682,7 +679,7 @@ export function ProjectEditorView() {
                   setAnalysisScope(event.target.value as "clip" | "timeline");
                   setCandidateRanges(null);
                 }}
-                className="rounded bg-surface-container-lowest px-2 py-1 text-on-surface"
+                className="rounded border border-outline-variant/20 bg-surface-container-lowest px-2 py-1 text-on-surface outline-none focus:ring-1 focus:ring-primary"
               >
                 <option value="clip">{t("editor.selectedClip")}</option>
                 <option value="timeline">{t("editor.wholeTimeline")}</option>
@@ -720,13 +717,6 @@ export function ProjectEditorView() {
               </div>
             ) : null}
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="surface" size="sm" onClick={() => dispatchEditorAction({ type: "clip.splitAtPlayhead", clipId: selectedClip.id, timelineTime: playhead })}><Icon name="content_cut" className="text-sm" />{t("editor.split")}</Button>
-            <Button variant="surface" size="sm" onClick={() => dispatchEditorAction({ type: "clip.duplicate", clipId: selectedClip.id })}><Icon name="content_copy" className="text-sm" />{t("editor.duplicate")}</Button>
-            <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "clip.move", clipId: selectedClip.id, destinationIndex: Math.max(0, positionedClips.findIndex((clip) => clip.id === selectedClip.id) - 1) })}><Icon name="chevron_left" className="text-sm" />{t("editor.moveLeft")}</Button>
-            <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "clip.move", clipId: selectedClip.id, destinationIndex: positionedClips.findIndex((clip) => clip.id === selectedClip.id) + 1 })}><Icon name="chevron_right" className="text-sm" />{t("editor.moveRight")}</Button>
-            <Button variant="ghost" size="sm" className="col-span-2 text-error" onClick={() => dispatchEditorAction({ type: "clip.delete", clipId: selectedClip.id })}><Icon name="delete" className="text-sm" />{t("editor.delete")}</Button>
-          </div>
           <div className="mt-auto rounded-xl bg-surface-container p-3 text-[11px] leading-relaxed text-on-surface-variant">
             <div className="mb-1 flex items-center gap-2 text-on-surface"><Icon name="auto_awesome" className="text-sm text-secondary" />{t("editor.previewStatus")}</div>
             {t("editor.previewStatusDescription")}
@@ -739,6 +729,13 @@ export function ProjectEditorView() {
           <div className="flex items-center gap-3">
             <span className="text-xs font-bold uppercase tracking-[0.16em] text-on-surface-variant">{t("timeline.timeline")}</span>
             <span className="rounded bg-surface-container-high px-2 py-1 text-[10px] text-secondary">{t("timeline.activeClips", { count: positionedClips.length })}</span>
+            <div className="flex items-center gap-1">
+              <Button variant="surface" size="sm" onClick={() => dispatchEditorAction({ type: "clip.splitAtPlayhead", clipId: selectedClip.id, timelineTime: playhead })} aria-label={t("editor.split")}><Icon name="content_cut" className="text-sm" /></Button>
+              <Button variant="surface" size="sm" onClick={() => dispatchEditorAction({ type: "clip.duplicate", clipId: selectedClip.id })} aria-label={t("editor.duplicate")}><Icon name="content_copy" className="text-sm" /></Button>
+              <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "clip.move", clipId: selectedClip.id, destinationIndex: Math.max(0, positionedClips.findIndex((clip) => clip.id === selectedClip.id) - 1) })} aria-label={t("editor.moveLeft")}><Icon name="chevron_left" className="text-sm" /></Button>
+              <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "clip.move", clipId: selectedClip.id, destinationIndex: positionedClips.findIndex((clip) => clip.id === selectedClip.id) + 1 })} aria-label={t("editor.moveRight")}><Icon name="chevron_right" className="text-sm" /></Button>
+              <Button variant="ghost" size="sm" className="text-error" onClick={() => dispatchEditorAction({ type: "clip.delete", clipId: selectedClip.id })} aria-label={t("editor.delete")}><Icon name="delete" className="text-sm" /></Button>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <button type="button" className="min-h-10 min-w-10 rounded text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface" onClick={() => setTimelineZoom(Math.max(MIN_ZOOM, timelineZoom - 2))} aria-label={t("timeline.zoomOut")}><Icon name="zoom_out" /></button>
@@ -746,7 +743,7 @@ export function ProjectEditorView() {
             <button type="button" className="min-h-10 min-w-10 rounded text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface" onClick={() => setTimelineZoom(Math.min(MAX_ZOOM, timelineZoom + 2))} aria-label={t("timeline.zoomIn")}><Icon name="zoom_in" /></button>
           </div>
         </div>
-        <div className="h-[calc(100%-3rem)] overflow-x-auto custom-scrollbar rounded-xl bg-surface-container-lowest" onClick={(event) => {
+        <div className="h-[calc(100%-3rem)] overflow-x-auto timeline-scrollbar rounded-xl bg-surface-container-lowest" onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
           const x = event.clientX - rect.left + event.currentTarget.scrollLeft;
           seekTimeline(Math.max(0, Math.min(duration, x / timelineZoom)));
