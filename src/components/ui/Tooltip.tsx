@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "./Icon";
 
 interface TooltipProps {
@@ -15,6 +15,12 @@ export function Tooltip({ content, variant = "icon", delay = 0, children }: Tool
   const [visible, setVisible] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const targetRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
   const show = () => {
     if (timerRef.current) clearTimeout(timerRef.current);

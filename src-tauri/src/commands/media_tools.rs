@@ -341,6 +341,8 @@ async fn probe_hardware_encoder<R: Runtime>(
         "-f".into(),
         "lavfi".into(),
         "-i".into(),
+        // 128x128 is the minimum frame size required by AMD VAAPI encoders.
+        // The previous 16x16 probe failed on AMD GPUs; do not reduce this.
         "color=c=black:s=128x128:d=0.1".into(),
         "-frames:v".into(),
         "1".into(),

@@ -642,13 +642,7 @@ export function ExportModal() {
         <div className="flex items-center justify-between px-6 pb-3 pt-6 sm:px-8 sm:pt-8 sm:pb-4">
           <h2 className="text-2xl font-bold tracking-tight text-white">{t("exportModal.title")}</h2>
           <button
-            onClick={() => {
-              if (isExporting && activeJobId) {
-                void cancelProjectRender(activeJobId);
-              } else {
-                setShowExportModal(false);
-              }
-            }}
+            onClick={() => setShowExportModal(false)}
             disabled={isExporting}
             className="text-on-surface-variant hover:text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             aria-label={t("exportModal.cancel")}
