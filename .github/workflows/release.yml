@@ -147,19 +147,27 @@ jobs:
             exit 1
           fi
 
-      - name: Build Tauri app
+      - name: Build Tauri app (Linux)
+        if: matrix.platform != 'windows-latest'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           LINUXDEPLOY_EXCLUDE_LIBS: "libwebkit2gtk-4.1.so.0;libjavascriptcoregtk-4.1.so.0;libwayland-client.so.0;libwayland-egl.so.1;libwayland-server.so.0;libwayland-cursor.so.0;libepoxy.so.0;libEGL.so.1;libGL.so.1;libgbm.so.1;libgtk-3.so.0;libgdk-3.so.0;libpango-1.0.so.0;libpangocairo-1.0.so.0;libpangoft2-1.0.so.0;libcairo.so.2;libcairo-gobject.so.2;libgdk_pixbuf-2.0.so.0;libatk-1.0.so.0;libatk-bridge-2.0.so.0;libffi.so.8;libffi.so.7;libglapi.so.0;libGLX.so.0;libGLdispatch.so.0;libX11.so.6"
         run: pnpm run tauri build -- --target ${{ matrix.target }}
 
+      - name: Build Tauri app (Windows — MSI only)
+        if: matrix.platform == 'windows-latest'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm run tauri build -- --target ${{ matrix.target }} --bundles msi
+
       - name: Verify source FFmpeg and FFprobe sidecars
         run: pnpm run verify:sidecars -- ${{ matrix.target }}
 
       - name: Verify packaged FFmpeg and FFprobe sidecars
         if: matrix.platform != 'ubuntu-22.04'
-        run: pnpm run verify:sidecars -- ${{ matrix.target }} --require-bundle
+        run: pnpm run verify:sidecars -- ${{ matrix.target }} src-tauri/target/${{ matrix.target }}/release --require-bundle
 
       - name: Verify Debian and RPM package sidecars (Linux)
         if: matrix.platform == 'ubuntu-22.04'
@@ -217,7 +225,6 @@ jobs:
               \( -name "*${RELEASE_VERSION}*.AppImage" -o -name "*${RELEASE_VERSION}*.AppImage.sig" \
               -o -name "*${RELEASE_VERSION}*.deb" -o -name "*${RELEASE_VERSION}*.deb.sig" \
               -o -name "*${RELEASE_VERSION}*.rpm" -o -name "*${RELEASE_VERSION}*.rpm.sig" \
-              -o -name "*${RELEASE_VERSION}*.exe" -o -name "*${RELEASE_VERSION}*.exe.sig" \
               -o -name "*${RELEASE_VERSION}*.msi" -o -name "*${RELEASE_VERSION}*.msi.sig" \) \
               | sort
           )
@@ -421,7 +428,6 @@ jobs:
               ["windows-x86_64", "windows-x86_64-msi"],
               f"Cliprithm_{version}_x64_en-US.msi",
           )
-          add_platform(["windows-x86_64-nsis"], f"Cliprithm_{version}_x64-setup.exe")
 
           if not platforms:
               raise SystemExit("No signed updater platforms were found in release assets")
@@ -443,9 +449,10 @@ jobs:
         run: gh release upload "$RELEASE_TAG" latest.json --repo "$REPOSITORY" --clobber
 
   # Step 3: Build macOS artifacts for every created release
+  # Currently disabled — macOS is not a target platform at this time.
   build-macos:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    if: false
     permissions:
       contents: write
     strategy:
