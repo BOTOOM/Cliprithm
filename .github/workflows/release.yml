@@ -71,7 +71,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libfuse2
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libfuse2 rpm2cpio cpio
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -95,26 +95,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Install FFmpeg (Ubuntu)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: sudo apt-get install -y ffmpeg
-
-      - name: Install FFmpeg (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: choco install ffmpeg -y
-
-      - name: Bundle FFmpeg binaries for sidecar (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
-          $ffmpegPath = (Get-Command ffmpeg -ErrorAction Stop).Source
-          $ffprobePath = (Get-Command ffprobe -ErrorAction Stop).Source
-          Copy-Item $ffmpegPath src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe
-          Copy-Item $ffprobePath src-tauri/binaries/ffprobe-x86_64-pc-windows-msvc.exe
-          Write-Host "Bundled FFmpeg: $ffmpegPath"
-          Write-Host "Bundled FFprobe: $ffprobePath"
 
       - name: Sync release version across app files
         shell: bash
@@ -174,6 +154,17 @@ jobs:
           LINUXDEPLOY_EXCLUDE_LIBS: "libwebkit2gtk-4.1.so.0;libjavascriptcoregtk-4.1.so.0;libwayland-client.so.0;libwayland-egl.so.1;libwayland-server.so.0;libwayland-cursor.so.0;libepoxy.so.0;libEGL.so.1;libGL.so.1;libgbm.so.1;libgtk-3.so.0;libgdk-3.so.0;libpango-1.0.so.0;libpangocairo-1.0.so.0;libpangoft2-1.0.so.0;libcairo.so.2;libcairo-gobject.so.2;libgdk_pixbuf-2.0.so.0;libatk-1.0.so.0;libatk-bridge-2.0.so.0;libffi.so.8;libffi.so.7;libglapi.so.0;libGLX.so.0;libGLdispatch.so.0;libX11.so.6"
         run: pnpm run tauri build -- --target ${{ matrix.target }}
 
+      - name: Verify source FFmpeg and FFprobe sidecars
+        run: pnpm run verify:sidecars -- ${{ matrix.target }}
+
+      - name: Verify packaged FFmpeg and FFprobe sidecars
+        if: matrix.platform != 'ubuntu-22.04'
+        run: pnpm run verify:sidecars -- ${{ matrix.target }} --require-bundle
+
+      - name: Verify Debian and RPM package sidecars (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: pnpm run verify:linux:packages -- ${{ matrix.target }} src-tauri/target/${{ matrix.target }}/release/bundle
+
       - name: Purge system libraries from AppImage (Linux)
         if: matrix.platform == 'ubuntu-22.04'
         shell: bash
@@ -198,15 +189,19 @@ jobs:
           appimage_filename=$(basename "$appimage_path")
             ./"$appimage_filename" --appimage-extract
 
-          # 4. Purge all bundled system libraries
+          # 4. Verify FFmpeg and FFprobe inside the extracted AppImage
+          node "$GITHUB_WORKSPACE/scripts/verify_bundled_sidecars.mjs" \
+            x86_64-unknown-linux-gnu squashfs-root --require-bundle
+
+          # 5. Purge all bundled system libraries
           rm -rf squashfs-root/usr/lib/*.so* squashfs-root/usr/lib/x86_64-linux-gnu
 
-          # 5. Repack the AppImage
+          # 6. Repack the AppImage
           rm -f "$appimage_filename"
           ARCH=x86_64 /tmp/appimagetool squashfs-root "$appimage_filename"
           chmod +x "$appimage_filename"
 
-          # 6. Clean up extracted directory
+          # 7. Clean up extracted directory
           rm -rf squashfs-root
           cd -
 
@@ -450,7 +445,7 @@ jobs:
   # Step 3: Build macOS artifacts for every created release
   build-macos:
     needs: release-please
-    if: ${{ false && needs.release-please.outputs.release_created }}
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
     permissions:
       contents: write
     strategy:
@@ -489,17 +484,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Install FFmpeg (macOS)
-        run: brew install ffmpeg
-
-      - name: Bundle FFmpeg binaries for sidecar (macOS)
-        run: |
-          mkdir -p src-tauri/binaries
-          cp "$(which ffmpeg)" "src-tauri/binaries/ffmpeg-${{ matrix.target }}"
-          cp "$(which ffprobe)" "src-tauri/binaries/ffprobe-${{ matrix.target }}"
-          echo "Bundled FFmpeg: $(which ffmpeg)"
-          echo "Bundled FFprobe: $(which ffprobe)"
 
       - name: Sync release version across app files
         shell: bash
@@ -557,6 +541,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm run tauri build -- --target ${{ matrix.target }}
+
+      - name: Verify bundled FFmpeg and FFprobe
+        run: pnpm run verify:sidecars -- ${{ matrix.target }} --require-bundle
 
       - name: Upload release assets
         shell: bash
