@@ -41,7 +41,7 @@ export function Tooltip({ content, variant = "icon", delay = 0, children }: Tool
     >
       {variant === "icon" ? (
         <span className="inline-flex items-center justify-center text-on-surface-variant/40 hover:text-on-surface transition-colors">
-          <Icon name="info" className="!text-[7px] leading-none block" />
+          <Icon name="info" className="!text-[10px] leading-none block" />
         </span>
       ) : (
         children
