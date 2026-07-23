@@ -7,12 +7,17 @@ import { useProjectStore } from "../../stores/projectStore";
 import { EmptyState } from "../import/EmptyState";
 import { ProcessingView } from "../processing/ProcessingView";
 import { EditorView } from "../editor/EditorView";
+import { ProjectEditorView } from "../editor/ProjectEditorView";
 import { ExportModal } from "../export/ExportModal";
 import { SettingsPanel } from "../editor/SettingsPanel";
 import { AboutView } from "../about/AboutView";
 import { DiagnosticsView } from "../diagnostics/DiagnosticsView";
 import { guessRuntimePlatform, isDesktopRuntime } from "../../lib/runtime";
-import { getFFmpegStatus, getMediaServerPort } from "../../services/tauriCommands";
+import {
+  getFFmpegStatus,
+  getMediaServerPort,
+  getMediaServerToken,
+} from "../../services/tauriCommands";
 import { useAutoSave } from "../../hooks/useAutoSave";
 import type { ProcessingProgress } from "../../types";
 
@@ -21,8 +26,10 @@ export function MainLayout() {
     currentView,
     showExportModal,
     activeSideTab,
+    timelineProject,
     setProgress,
     setMediaServerPort,
+    setMediaServerToken,
     setFfmpegStatus,
   } =
     useProjectStore();
@@ -33,8 +40,9 @@ export function MainLayout() {
     if (!isDesktopRuntime()) return;
 
     // Fetch the local HTTP media server port on startup
-    void getMediaServerPort().then((port) => {
+    void Promise.all([getMediaServerPort(), getMediaServerToken()]).then(([port, token]) => {
       setMediaServerPort(port);
+      setMediaServerToken(token);
     });
     void getFFmpegStatus()
       .then((status) => {
@@ -48,10 +56,12 @@ export function MainLayout() {
           ffmpeg_path: null,
           ffprobe_path: null,
           version: null,
+          hardware_encoder: null,
+          hardware_vendor: null,
           error: String(error),
         });
       });
-  }, [setFfmpegStatus, setMediaServerPort]);
+  }, [setFfmpegStatus, setMediaServerPort, setMediaServerToken]);
 
   useEffect(() => {
     if (!isDesktopRuntime()) return;
@@ -98,7 +108,8 @@ export function MainLayout() {
             <>
               {currentView === "import" && <EmptyState />}
               {currentView === "processing" && <ProcessingView />}
-              {(currentView === "detection" || currentView === "editor") && <EditorView />}
+              {currentView === "detection" && <EditorView />}
+              {currentView === "editor" && (timelineProject ? <ProjectEditorView /> : <EditorView />)}
             </>
           )}
         </main>

@@ -7,9 +7,14 @@ import { Icon } from "../ui/Icon";
 import {
   getAllProjects,
   deleteProject,
+  updateProject,
   type ProjectRecord,
 } from "../../services/database";
 import { buildClipSegmentsFromSilence } from "../../lib/editor";
+import {
+  migrateLegacyProject,
+  validateTimelineProject,
+} from "../../lib/editor/timeline";
 import { useProjectStore } from "../../stores/projectStore";
 import { getVideoMetadata, detectSilence } from "../../services/tauriCommands";
 import { formatTime, formatFileSize } from "../../lib/utils";
@@ -39,6 +44,15 @@ function parseJsonSafe<T>(json: string | null | undefined, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function isValidVideoMetadata(value: unknown): value is VideoMetadata {
+  if (!value || typeof value !== "object") return false;
+  const metadata = value as Partial<VideoMetadata>;
+  return [metadata.duration, metadata.width, metadata.height, metadata.fps, metadata.file_size]
+    .every((number) => typeof number === "number" && Number.isFinite(number) && number >= 0)
+    && typeof metadata.codec === "string"
+    && typeof metadata.has_audio === "boolean";
 }
 
 export function MediaLibrary() {
@@ -89,10 +103,21 @@ export function MediaLibrary() {
 
         // Check if project has saved editing state
         const savedClips = parseJsonSafe<ClipSegment[]>(project.clip_segments, []);
+        const savedSilenceSegments = parseJsonSafe<DetectionResult["segments"]>(
+          project.silence_segments,
+          []
+        );
         const savedDetectionResult = parseJsonSafe<DetectionResult | null>(
           project.detection_result_json,
           null
         );
+        const parsedTimelineProject = parseJsonSafe<unknown>(
+          project.timeline_json,
+          null
+        );
+        const savedTimelineProject = validateTimelineProject(parsedTimelineProject)
+          ? parsedTimelineProject
+          : null;
         // Merge with defaults so new fields (e.g. playbackRate) get a value
         const savedSettings: DetectionSettings = {
           ...defaultDetectionSettings,
@@ -103,76 +128,92 @@ export function MediaLibrary() {
         };
         const savedView = (project.current_view || "import") as AppView;
         const savedPreviewMode = (project.preview_mode || "source") as PreviewMode;
-        const savedMetadata = parseJsonSafe<VideoMetadata | null>(
+        const parsedMetadata = parseJsonSafe<unknown>(
           project.video_metadata_json,
           null
         );
+        const savedMetadata = isValidVideoMetadata(parsedMetadata)
+          ? parsedMetadata
+          : null;
 
-        // Has a saved in-progress state? Restore it
-        const hasSavedState =
-          savedClips.length > 0 &&
-          savedDetectionResult !== null &&
-          savedView !== "import";
+        // Use saved metadata or re-read (fast ffprobe call).
+        let metadata = savedMetadata;
+        if (!metadata) {
+          metadata = await getVideoMetadata(project.file_path);
+        }
 
-        if (hasSavedState) {
+        const legacyClipSegments = savedClips.length > 0
+          ? savedClips
+          : buildClipSegmentsFromSilence(savedSilenceSegments, metadata.duration);
+        const migratedTimelineProject = savedTimelineProject ?? migrateLegacyProject({
+          asset: {
+            path: project.file_path,
+            name: project.name,
+            metadata,
+            thumbnailPath: project.thumbnail_path,
+            sourceFingerprint: `${metadata.file_size}:${metadata.duration}:${metadata.codec}`,
+          },
+          clipSegments: legacyClipSegments,
+        });
+        const hasSavedState = savedTimelineProject !== null || legacyClipSegments.length > 0 || savedDetectionResult !== null || savedSilenceSegments.length > 0;
+
+        if (hasSavedState || project.current_view !== "import") {
           setProgress({
             percent: 50,
             stage: "restoring",
             message: t("mediaLibrary.restoringProject"),
           });
+          const removedSegments = savedDetectionResult?.segments ?? savedSilenceSegments;
 
-          // Use saved metadata or re-read (fast ffprobe call)
-          let metadata = savedMetadata;
-          if (!metadata) {
-            metadata = await getVideoMetadata(project.file_path);
-          }
-
-          const removedSegments = savedDetectionResult?.segments ?? [];
-
-          // Restore to "processing" first so the UI shows loading
-          // then transition to the saved view after a tick
           loadProject({
             projectId: project.id,
             filePath: project.file_path,
             videoMetadata: metadata,
             detectionResult: savedDetectionResult,
             detectionSettings: savedSettings,
-            clipSegments: savedClips,
+            clipSegments: legacyClipSegments,
             removedSegments,
+            timelineProject: migratedTimelineProject,
             currentView: "processing",
             previewMode: savedPreviewMode,
             processedPath: project.processed_path,
           });
+
+          if (!savedTimelineProject) {
+            try {
+              await updateProject(project.id, {
+                timeline_json: JSON.stringify(migratedTimelineProject),
+                project_schema_version: migratedTimelineProject.schemaVersion,
+                status: "in_progress",
+              });
+            } catch (migrationError) {
+              log.warn("[restore]", "Failed to persist migrated timeline:", migrationError);
+            }
+          }
 
           setProgress({
             percent: 100,
             stage: "complete",
             message: t("mediaLibrary.projectRestored"),
           });
-
           log.info(
             "[restore]",
             `Project ${project.id} restored — view:${savedView} clips:${savedClips.length}`
           );
-
-          // Transition to the saved view after a short delay so the
-          // video element has time to mount and start loading
           await new Promise((r) => setTimeout(r, 200));
-          setView(savedView);
+          setView(savedView === "processing" ? "editor" : savedView);
           return;
         }
 
-        // No saved editing state — load from scratch
+        // No saved editing state — load from scratch.
         setProcessedFilePath(project.processed_path);
         setPreviewFilePath(null);
         setFilePath(project.file_path);
-
-        const metadata = await getVideoMetadata(project.file_path);
         setVideoMetadata(metadata);
 
         // Has cached silence segments? Use them
-        if (project.silence_segments && project.silence_segments !== "[]") {
-          const segments = JSON.parse(project.silence_segments);
+        if (savedSilenceSegments.length > 0) {
+          const segments = savedSilenceSegments;
           const totalSilence = segments.reduce(
             (acc: number, segment: { duration: number }) => acc + segment.duration,
             0
