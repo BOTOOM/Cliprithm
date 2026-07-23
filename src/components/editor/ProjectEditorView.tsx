@@ -63,6 +63,8 @@ export function ProjectEditorView() {
     setTimelineZoom,
     canUndoTimeline,
     playhead,
+    progress,
+    setProgress,
   } = useProjectStore();
   const [isPlaying, setIsPlaying] = useState(false);
   const [previewNotice, setPreviewNotice] = useState("");
@@ -308,6 +310,7 @@ export function ProjectEditorView() {
     if (!timelineProject || !selectedClip) return;
     setCandidateBusy(true);
     setPreviewNotice("");
+    setProgress({ percent: 0, stage: "analyzing", message: "" });
     const analysisRevision = timelineProject.revision;
     try {
       const clipsToAnalyze = analysisScope === "timeline" ? positionedClips : [selectedClip];
@@ -681,8 +684,10 @@ export function ProjectEditorView() {
             )}
             <Tooltip variant="wrap" delay={2000} content={t("editor.detectSilenceTooltip")}>
               <Button variant="surface" size="sm" className="w-full" onClick={() => void handleDetectSilence()} disabled={candidateBusy}>
-                <Icon name="graphic_eq" className="text-sm" />
-                {candidateBusy ? t("editor.analyzing") : t("editor.detectSilence")}
+                <Icon name={candidateBusy ? "progress_activity" : "graphic_eq"} className={`text-sm ${candidateBusy ? "animate-spin" : ""}`} />
+                {candidateBusy
+                  ? `${t("editor.analyzing")} ${Math.round(progress.percent)}%`
+                  : t("editor.detectSilence")}
               </Button>
             </Tooltip>
             <div className="flex items-center justify-between text-[11px] text-on-surface-variant">
