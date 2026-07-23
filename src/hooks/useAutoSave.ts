@@ -20,7 +20,8 @@ export function useAutoSave() {
         state.detectionResult !== prevState.detectionResult ||
         state.previewMode !== prevState.previewMode ||
         state.detectionSettings !== prevState.detectionSettings ||
-        state.videoMetadata !== prevState.videoMetadata;
+        state.videoMetadata !== prevState.videoMetadata ||
+        state.timelineProject !== prevState.timelineProject;
 
       if (!changed) return;
 
@@ -43,7 +44,9 @@ async function saveProjectState(
 ) {
   try {
     const hasEdits =
-      state.clipSegments.length > 0 || state.detectionResult !== null;
+      state.clipSegments.length > 0 ||
+      state.detectionResult !== null ||
+      state.timelineProject !== null;
     const status = hasEdits ? "in_progress" : "imported";
 
     await updateProject(id, {
@@ -60,6 +63,10 @@ async function saveProjectState(
       video_metadata_json: state.videoMetadata
         ? JSON.stringify(state.videoMetadata)
         : null,
+      timeline_json: state.timelineProject
+        ? JSON.stringify(state.timelineProject)
+        : null,
+      project_schema_version: state.timelineProject?.schemaVersion ?? 0,
       status,
     });
     log.debug("[auto-save]", `Project ${id} saved (${status})`);
