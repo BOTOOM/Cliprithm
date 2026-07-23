@@ -23,8 +23,8 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 - **Rust** (latest stable via [rustup](https://rustup.rs/))
 - **Tauri prerequisites** for your OS: [Tauri setup guide](https://v2.tauri.app/start/prerequisites/)
 - **FFmpeg**:
-  - **Windows / macOS**: no manual installation needed — `pnpm install` fetches FFmpeg via `ffmpeg-static` and it is automatically placed as a bundled sidecar before `dev` or `build`.
-  - **Linux**: install from your package manager (`sudo pacman -S ffmpeg`, `sudo apt install ffmpeg`, `sudo dnf install ffmpeg`).
+  - **Windows / macOS**: no manual installation needed — `pnpm install` fetches FFmpeg and FFprobe for local sidecars, and official releases bundle both binaries.
+  - **Linux**: official packages bundle FFmpeg and FFprobe; development builds may use FFmpeg from your package manager (`sudo pacman -S ffmpeg`, `sudo apt install ffmpeg`, or `sudo dnf install ffmpeg`).
 
 ### Install & Run
 
