@@ -73,6 +73,7 @@ export function ProjectEditorView() {
     ranges: Array<{ clipId: string; segments: SilenceSegment[] }>;
   } | null>(null);
   const [analysisScope, setAnalysisScope] = useState<"clip" | "timeline">("clip");
+  const [analysisScopeOpen, setAnalysisScopeOpen] = useState(false);
   const [candidateBusy, setCandidateBusy] = useState(false);
   const [authorizedMediaPath, setAuthorizedMediaPath] = useState<string | null>(null);
 
@@ -684,20 +685,40 @@ export function ProjectEditorView() {
                 {candidateBusy ? t("editor.analyzing") : t("editor.detectSilence")}
               </Button>
             </Tooltip>
-            <label className="flex items-center justify-between text-[11px] text-on-surface-variant">
+            <div className="flex items-center justify-between text-[11px] text-on-surface-variant">
               <span className="flex items-center gap-1">{t("editor.analysisScope")}<Tooltip content={t("editor.analysisScopeTooltip")} /></span>
-              <select
-                value={analysisScope}
-                onChange={(event) => {
-                  setAnalysisScope(event.target.value as "clip" | "timeline");
-                  setCandidateRanges(null);
-                }}
-                className="rounded border border-outline-variant/20 bg-surface-container-lowest px-2 py-1 text-on-surface outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="clip">{t("editor.selectedClip")}</option>
-                <option value="timeline">{t("editor.wholeTimeline")}</option>
-              </select>
-            </label>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setAnalysisScopeOpen(!analysisScopeOpen)}
+                  className="flex items-center gap-1.5 rounded-lg border border-outline-variant/20 bg-surface-container-lowest px-2.5 py-1.5 text-[11px] text-on-surface outline-none transition-colors hover:border-primary/40 focus:ring-1 focus:ring-primary"
+                >
+                  {analysisScope === "clip" ? t("editor.selectedClip") : t("editor.wholeTimeline")}
+                  <Icon name="expand_more" className="text-sm text-on-surface-variant" />
+                </button>
+                {analysisScopeOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setAnalysisScopeOpen(false)} />
+                    <div className="absolute right-0 top-full z-50 mt-1 min-w-[140px] overflow-hidden rounded-lg border border-outline-variant/20 bg-surface-container-highest shadow-2xl">
+                      <button
+                        type="button"
+                        onClick={() => { setAnalysisScope("clip"); setAnalysisScopeOpen(false); setCandidateRanges(null); }}
+                        className={`flex w-full items-center px-3 py-2 text-left text-[11px] transition-colors hover:bg-primary/15 ${analysisScope === "clip" ? "text-primary font-semibold" : "text-on-surface-variant"}`}
+                      >
+                        {t("editor.selectedClip")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setAnalysisScope("timeline"); setAnalysisScopeOpen(false); setCandidateRanges(null); }}
+                        className={`flex w-full items-center px-3 py-2 text-left text-[11px] transition-colors hover:bg-primary/15 ${analysisScope === "timeline" ? "text-primary font-semibold" : "text-on-surface-variant"}`}
+                      >
+                        {t("editor.wholeTimeline")}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
             {candidateRanges ? (
               <div className="space-y-2 text-[11px] text-on-surface-variant">
                 <div>{t("editor.candidateSummary", { count: candidateRanges.ranges.reduce((total, candidate) => total + candidate.segments.length, 0) })}</div>
