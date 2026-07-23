@@ -3,8 +3,8 @@ mod commands;
 use commands::app;
 use commands::ffmpeg;
 use commands::library;
-use commands::media_tools;
 use commands::media_server;
+use commands::media_tools;
 use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
@@ -82,18 +82,27 @@ pub fn run() {
                   ALTER TABLE projects ADD COLUMN video_metadata_json TEXT DEFAULT NULL;",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "add_timeline_project_state",
+            sql: "ALTER TABLE projects ADD COLUMN timeline_json TEXT DEFAULT NULL;
+                  ALTER TABLE projects ADD COLUMN project_schema_version INTEGER DEFAULT 0;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Start the local HTTP media server for video streaming
-    let media_port = media_server::start();
+    let media_server_state = media_server::start();
 
     tauri::Builder::default()
-        .manage(media_server::MediaServerPort(media_port))
+        .manage(media_server_state)
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
                     Target::new(TargetKind::Stdout),
-                    Target::new(TargetKind::LogDir { file_name: Some("cliprithm".into()) }),
+                    Target::new(TargetKind::LogDir {
+                        file_name: Some("cliprithm".into()),
+                    }),
                     Target::new(TargetKind::Webview),
                 ])
                 .level(if cfg!(debug_assertions) {
@@ -123,9 +132,16 @@ pub fn run() {
             ffmpeg::export_video,
             ffmpeg::generate_export_preview,
             ffmpeg::generate_sequence_preview,
+            ffmpeg::export_project,
+            ffmpeg::generate_project_preview,
+            ffmpeg::generate_project_preview_frame,
+            ffmpeg::cancel_project_render,
+            ffmpeg::wait_for_project_idle,
             library::generate_thumbnail,
             library::generate_preview_proxy,
             media_server::get_media_server_port,
+            media_server::get_media_server_token,
+            media_server::authorize_media_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
