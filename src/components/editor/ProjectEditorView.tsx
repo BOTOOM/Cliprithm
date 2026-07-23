@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { appDataDir } from "@tauri-apps/api/path";
-import { open } from "@tauri-apps/plugin-dialog";
+import { confirm, open } from "@tauri-apps/plugin-dialog";
 import { getFileName, mediaServerUrl, resolveMediaSrc } from "../../lib/media";
 import { formatTime } from "../../lib/utils";
 import { useI18n } from "../../lib/i18n";
@@ -321,7 +321,7 @@ export function ProjectEditorView() {
       if (
         analysisScope === "timeline" &&
         (analyzedDuration >= 120 || clipsToAnalyze.length >= 50) &&
-        !window.confirm(t("editor.analysisLongWarning"))
+        !(await confirm(t("editor.analysisLongWarning")))
       ) {
         return;
       }
