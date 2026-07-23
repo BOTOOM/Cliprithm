@@ -56,6 +56,7 @@ export function ProjectEditorView() {
     selectedClipId,
     dispatchEditorAction,
     detectionSettings,
+    updateDetectionSettings,
     timelineZoom,
     setTimelineZoom,
     canUndoTimeline,
@@ -595,7 +596,80 @@ export function ProjectEditorView() {
             />
             <div className="flex justify-between text-[10px] text-on-surface-variant"><span>0.25×</span><span>8×</span><span>32×</span></div>
           </div>
-          <div className="space-y-2 rounded-xl bg-surface-container p-3">
+          <div className="space-y-3 rounded-xl bg-surface-container p-3">
+            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-on-surface-variant">{t("editor.silenceDetection")}</div>
+            <label className="space-y-1 text-[10px] text-on-surface-variant">
+              <span>{t("detection.threshold")}</span>
+              <input
+                aria-label={t("detection.threshold")}
+                type="range"
+                min={-60}
+                max={0}
+                step={1}
+                value={detectionSettings.noiseThreshold}
+                onChange={(event) => updateDetectionSettings({ noiseThreshold: Number(event.target.value) })}
+                className="w-full accent-[var(--color-primary)]"
+              />
+              <span className="font-mono text-on-surface">{detectionSettings.noiseThreshold} dB</span>
+            </label>
+            <label className="space-y-1 text-[10px] text-on-surface-variant">
+              <span>{t("detection.minDuration")}</span>
+              <input
+                aria-label={t("detection.minDuration")}
+                type="range"
+                min={0.1}
+                max={3}
+                step={0.1}
+                value={detectionSettings.minDuration}
+                onChange={(event) => updateDetectionSettings({ minDuration: Number(event.target.value) })}
+                className="w-full accent-[var(--color-primary)]"
+              />
+              <span className="font-mono text-on-surface">{detectionSettings.minDuration}s</span>
+            </label>
+            <label className="flex items-center justify-between text-[11px] text-on-surface-variant">
+              <span>{t("detection.detectBreath")}</span>
+              <input
+                type="checkbox"
+                checked={detectionSettings.detectBreath}
+                onChange={(event) => updateDetectionSettings({ detectBreath: event.target.checked })}
+                className="accent-[var(--color-primary)]"
+              />
+            </label>
+            <div className="space-y-1">
+              <div className="text-[10px] text-on-surface-variant">{t("detection.mode")}</div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => updateDetectionSettings({ mode: "cut" })}
+                  className={`flex-1 rounded px-2 py-1 text-[10px] font-bold transition-colors ${detectionSettings.mode === "cut" ? "bg-primary text-on-primary" : "bg-surface-container-highest text-on-surface-variant"}`}
+                >
+                  {t("detection.cutSilence")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateDetectionSettings({ mode: "speed" })}
+                  className={`flex-1 rounded px-2 py-1 text-[10px] font-bold transition-colors ${detectionSettings.mode === "speed" ? "bg-primary text-on-primary" : "bg-surface-container-highest text-on-surface-variant"}`}
+                >
+                  {t("detection.timeWarp")}
+                </button>
+              </div>
+            </div>
+            {detectionSettings.mode === "speed" && (
+              <label className="space-y-1 text-[10px] text-on-surface-variant">
+                <span>{t("detection.speedMultiplier")}</span>
+                <input
+                  aria-label={t("detection.speedMultiplier")}
+                  type="range"
+                  min={0.5}
+                  max={6}
+                  step={0.5}
+                  value={detectionSettings.speedMultiplier}
+                  onChange={(event) => updateDetectionSettings({ speedMultiplier: Number(event.target.value) })}
+                  className="w-full accent-[var(--color-primary)]"
+                />
+                <span className="font-mono text-on-surface">{detectionSettings.speedMultiplier}x</span>
+              </label>
+            )}
             <Button variant="surface" size="sm" className="w-full" onClick={() => void handleDetectSilence()} disabled={candidateBusy}>
               <Icon name="graphic_eq" className="text-sm" />
               {candidateBusy ? t("editor.analyzing") : t("editor.detectSilence")}
