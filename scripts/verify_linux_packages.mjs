@@ -46,6 +46,26 @@ async function runVersion(binaryPath) {
   await execFileAsync(binaryPath, ["-version"], { windowsHide: true });
 }
 
+async function findPackageFiles(directory) {
+  const matches = [];
+  let entries;
+  try {
+    entries = await fs.readdir(directory, { withFileTypes: true });
+  } catch {
+    return matches;
+  }
+
+  for (const entry of entries) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      matches.push(...(await findPackageFiles(entryPath)));
+    } else if (entry.isFile() && (entry.name.endsWith(".deb") || entry.name.endsWith(".rpm"))) {
+      matches.push(entryPath);
+    }
+  }
+  return matches;
+}
+
 async function verifyTree(directory, label) {
   const binaries = await findExecutables(directory);
   const ffmpeg = binaries.find((file) => path.basename(file).startsWith("ffmpeg"));
@@ -114,10 +134,7 @@ async function extractRpm(packagePath, destination) {
 }
 
 try {
-  const entries = await fs.readdir(bundleDirectory, { withFileTypes: true });
-  const packages = entries
-    .filter((entry) => entry.isFile() && (entry.name.endsWith(".deb") || entry.name.endsWith(".rpm")))
-    .map((entry) => path.join(bundleDirectory, entry.name));
+  const packages = await findPackageFiles(bundleDirectory);
   if (packages.length === 0) {
     throw new Error(`No .deb or .rpm packages found under ${bundleDirectory}`);
   }
