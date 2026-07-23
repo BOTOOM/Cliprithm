@@ -40,8 +40,8 @@ export function Tooltip({ content, variant = "icon", delay = 0, children }: Tool
       onBlur={hide}
     >
       {variant === "icon" ? (
-        <span className="inline-flex items-center justify-center w-2.5 h-2.5 rounded-full text-on-surface-variant/50 hover:text-on-surface transition-colors">
-          <Icon name="info" className="text-[8px]" />
+        <span className="inline-flex items-center justify-center text-on-surface-variant/40 hover:text-on-surface transition-colors">
+          <Icon name="info" className="!text-[7px] leading-none block" />
         </span>
       ) : (
         children
