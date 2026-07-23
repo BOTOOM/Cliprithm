@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.2](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.5.1...cliprithm-v1.5.2) (2026-07-23)
+
+
+### Bug Fixes
+
+* **ci:** search recursively for .deb and .rpm in bundle subdirectories ([697d10e](https://github.com/BOTOOM/Cliprithm/commit/697d10efe1955ddca99695ba65d9d0ee2b24978e))
+* **ci:** search recursively for .deb and .rpm in bundle subdirectories ([89d06f8](https://github.com/BOTOOM/Cliprithm/commit/89d06f8cfbf72555cbce1963d8e82dedee277f46))
+
 ## [1.5.1](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.5.0...cliprithm-v1.5.1) (2026-07-23)
 
 
