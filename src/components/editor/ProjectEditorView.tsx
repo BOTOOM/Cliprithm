@@ -398,19 +398,22 @@ export function ProjectEditorView() {
           <span className="truncate text-xs text-on-surface-variant">{selectedAsset?.name}</span>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "history.undo" })} disabled={!canUndoTimeline} aria-label={t("editor.undo")}>
-            <Icon name="undo" className="text-base" />
-            <Tooltip content={t("editor.undoTooltip")} />
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "history.redo" })} aria-label={t("editor.redo")}>
-            <Icon name="redo" className="text-base" />
-            <Tooltip content={t("editor.redoTooltip")} />
-          </Button>
-          <Button variant="surface" size="sm" onClick={() => void handleAddVideo()}>
-            <Icon name="video_call" className="text-base" />
-            {t("editor.addVideo")}
-            <Tooltip content={t("editor.addVideoTooltip")} />
-          </Button>
+          <Tooltip variant="wrap" delay={2000} content={t("editor.undoTooltip")}>
+            <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "history.undo" })} disabled={!canUndoTimeline} aria-label={t("editor.undo")}>
+              <Icon name="undo" className="text-base" />
+            </Button>
+          </Tooltip>
+          <Tooltip variant="wrap" delay={2000} content={t("editor.redoTooltip")}>
+            <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "history.redo" })} aria-label={t("editor.redo")}>
+              <Icon name="redo" className="text-base" />
+            </Button>
+          </Tooltip>
+          <Tooltip variant="wrap" delay={2000} content={t("editor.addVideoTooltip")}>
+            <Button variant="surface" size="sm" onClick={() => void handleAddVideo()}>
+              <Icon name="video_call" className="text-base" />
+              {t("editor.addVideo")}
+            </Button>
+          </Tooltip>
         </div>
       </div>
 
@@ -675,11 +678,12 @@ export function ProjectEditorView() {
                 <span className="font-mono text-on-surface">{detectionSettings.speedMultiplier}x</span>
               </label>
             )}
-            <Button variant="surface" size="sm" className="w-full" onClick={() => void handleDetectSilence()} disabled={candidateBusy}>
-              <Icon name="graphic_eq" className="text-sm" />
-              {candidateBusy ? t("editor.analyzing") : t("editor.detectSilence")}
-              <Tooltip content={t("editor.detectSilenceTooltip")} />
-            </Button>
+            <Tooltip variant="wrap" delay={2000} content={t("editor.detectSilenceTooltip")}>
+              <Button variant="surface" size="sm" className="w-full" onClick={() => void handleDetectSilence()} disabled={candidateBusy}>
+                <Icon name="graphic_eq" className="text-sm" />
+                {candidateBusy ? t("editor.analyzing") : t("editor.detectSilence")}
+              </Button>
+            </Tooltip>
             <label className="flex items-center justify-between text-[11px] text-on-surface-variant">
               <span className="flex items-center gap-1">{t("editor.analysisScope")}<Tooltip content={t("editor.analysisScopeTooltip")} /></span>
               <select
@@ -739,11 +743,21 @@ export function ProjectEditorView() {
             <span className="text-xs font-bold uppercase tracking-[0.16em] text-on-surface-variant">{t("timeline.timeline")}</span>
             <span className="rounded bg-surface-container-high px-2 py-1 text-[10px] text-secondary">{t("timeline.activeClips", { count: positionedClips.length })}</span>
             <div className="flex items-center gap-1">
-              <Button variant="surface" size="sm" onClick={() => dispatchEditorAction({ type: "clip.splitAtPlayhead", clipId: selectedClip.id, timelineTime: playhead })} aria-label={t("editor.split")}><Icon name="content_cut" className="text-sm" /><Tooltip content={t("editor.splitTooltip")} /></Button>
-              <Button variant="surface" size="sm" onClick={() => dispatchEditorAction({ type: "clip.duplicate", clipId: selectedClip.id })} aria-label={t("editor.duplicate")}><Icon name="content_copy" className="text-sm" /><Tooltip content={t("editor.duplicateTooltip")} /></Button>
-              <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "clip.move", clipId: selectedClip.id, destinationIndex: Math.max(0, positionedClips.findIndex((clip) => clip.id === selectedClip.id) - 1) })} aria-label={t("editor.moveLeft")}><Icon name="chevron_left" className="text-sm" /><Tooltip content={t("editor.moveLeftTooltip")} /></Button>
-              <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "clip.move", clipId: selectedClip.id, destinationIndex: positionedClips.findIndex((clip) => clip.id === selectedClip.id) + 1 })} aria-label={t("editor.moveRight")}><Icon name="chevron_right" className="text-sm" /><Tooltip content={t("editor.moveRightTooltip")} /></Button>
-              <Button variant="ghost" size="sm" className="text-error" onClick={() => dispatchEditorAction({ type: "clip.delete", clipId: selectedClip.id })} aria-label={t("editor.delete")}><Icon name="delete" className="text-sm" /><Tooltip content={t("editor.deleteTooltip")} /></Button>
+              <Tooltip variant="wrap" delay={2000} content={t("editor.splitTooltip")}>
+                <Button variant="surface" size="sm" onClick={() => dispatchEditorAction({ type: "clip.splitAtPlayhead", clipId: selectedClip.id, timelineTime: playhead })} aria-label={t("editor.split")}><Icon name="content_cut" className="text-sm" /></Button>
+              </Tooltip>
+              <Tooltip variant="wrap" delay={2000} content={t("editor.duplicateTooltip")}>
+                <Button variant="surface" size="sm" onClick={() => dispatchEditorAction({ type: "clip.duplicate", clipId: selectedClip.id })} aria-label={t("editor.duplicate")}><Icon name="content_copy" className="text-sm" /></Button>
+              </Tooltip>
+              <Tooltip variant="wrap" delay={2000} content={t("editor.moveLeftTooltip")}>
+                <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "clip.move", clipId: selectedClip.id, destinationIndex: Math.max(0, positionedClips.findIndex((clip) => clip.id === selectedClip.id) - 1) })} aria-label={t("editor.moveLeft")}><Icon name="chevron_left" className="text-sm" /></Button>
+              </Tooltip>
+              <Tooltip variant="wrap" delay={2000} content={t("editor.moveRightTooltip")}>
+                <Button variant="ghost" size="sm" onClick={() => dispatchEditorAction({ type: "clip.move", clipId: selectedClip.id, destinationIndex: positionedClips.findIndex((clip) => clip.id === selectedClip.id) + 1 })} aria-label={t("editor.moveRight")}><Icon name="chevron_right" className="text-sm" /></Button>
+              </Tooltip>
+              <Tooltip variant="wrap" delay={2000} content={t("editor.deleteTooltip")}>
+                <Button variant="ghost" size="sm" className="text-error" onClick={() => dispatchEditorAction({ type: "clip.delete", clipId: selectedClip.id })} aria-label={t("editor.delete")}><Icon name="delete" className="text-sm" /></Button>
+              </Tooltip>
             </div>
           </div>
           <div className="flex items-center gap-1">
