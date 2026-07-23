@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.1](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.5.0...cliprithm-v1.5.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* **ci:** fix release workflow errors and disable macOS builds ([8d15f79](https://github.com/BOTOOM/Cliprithm/commit/8d15f7930a2ab473de34cb60ff526251a1093a28))
+* **ci:** fix release workflow errors and disable macOS builds ([3c4e950](https://github.com/BOTOOM/Cliprithm/commit/3c4e9500beba6488116054332ff299b8ed4b1bfd))
+
 ## [1.5.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.4.5...cliprithm-v1.5.0) (2026-07-23)
 
 
