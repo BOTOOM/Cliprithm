@@ -41,8 +41,8 @@ A desktop application for automatic silence detection and removal in videos. Bui
   - **Ubuntu/Debian**: `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf`
   - **Arch/Manjaro**: `webkit2gtk-4.1 gtk3 librsvg`
 - **FFmpeg**:
-  - **Windows / macOS**: No manual installation needed. `pnpm install` downloads FFmpeg via the `ffmpeg-static` npm package and it is automatically prepared as a bundled sidecar when you run `pnpm run tauri dev` or `pnpm run tauri build`.
-  - **Linux**: Install FFmpeg from your package manager — e.g. `sudo pacman -S ffmpeg`, `sudo apt install ffmpeg`, or `sudo dnf install ffmpeg`. The app discovers it at runtime.
+  - **Windows / macOS**: No manual installation needed. `pnpm install` downloads FFmpeg and FFprobe for local Tauri builds, and official releases package both binaries inside the application.
+  - **Linux**: Official packages include FFmpeg and FFprobe. Development builds use the system installation when available; no manual installation is required for official releases.
 
 ## Setup
 

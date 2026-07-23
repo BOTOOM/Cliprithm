@@ -96,6 +96,12 @@
 .custom-scrollbar::-webkit-scrollbar-thumb { background: #262626; border-radius: 10px; }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #ba9eff; }
 
+/* Timeline scrollbar — more visible than the default custom-scrollbar */
+.timeline-scrollbar::-webkit-scrollbar { width: 8px; height: 10px; }
+.timeline-scrollbar::-webkit-scrollbar-track { background: rgba(38, 38, 38, 0.4); border-radius: 10px; }
+.timeline-scrollbar::-webkit-scrollbar-thumb { background: rgba(186, 158, 255, 0.45); border-radius: 10px; }
+.timeline-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(186, 158, 255, 0.8); }
+
 /* Shimmer animation */
 .shimmer {
   background: linear-gradient(90deg, rgba(186,158,255,0) 0%, rgba(186,158,255,0.2) 50%, rgba(186,158,255,0) 100%);

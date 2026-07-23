@@ -13,6 +13,7 @@ import { useI18n } from "../../lib/i18n";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
 import {
+  authorizeMediaPath,
   detectSilence,
   generatePreviewProxy,
 } from "../../services/tauriCommands";
@@ -45,6 +46,7 @@ export function EditorView() {
     previewMode,
     setPreviewMode,
     mediaServerPort,
+    mediaServerToken,
     removedSegments,
     clipSegments,
     applySuggestedCuts,
@@ -65,6 +67,7 @@ export function EditorView() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentSourceTime, setCurrentSourceTime] = useState(0);
   const [isRedetecting, setIsRedetecting] = useState(false);
+  const [authorizedMediaPath, setAuthorizedMediaPath] = useState<string | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [isGeneratingSourceProxy, setIsGeneratingSourceProxy] = useState(false);
   const [isVideoReady, setIsVideoReady] = useState(false);
@@ -125,13 +128,28 @@ export function EditorView() {
       ? `${videoMetadata.width} / ${videoMetadata.height}`
       : "9 / 16";
 
+  const mediaPath = previewFilePath || filePath;
+
+  useEffect(() => {
+    let cancelled = false;
+    setAuthorizedMediaPath(null);
+    if (!mediaPath || mediaPath.startsWith("blob:") || !isDesktopRuntime()) return;
+    void authorizeMediaPath(mediaPath)
+      .then(() => {
+        if (!cancelled) setAuthorizedMediaPath(mediaPath);
+      })
+      .catch((error) => log.warn("[media-server]", "Failed to authorize media path:", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [mediaPath]);
+
   // Video source: use local HTTP server for streaming with Range request support
   const videoSrc = useMemo(() => {
-    if (!mediaServerPort) return "";
-    const path = previewFilePath || filePath;
-    if (!path || path.startsWith("blob:")) return "";
-    return mediaServerUrl(mediaServerPort, path);
-  }, [mediaServerPort, previewFilePath, filePath]);
+    if (!mediaServerPort || !mediaServerToken || authorizedMediaPath !== mediaPath) return "";
+    if (!mediaPath || mediaPath.startsWith("blob:")) return "";
+    return mediaServerUrl(mediaServerPort, mediaServerToken, mediaPath);
+  }, [authorizedMediaPath, mediaPath, mediaServerPort, mediaServerToken]);
 
   const isPreviewBusy =
     Boolean(videoSrc) && (!isVideoReady || isGeneratingSourceProxy);

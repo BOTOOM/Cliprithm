@@ -25,6 +25,72 @@ export interface ClipSegment {
   duration: number;
 }
 
+export type MediaAssetKind = "video" | "image" | "gif" | "audio" | "text";
+export type TimelineTrackKind = "video" | "audio" | "overlay";
+
+export interface MediaAsset {
+  id: string;
+  kind: MediaAssetKind;
+  path: string;
+  name: string;
+  metadata: VideoMetadata | null;
+  thumbnailPath: string | null;
+  sourceFingerprint: string | null;
+}
+
+export interface TimelineClip {
+  id: string;
+  assetId: string;
+  trackId: string;
+  sourceStart: number;
+  sourceEnd: number;
+  sourceBounds?: {
+    start: number;
+    end: number;
+  };
+  speed: number;
+  label: string;
+  createdByActionId?: string;
+}
+
+export interface TimelineTrack {
+  id: string;
+  kind: TimelineTrackKind;
+  name: string;
+  clipIds: string[];
+  muted: boolean;
+  locked: boolean;
+  visible: boolean;
+}
+
+export interface TimelineProject {
+  schemaVersion: 1;
+  assets: MediaAsset[];
+  tracks: TimelineTrack[];
+  clips: TimelineClip[];
+  revision: number;
+}
+
+export interface SilenceDetectionCandidate {
+  id: string;
+  projectRevision: number;
+  scope: "clip" | "timeline";
+  settings: Pick<DetectionSettings, "noiseThreshold" | "minDuration" | "detectBreath">;
+  ranges: Array<{ clipId: string; segments: SilenceSegment[] }>;
+  estimatedOutputDuration: number;
+  status: "preparing" | "analyzing" | "reviewable" | "accepted" | "discarded";
+}
+
+export interface PreviewJobState {
+  jobId: string;
+  projectRevision: number;
+  kind: "asset_proxy" | "sequence_preview" | "preview_window" | "silence_analysis" | "export_render";
+  status: "queued" | "running" | "complete" | "cancelled" | "failed";
+  percent: number;
+  outputPath: string | null;
+  error: string | null;
+}
+
 export interface PreviewSegment {
   start: number;
   end: number;
@@ -41,7 +107,12 @@ export interface ProcessingProgress {
   percent: number;
   stage: string;
   message: string;
+  jobId?: string;
 }
+
+export type ExportProfile = "fast" | "balanced" | "quality";
+
+export type HardwareAccelerationVendor = "amd" | "nvidia" | "intel" | "apple" | null;
 
 export interface FfmpegStatus {
   available: boolean;
@@ -50,6 +121,8 @@ export interface FfmpegStatus {
   ffmpeg_path: string | null;
   ffprobe_path: string | null;
   version: string | null;
+  hardware_encoder: string | null;
+  hardware_vendor: HardwareAccelerationVendor;
   error: string | null;
 }
 
@@ -62,6 +135,7 @@ export interface ExportOptions {
   target_height?: number | null;
   sizing_mode?: ExportSizingMode | null;
   resize_mode?: ExportResizeMode | null;
+  profile?: ExportProfile | null;
   fps: number | null;
   mode: string;
   speed_multiplier: number | null;
@@ -90,6 +164,7 @@ export interface ExportSettings {
   height: number;
   sizingMode: ExportSizingMode;
   resizeMode: ExportResizeMode;
+  profile: ExportProfile;
   fps: 30 | 60;
 }
 

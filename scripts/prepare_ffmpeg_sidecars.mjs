@@ -20,6 +20,10 @@ function currentTargetTriple() {
   }).trim();
 }
 
+function executableExtension(targetTriple) {
+  return targetTriple.includes("windows") ? ".exe" : "";
+}
+
 async function ensureExecutable(targetPath) {
   if (process.platform !== "win32") {
     await fs.chmod(targetPath, 0o755);
@@ -27,7 +31,7 @@ async function ensureExecutable(targetPath) {
 }
 
 async function copyBinary(sourcePath, name, targetTriple) {
-  const extension = path.extname(sourcePath);
+  const extension = executableExtension(targetTriple) || path.extname(sourcePath);
   const destination = path.join(
     binariesDir,
     `${name}-${targetTriple}${extension}`
@@ -38,14 +42,14 @@ async function copyBinary(sourcePath, name, targetTriple) {
 }
 
 async function hasExistingSidecars(targetTriple) {
-  const executableExtension = process.platform === "win32" ? ".exe" : "";
+  const extension = executableExtension(targetTriple);
   const ffmpegDestination = path.join(
     binariesDir,
-    `ffmpeg-${targetTriple}${executableExtension}`
+    `ffmpeg-${targetTriple}${extension}`
   );
   const ffprobeDestination = path.join(
     binariesDir,
-    `ffprobe-${targetTriple}${executableExtension}`
+    `ffprobe-${targetTriple}${extension}`
   );
 
   try {
@@ -63,13 +67,6 @@ async function hasExistingSidecars(targetTriple) {
 }
 
 async function main() {
-  if (process.platform !== "win32" && process.platform !== "darwin") {
-    console.log(
-      "[ffmpeg-sidecar] Skipping sidecar preparation on this platform; Linux uses runtime detection."
-    );
-    return;
-  }
-
   const targetTriple = currentTargetTriple();
   if (await hasExistingSidecars(targetTriple)) {
     return;

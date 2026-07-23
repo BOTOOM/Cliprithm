@@ -10,8 +10,8 @@ import {
 import { useI18n } from "../../lib/i18n";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
-import { checkFFmpeg, getVideoMetadata, detectSilence } from "../../services/tauriCommands";
-import { createProject } from "../../services/database";
+import { checkFFmpeg, getVideoMetadata } from "../../services/tauriCommands";
+import { createProject, updateProject } from "../../services/database";
 import { openExternalUrl, APP_LINKS } from "../../lib/appInfo";
 import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
@@ -29,6 +29,7 @@ export function EmptyState() {
     setPreviewFilePath,
     setProgress,
     setProjectId,
+    initializeTimelineProject,
     detectionSettings,
     ffmpegStatus,
     setFfmpegStatus,
@@ -89,6 +90,19 @@ export function EmptyState() {
           thumbnailPath = null;
         }
 
+        initializeTimelineProject({
+          path,
+          name: fileName,
+          metadata,
+          thumbnailPath,
+          sourceFingerprint: `${metadata.file_size}:${metadata.duration}:${metadata.codec}`,
+        });
+        setProgress({
+          percent: 100,
+          stage: "complete",
+          message: "",
+        });
+
         try {
           const newProjectId = await createProject({
             name: fileName,
@@ -105,17 +119,26 @@ export function EmptyState() {
             mode: detectionSettings.mode,
           });
           setProjectId(newProjectId);
+          const timelineProject = useProjectStore.getState().timelineProject;
+          if (timelineProject) {
+            try {
+              await updateProject(newProjectId, {
+                current_view: "editor",
+                detection_settings_json: JSON.stringify(detectionSettings),
+                video_metadata_json: JSON.stringify(metadata),
+                timeline_json: JSON.stringify(timelineProject),
+                project_schema_version: timelineProject.schemaVersion,
+                status: "in_progress",
+              });
+            } catch (stateError) {
+              log.warn("[db]", "Failed to persist initial project state:", stateError);
+            }
+          }
         } catch (dbError) {
           log.warn("[db]", "Failed to save project:", dbError);
         }
 
-        const result = await detectSilence(
-          path,
-          detectionSettings.noiseThreshold,
-          detectionSettings.minDuration
-        );
-        setDetectionResult(result);
-        setView("detection");
+        setView("editor");
       } catch (err) {
         log.error("[import]", "Desktop import failed:", err);
         setError(t("importView.desktopImportFailed"));
@@ -125,6 +148,7 @@ export function EmptyState() {
     [
       detectionSettings,
       ffmpegStatus,
+      initializeTimelineProject,
       setDetectionResult,
       setFilePath,
       setProcessedFilePath,
@@ -148,6 +172,13 @@ export function EmptyState() {
         setPreviewFilePath(null);
         setFilePath(url);
         setVideoMetadata(metadata);
+        initializeTimelineProject({
+          path: url,
+          name: file.name,
+          metadata,
+          thumbnailPath: null,
+          sourceFingerprint: `${file.name}:${file.size}:${file.lastModified}`,
+        });
         setDetectionResult(null);
         setView("editor");
       } catch (err) {
@@ -156,6 +187,7 @@ export function EmptyState() {
       }
     },
     [
+      initializeTimelineProject,
       setDetectionResult,
       setFilePath,
       setProcessedFilePath,

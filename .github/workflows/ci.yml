@@ -44,6 +44,22 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare FFmpeg sidecars
+        run: pnpm exec node scripts/prepare_ffmpeg_sidecars.mjs
+
       - name: Check Rust
         run: cd src-tauri && cargo check
 

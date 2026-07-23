@@ -23,8 +23,11 @@
     "build:flatpak:docker": "bash scripts/build_flatpak.sh --docker",
     "tauri": "node scripts/run-tauri.mjs",
     "verify:linux-release": "bash scripts/verify_release_linux.sh",
+    "verify:sidecars": "node scripts/verify_bundled_sidecars.mjs",
+    "verify:linux:packages": "node scripts/verify_linux_packages.mjs",
     "verify:aur:source": "bash scripts/verify_aur_package.sh source",
-    "verify:aur:bin": "bash scripts/verify_aur_package.sh bin --build-package"
+    "verify:aur:bin": "bash scripts/verify_aur_package.sh bin --build-package",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -50,6 +53,7 @@
     "ffprobe-static": "^3.1.0",
     "tailwindcss": "^4.2.2",
     "typescript": "~5.8.3",
-    "vite": "^7.3.2"
+    "vite": "^7.3.2",
+    "vitest": "3.2.4"
   }
 }

@@ -26,6 +26,8 @@ export interface ProjectRecord {
   detection_result_json: string | null;
   detection_settings_json: string | null;
   video_metadata_json: string | null;
+  timeline_json: string | null;
+  project_schema_version: number;
   created_at: string;
   updated_at: string;
 }
@@ -97,6 +99,8 @@ export async function createProject(
     | "detection_result_json"
     | "detection_settings_json"
     | "video_metadata_json"
+    | "timeline_json"
+    | "project_schema_version"
   >
 ): Promise<number> {
   if (!isDesktopRuntime()) {
@@ -114,6 +118,8 @@ export async function createProject(
       detection_result_json: null,
       detection_settings_json: null,
       video_metadata_json: null,
+      timeline_json: null,
+      project_schema_version: 0,
       created_at: timestamp,
       updated_at: timestamp,
     });
@@ -161,6 +167,8 @@ export async function updateProject(
       | "detection_result_json"
       | "detection_settings_json"
       | "video_metadata_json"
+      | "timeline_json"
+      | "project_schema_version"
     >
   >
 ): Promise<void> {

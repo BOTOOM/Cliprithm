@@ -1,6 +1,6 @@
 [package]
 name = "cliprithm"
-version = "1.3.6"
+version = "1.4.5"
 description = "Cliprithm — Smart video silence remover"
 authors = ["Edwar Diaz <edwardiaz.dev>"]
 edition = "2021"
@@ -30,3 +30,4 @@ regex = "1"
 tempfile = "3"
 chrono = { version = "0.4", features = ["serde"] }
 which = "6"
+rand = "0.8.5"

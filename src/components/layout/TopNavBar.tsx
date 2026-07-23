@@ -5,8 +5,14 @@ import { Button } from "../ui/Button";
 
 export function TopNavBar() {
   const { t } = useI18n();
-  const { currentView, setShowExportModal, filePath, clipSegments, setView } =
-    useProjectStore();
+  const {
+    currentView,
+    setShowExportModal,
+    filePath,
+    clipSegments,
+    timelineProject,
+    setView,
+  } = useProjectStore();
 
   const showEditorNav = currentView === "editor";
   const showDetectionNav = currentView === "detection";
@@ -14,7 +20,7 @@ export function TopNavBar() {
     isDesktopRuntime() &&
     currentView === "editor" &&
     filePath !== null &&
-    clipSegments.length > 0;
+    (timelineProject?.clips.length ?? clipSegments.length) > 0;
 
   return (
     <header className="w-full h-14 flex items-center justify-between px-6 bg-surface border-b border-surface-container-high z-50">

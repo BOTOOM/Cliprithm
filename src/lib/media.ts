@@ -27,9 +27,10 @@ export function resolveMediaSrc(pathOrUrl?: string | null): string {
  * Build an HTTP URL to stream a video file through the local media server.
  * Supports Range requests for proper seeking in all WebViews.
  */
-export function mediaServerUrl(port: number, filePath: string): string {
-  if (!port || !filePath) return "";
-  return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(filePath)}`;
+export function mediaServerUrl(port: number, token: string, filePath: string): string {
+  if (!port || !token || !filePath) return "";
+  const params = new URLSearchParams({ path: filePath, token });
+  return `http://127.0.0.1:${port}/stream?${params.toString()}`;
 }
 
 export function getFileName(pathOrUrl?: string | null): string {
