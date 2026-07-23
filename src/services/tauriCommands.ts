@@ -44,7 +44,9 @@ export async function getVideoMetadata(filePath: string): Promise<VideoMetadata>
 export async function detectSilence(
   filePath: string,
   noiseThreshold: number,
-  minDuration: number
+  minDuration: number,
+  sourceStart?: number,
+  sourceEnd?: number
 ): Promise<DetectionResult> {
   assertDesktop("Silence detection");
   log.info(
@@ -55,6 +57,8 @@ export async function detectSilence(
     filePath,
     noiseThreshold,
     minDuration,
+    sourceStart: sourceStart ?? null,
+    sourceEnd: sourceEnd ?? null,
   });
   log.info(
     "[silence]",
@@ -65,13 +69,21 @@ export async function detectSilence(
   return result;
 }
 
-export async function exportVideo(options: ExportOptions): Promise<string> {
+export async function exportVideo(
+  options: ExportOptions,
+  jobId?: string,
+  projectId?: number | null
+): Promise<string> {
   assertDesktop("Export");
   log.info(
     "[export]",
     `Exporting → ${options.output_path} | clips:${options.segments_to_keep.length}`
   );
-  const result = await invoke<string>("export_video", { options });
+  const result = await invoke<string>("export_video", {
+    options,
+    jobId,
+    projectId: projectId == null ? null : String(projectId),
+  });
   log.info("[export]", "Export complete:", result);
   return result;
 }
@@ -131,9 +143,126 @@ export async function generateEditedSequencePreview(
   return result;
 }
 
+export async function exportProject(options: {
+  outputPath: string;
+  clips: Array<{
+    inputPath: string;
+    sourceStart: number;
+    sourceEnd: number;
+    speed: number;
+    fps: number;
+    width: number;
+    height: number;
+    hasAudio: boolean;
+  }>;
+  targetWidth: number;
+  targetHeight: number;
+  resizeMode?: "original" | "fit" | "crop" | "stretch" | null;
+  profile?: "fast" | "balanced" | "quality" | null;
+  fps?: number | null;
+  jobId?: string;
+  projectId?: number | null;
+}): Promise<string> {
+  assertDesktop("Project export");
+  return invoke<string>("export_project", {
+    outputPath: options.outputPath,
+    clips: options.clips,
+    targetWidth: options.targetWidth,
+    targetHeight: options.targetHeight,
+    resizeMode: options.resizeMode ?? null,
+    profile: options.profile ?? null,
+    fps: options.fps ?? null,
+    jobId: options.jobId ?? null,
+    projectId: options.projectId == null ? null : String(options.projectId),
+  });
+}
+
+export async function cancelProjectRender(jobId: string): Promise<void> {
+  assertDesktop("Project render cancellation");
+  await invoke("cancel_project_render", { jobId });
+}
+
+export async function waitForProjectIdle(
+  projectId: number | string,
+  timeoutMs?: number,
+): Promise<void> {
+  assertDesktop("Project render wait");
+  await invoke("wait_for_project_idle", {
+    projectId: String(projectId),
+    timeoutMs: timeoutMs ?? null,
+  });
+}
+
+export async function generateProjectPreview(options: {
+  outputPath: string;
+  clips: Array<{
+    inputPath: string;
+    sourceStart: number;
+    sourceEnd: number;
+    speed: number;
+    fps: number;
+    width: number;
+    height: number;
+    hasAudio: boolean;
+  }>;
+  targetWidth: number;
+  targetHeight: number;
+  jobId?: string;
+  projectId?: number | null;
+}): Promise<string> {
+  assertDesktop("Project preview generation");
+  log.info("[preview-project]", `Generating project preview → ${options.outputPath} | clips:${options.clips.length}`);
+  return invoke<string>("generate_project_preview", {
+    outputPath: options.outputPath,
+    clips: options.clips,
+    targetWidth: options.targetWidth,
+    targetHeight: options.targetHeight,
+    jobId: options.jobId ?? null,
+    projectId: options.projectId == null ? null : String(options.projectId),
+  });
+}
+
+export async function generateProjectPreviewFrame(options: {
+  outputPath: string;
+  clips: Array<{
+    inputPath: string;
+    sourceStart: number;
+    sourceEnd: number;
+    speed: number;
+    fps: number;
+    width: number;
+    height: number;
+    hasAudio: boolean;
+  }>;
+  targetWidth: number;
+  targetHeight: number;
+  resizeMode?: string | null;
+  frameOffset?: number | null;
+}): Promise<string> {
+  assertDesktop("Project preview frame generation");
+  return invoke<string>("generate_project_preview_frame", {
+    outputPath: options.outputPath,
+    clips: options.clips,
+    targetWidth: options.targetWidth,
+    targetHeight: options.targetHeight,
+    resizeMode: options.resizeMode ?? null,
+    frameOffset: options.frameOffset ?? null,
+  });
+}
+
 export async function getMediaServerPort(): Promise<number> {
   assertDesktop("Media server");
   return invoke<number>("get_media_server_port");
+}
+
+export async function getMediaServerToken(): Promise<string> {
+  assertDesktop("Media server");
+  return invoke<string>("get_media_server_token");
+}
+
+export async function authorizeMediaPath(filePath: string): Promise<void> {
+  assertDesktop("Media server authorization");
+  await invoke("authorize_media_path", { filePath });
 }
 
 export async function getDistributionContext(): Promise<DistributionContext> {

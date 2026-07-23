@@ -8,8 +8,17 @@ import { useI18n } from "../../lib/i18n";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { formatFileSize, formatTime } from "../../lib/utils";
 import { useProjectStore } from "../../stores/projectStore";
-import { exportVideo, generateExportPreview } from "../../services/tauriCommands";
+import {
+  cancelProjectRender,
+  exportProject,
+  exportVideo,
+  generateExportPreview,
+  generateProjectPreviewFrame,
+} from "../../services/tauriCommands";
+import { getAsset, getPositionedClips } from "../../lib/editor/timeline";
+import { stableHash } from "../../lib/editor/preview";
 import type {
+  ExportProfile,
   ExportResizeMode,
   ExportSettings,
   PreviewSegment,
@@ -87,6 +96,32 @@ const CUSTOM_SIZE_MODES = [
   { id: "custom" as const, labelKey: "exportModal.sizeModeCustom" },
 ];
 
+const PROFILE_OPTIONS: Array<{
+  id: ExportProfile;
+  labelKey: string;
+  descriptionKey: string;
+  icon: string;
+}> = [
+  {
+    id: "fast",
+    labelKey: "exportModal.profileFast",
+    descriptionKey: "exportModal.profileFastDescription",
+    icon: "bolt",
+  },
+  {
+    id: "balanced",
+    labelKey: "exportModal.profileBalanced",
+    descriptionKey: "exportModal.profileBalancedDescription",
+    icon: "tune",
+  },
+  {
+    id: "quality",
+    labelKey: "exportModal.profileQuality",
+    descriptionKey: "exportModal.profileQualityDescription",
+    icon: "high_quality",
+  },
+];
+
 const RESIZE_MODE_OPTIONS = [
   {
     id: "original" as const,
@@ -137,6 +172,13 @@ function buildPreviewSegments(
   return clips.map((clip) => ({ start: clip.start, end: clip.end }));
 }
 
+function createJobId(prefix: string): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export function ExportModal() {
   const { t } = useI18n();
   const {
@@ -146,6 +188,8 @@ export function ExportModal() {
     filePath,
     videoMetadata,
     clipSegments,
+    projectId,
+    timelineProject,
     detectionSettings,
     setProcessedFilePath,
     ffmpegStatus,
@@ -157,7 +201,9 @@ export function ExportModal() {
   const [error, setError] = useState<string | null>(null);
   const [previewImageSrc, setPreviewImageSrc] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewFrameOffset, setPreviewFrameOffset] = useState(0);
   const previewRequestRef = useRef(0);
   const getStageLabel = useCallback(
     (payload: ProcessingProgress) => {
@@ -229,6 +275,32 @@ export function ExportModal() {
     activeTarget.width > 0 && activeTarget.height > 0
       ? `${activeTarget.width} / ${activeTarget.height}`
       : "16 / 9";
+  const projectClips = useMemo(
+    () => (timelineProject ? getPositionedClips(timelineProject) : []),
+    [timelineProject]
+  );
+  const previewCacheKey = stableHash(
+    JSON.stringify({
+      projectId,
+      filePath,
+      sourceFingerprint: videoMetadata
+        ? `${videoMetadata.file_size}:${videoMetadata.duration}:${videoMetadata.codec}`
+        : null,
+      timelineRevision: timelineProject?.revision ?? null,
+      assets: timelineProject?.assets.map((asset) => ({
+        id: asset.id,
+        path: asset.path,
+        sourceFingerprint: asset.sourceFingerprint,
+      })) ?? [],
+      projectClips,
+      clipSegments,
+      target: activeTarget,
+      resizeMode: activeResizeMode,
+      preset: exportSettings.preset,
+      profile: exportSettings.profile,
+      fps: exportSettings.fps,
+    })
+  );
   const selectedCreatorTargetId =
     CREATOR_TARGETS.find(
       (target) =>
@@ -246,6 +318,7 @@ export function ExportModal() {
     let unlisten: (() => void) | undefined;
 
     listen<ProcessingProgress>("export-progress", (event) => {
+      if (activeJobId && event.payload.jobId !== activeJobId) return;
       setExportProgress(Math.round(event.payload.percent));
       setExportMessage(getStageLabel(event.payload));
     }).then((dispose) => {
@@ -260,17 +333,30 @@ export function ExportModal() {
       disposed = true;
       unlisten?.();
     };
-  }, [getStageLabel, isExporting]);
+  }, [activeJobId, getStageLabel, isExporting]);
 
-  const estimatedDurationSeconds = clipSegments.reduce(
-    (total, clip) => total + clip.duration,
-    0
-  );
+  const hasExportableProject = timelineProject
+    ? projectClips.length > 0
+    : clipSegments.length > 0;
+  const estimatedDurationSeconds = timelineProject
+    ? projectClips.reduce((total, clip) => total + clip.timelineDuration, 0)
+    : clipSegments.reduce((total, clip) => total + clip.duration, 0);
   const previewDurationSeconds =
     (detectionSettings.playbackRate ?? 1.0) > 0.01
       ? estimatedDurationSeconds / (detectionSettings.playbackRate ?? 1.0)
       : estimatedDurationSeconds;
   const ffmpegUnavailable = isDesktopRuntime() && ffmpegStatus?.available === false;
+  const hardwareLabel = ffmpegStatus?.hardware_vendor
+    ? t(
+        ffmpegStatus.hardware_vendor === "amd"
+          ? "exportModal.hardwareAmd"
+          : ffmpegStatus.hardware_vendor === "nvidia"
+            ? "exportModal.hardwareNvidia"
+            : ffmpegStatus.hardware_vendor === "intel"
+              ? "exportModal.hardwareIntel"
+              : "exportModal.hardwareApple"
+      )
+    : t("exportModal.hardwareCpu");
 
   useEffect(() => {
     if (
@@ -278,7 +364,7 @@ export function ExportModal() {
       !isDesktopRuntime() ||
       !filePath ||
       !videoMetadata ||
-      clipSegments.length === 0 ||
+      !hasExportableProject ||
       ffmpegUnavailable
     ) {
       setPreviewLoading(false);
@@ -302,21 +388,45 @@ export function ExportModal() {
         setPreviewError(null);
         try {
           const dataDir = await appDataDir();
-          const outputPath = `${dataDir}/export-previews/export-preview-${Date.now()}.jpg`;
-          const previewPath = await generateExportPreview({
-            inputPath: filePath,
-            outputPath,
-            segmentsToKeep: buildPreviewSegments(clipSegments),
-            targetWidth: activeTarget.width,
-            targetHeight: activeTarget.height,
-            resizeMode: activeResizeMode,
-          });
-
-          if (previewRequestRef.current !== requestId) {
-            return;
+          if (timelineProject) {
+            const outputPath = `${dataDir}/export-previews/project-${previewCacheKey}-${previewFrameOffset}.jpg`;
+            const previewPath = await generateProjectPreviewFrame({
+              outputPath,
+              clips: projectClips.flatMap((clip) => {
+                const asset = getAsset(timelineProject, clip.assetId);
+                return asset
+                  ? [{
+                      inputPath: asset.path,
+                      sourceStart: clip.sourceStart,
+                      sourceEnd: clip.sourceEnd,
+                      speed: clip.speed,
+                      fps: asset.metadata?.fps ?? 30,
+                      width: asset.metadata?.width ?? activeTarget.width,
+                      height: asset.metadata?.height ?? activeTarget.height,
+                      hasAudio: asset.metadata?.has_audio ?? false,
+                    }]
+                  : [];
+              }),
+              targetWidth: activeTarget.width,
+              targetHeight: activeTarget.height,
+              resizeMode: activeResizeMode,
+              frameOffset: previewFrameOffset,
+            });
+            if (previewRequestRef.current !== requestId) return;
+            setPreviewImageSrc(`${resolveMediaSrc(previewPath)}?v=${Date.now()}`);
+          } else {
+            const outputPath = `${dataDir}/export-previews/source-${previewCacheKey}.jpg`;
+            const previewPath = await generateExportPreview({
+              inputPath: filePath,
+              outputPath,
+              segmentsToKeep: buildPreviewSegments(clipSegments),
+              targetWidth: activeTarget.width,
+              targetHeight: activeTarget.height,
+              resizeMode: activeResizeMode,
+            });
+            if (previewRequestRef.current !== requestId) return;
+            setPreviewImageSrc(`${resolveMediaSrc(previewPath)}?v=${Date.now()}`);
           }
-
-          setPreviewImageSrc(`${resolveMediaSrc(previewPath)}?v=${Date.now()}`);
         } catch (previewErr) {
           log.error("[export-preview]", "Still preview generation failed:", previewErr);
           if (previewRequestRef.current !== requestId) {
@@ -343,7 +453,12 @@ export function ExportModal() {
     exportSettings.preset,
     ffmpegUnavailable,
     filePath,
+    hasExportableProject,
+    previewFrameOffset,
+    projectClips,
+    previewCacheKey,
     t,
+    timelineProject,
     videoMetadata,
   ]);
 
@@ -404,7 +519,7 @@ export function ExportModal() {
   );
 
   const handleExport = useCallback(async () => {
-    if (!filePath || clipSegments.length === 0 || !isDesktopRuntime()) {
+    if (!filePath || !hasExportableProject || !isDesktopRuntime()) {
       setError(t("exportModal.desktopOnly"));
       return;
     }
@@ -427,32 +542,61 @@ export function ExportModal() {
     if (!outputPath) return;
 
     setError(null);
+    const jobId = createJobId("export");
+    setActiveJobId(jobId);
     setIsExporting(true);
     setExportProgress(5);
     setExportMessage(t("exportModal.preparing"));
 
     try {
-      const result = await exportVideo({
-        input_path: filePath,
-        output_path: outputPath,
-        segments_to_keep: clipSegments.map((clip) => [clip.start, clip.end]),
-        resolution: exportSettings.resolution,
-        target_width: activeTarget.width,
-        target_height: activeTarget.height,
-        sizing_mode:
-          exportSettings.preset === "custom" ? exportSettings.sizingMode : "preset",
-        resize_mode: activeResizeMode,
-        fps: exportSettings.fps,
-        mode: detectionSettings.mode,
-        speed_multiplier:
-          detectionSettings.mode === "speed"
-            ? detectionSettings.speedMultiplier
-            : null,
-        playback_rate:
-          (detectionSettings.playbackRate ?? 1.0) !== 1.0
-            ? detectionSettings.playbackRate
-            : null,
-      });
+      const result = timelineProject
+        ? await exportProject({
+            outputPath,
+            targetWidth: activeTarget.width,
+            targetHeight: activeTarget.height,
+            resizeMode: activeResizeMode,
+            profile: exportSettings.profile,
+            fps: exportSettings.fps,
+            jobId,
+            projectId,
+            clips: projectClips.flatMap((clip) => {
+              const asset = getAsset(timelineProject, clip.assetId);
+              return asset
+                ? [{
+                    inputPath: asset.path,
+                    sourceStart: clip.sourceStart,
+                    sourceEnd: clip.sourceEnd,
+                    speed: clip.speed,
+                    fps: asset.metadata?.fps ?? 30,
+                    width: asset.metadata?.width ?? activeTarget.width,
+                    height: asset.metadata?.height ?? activeTarget.height,
+                    hasAudio: asset.metadata?.has_audio ?? false,
+                  }]
+                : [];
+            }),
+          })
+        : await exportVideo({
+            input_path: filePath,
+            output_path: outputPath,
+            segments_to_keep: clipSegments.map((clip) => [clip.start, clip.end]),
+            resolution: exportSettings.resolution,
+            target_width: activeTarget.width,
+            target_height: activeTarget.height,
+            sizing_mode:
+              exportSettings.preset === "custom" ? exportSettings.sizingMode : "preset",
+            resize_mode: activeResizeMode,
+            profile: exportSettings.profile,
+            fps: exportSettings.fps,
+            mode: detectionSettings.mode,
+            speed_multiplier:
+              detectionSettings.mode === "speed"
+                ? detectionSettings.speedMultiplier
+                : null,
+            playback_rate:
+              (detectionSettings.playbackRate ?? 1.0) !== 1.0
+                ? detectionSettings.playbackRate
+                : null,
+          }, jobId, projectId);
       setProcessedFilePath(result);
       setExportProgress(100);
       setExportMessage(t("exportModal.exportComplete"));
@@ -464,20 +608,27 @@ export function ExportModal() {
       setError(t("exportModal.exportFailed"));
     } finally {
       setIsExporting(false);
+      setActiveJobId(null);
     }
   }, [
     clipSegments,
+    hasExportableProject,
+    projectClips,
+    timelineProject,
     detectionSettings.mode,
     detectionSettings.speedMultiplier,
     exportSettings.height,
     exportSettings.fileName,
     exportSettings.fps,
     exportSettings.preset,
+    exportSettings.profile,
     exportSettings.resolution,
     exportSettings.resizeMode,
     exportSettings.sizingMode,
     exportSettings.width,
     filePath,
+    projectId,
+    activeJobId,
     ffmpegStatus?.error,
     ffmpegUnavailable,
     setProcessedFilePath,
@@ -491,8 +642,16 @@ export function ExportModal() {
         <div className="flex items-center justify-between px-6 pb-3 pt-6 sm:px-8 sm:pt-8 sm:pb-4">
           <h2 className="text-2xl font-bold tracking-tight text-white">{t("exportModal.title")}</h2>
           <button
-            onClick={() => setShowExportModal(false)}
-            className="text-on-surface-variant hover:text-white transition-colors"
+            onClick={() => {
+              if (isExporting && activeJobId) {
+                void cancelProjectRender(activeJobId);
+              } else {
+                setShowExportModal(false);
+              }
+            }}
+            disabled={isExporting}
+            className="text-on-surface-variant hover:text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label={t("exportModal.cancel")}
           >
             <Icon name="close" />
           </button>
@@ -716,6 +875,15 @@ export function ExportModal() {
                       </div>
                     )}
                   </div>
+                  {timelineProject && !previewLoading && (
+                    <button
+                      onClick={() => setPreviewFrameOffset((prev) => prev + 5)}
+                      disabled={isExporting}
+                      className="text-xs font-medium text-primary hover:text-primary-dim transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {t("exportModal.previewRegenerate")}
+                    </button>
+                  )}
                 </div>
 
                 <div className="rounded-xl border border-outline-variant/10 bg-surface-container p-4 space-y-3">
@@ -741,6 +909,20 @@ export function ExportModal() {
                       {resizeModeDescription}
                     </p>
                   </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-on-surface-variant">
+                      {t("exportModal.processingEngine")}
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-on-surface">{hardwareLabel}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-on-surface-variant">
+                      {t("exportModal.encoderProfile")}
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-on-surface">
+                      {t(`exportModal.profile${exportSettings.profile.charAt(0).toUpperCase()}${exportSettings.profile.slice(1)}`)}
+                    </div>
+                  </div>
                 </div>
               </div>
             </section>
@@ -759,6 +941,47 @@ export function ExportModal() {
               className="w-full bg-surface-container-lowest border-0 rounded-md focus:ring-1 focus:ring-primary text-on-surface py-2.5 px-4 text-sm"
             />
           </div>
+
+          <section className="space-y-3 rounded-xl border border-outline-variant/10 bg-surface-container-low/40 p-4">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">
+                {t("exportModal.exportQuality")}
+              </div>
+              <p className="mt-2 text-xs leading-relaxed text-on-surface-variant">
+                {t("exportModal.exportQualityDescription")}
+              </p>
+            </div>
+            <div className="grid gap-2 md:grid-cols-3">
+              {PROFILE_OPTIONS.map((option) => {
+                const selected = exportSettings.profile === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => updateExportSettings({ profile: option.id })}
+                    className={`rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                      selected
+                        ? "border-primary/50 bg-surface-container-highest"
+                        : "border-outline-variant/10 bg-surface-container hover:border-primary-dim/30"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Icon
+                        name={option.icon}
+                        className={selected ? "text-primary" : "text-on-surface-variant"}
+                      />
+                      <span className="text-sm font-medium text-on-surface">
+                        {t(option.labelKey)}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-relaxed text-on-surface-variant">
+                      {t(option.descriptionKey)}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
 
           <div className="grid grid-cols-2 gap-x-8 gap-y-6">
             {exportSettings.preset !== "custom" ? (
@@ -856,7 +1079,9 @@ export function ExportModal() {
                 {videoMetadata ? formatFileSize(videoMetadata.file_size) : "—"}
               </div>
               <div className="text-xs text-on-surface-variant mt-2">{t("exportModal.clips")}</div>
-              <div className="text-sm font-medium text-on-surface">{clipSegments.length}</div>
+              <div className="text-sm font-medium text-on-surface">
+                {timelineProject ? projectClips.length : clipSegments.length}
+              </div>
               <div className="text-xs text-on-surface-variant mt-2">{t("exportModal.outputFrame")}</div>
               <div className="text-sm font-medium text-on-surface">
                 {activeTarget.width} × {activeTarget.height}
@@ -892,13 +1117,22 @@ export function ExportModal() {
 
         <div className="shrink-0 border-t border-outline-variant/10 bg-surface-container-high/30 px-6 py-4 sm:px-8 sm:py-5">
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-4">
-          <Button variant="ghost" onClick={() => setShowExportModal(false)}>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              if (isExporting && activeJobId) {
+                void cancelProjectRender(activeJobId);
+              } else {
+                setShowExportModal(false);
+              }
+            }}
+          >
             {t("exportModal.cancel")}
           </Button>
           <Button
             variant="primary"
             onClick={handleExport}
-            disabled={isExporting || clipSegments.length === 0 || ffmpegUnavailable}
+            disabled={isExporting || !hasExportableProject || ffmpegUnavailable}
             className="w-full px-10 sm:w-auto"
           >
             {isExporting ? `${t("exportModal.exporting")} ${exportProgress}%` : t("exportModal.exportNow")}
