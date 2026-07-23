@@ -37,6 +37,7 @@ apps:
       - network
       - opengl
       - removable-media
+      - hardware-observe
       - wayland
       - x11
 

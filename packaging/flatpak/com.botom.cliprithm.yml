@@ -57,6 +57,16 @@ modules:
         npm run build
         cargo build --manifest-path src-tauri/Cargo.toml --release
       - install -Dm755 src-tauri/target/release/cliprithm /app/bin/cliprithm
+      - |
+        target_triple="$(rustc --print host-tuple)"
+        ffmpeg_sidecar="src-tauri/binaries/ffmpeg-${target_triple}"
+        ffprobe_sidecar="src-tauri/binaries/ffprobe-${target_triple}"
+        test -x "$ffmpeg_sidecar"
+        test -x "$ffprobe_sidecar"
+        install -Dm755 "$ffmpeg_sidecar" /app/bin/ffmpeg
+        install -Dm755 "$ffprobe_sidecar" /app/bin/ffprobe
+        node scripts/verify_bundled_sidecars.mjs \
+          "$(rustc --print host-tuple)" /app/bin --require-bundle
       - install -Dm644 packaging/linux/com.botom.cliprithm.desktop /app/share/applications/com.botom.cliprithm.desktop
       - install -Dm644 packaging/linux/com.botom.cliprithm.metainfo.xml /app/share/metainfo/com.botom.cliprithm.metainfo.xml
       - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/com.botom.cliprithm.png
