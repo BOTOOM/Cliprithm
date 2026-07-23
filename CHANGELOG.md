@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.5.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.4.5...cliprithm-v1.5.0) (2026-07-23)
+
+
+### Features
+
+* **backend:** add local media server with token authorization ([6c32954](https://github.com/BOTOOM/Cliprithm/commit/6c32954d96aab419f84be84881a472755cb34f3a))
+* **backend:** add project render, preview, and still frame commands ([a401612](https://github.com/BOTOOM/Cliprithm/commit/a40161255ab8dd5fe4ab6b14adbf04172160c64a))
+* **backend:** register new Tauri commands for editor and media server ([909a7b7](https://github.com/BOTOOM/Cliprithm/commit/909a7b740385ba427a1dae756af30ced0de3e2df))
+* editor v2 with timeline, silence detection, and GPU encoding fix ([0b49f49](https://github.com/BOTOOM/Cliprithm/commit/0b49f49eebbc0f7baab558778093d762570a95c8))
+* **editor:** add info tooltips to all editor fields and buttons ([f11163f](https://github.com/BOTOOM/Cliprithm/commit/f11163f5af69f4e3fff40db2a24a52403a3d34c8))
+* **editor:** add silence detection settings controls to project editor ([486e54c](https://github.com/BOTOOM/Cliprithm/commit/486e54c460e668b165053961372bab4b0a7da012))
+* **editor:** show silence detection progress percentage in button ([45521a5](https://github.com/BOTOOM/Cliprithm/commit/45521a5b6b6ec58b493c6fdde8c5ed68a6645edb))
+* **frontend:** add FFmpeg help panel and auto-save improvements ([12887a8](https://github.com/BOTOOM/Cliprithm/commit/12887a87b04b90d496bcbac4e527049e7df81ea5))
+* **frontend:** add project editor with timeline support ([ee21485](https://github.com/BOTOOM/Cliprithm/commit/ee21485d61936a96b060088945b00719bb933445))
+* **frontend:** add project store and i18n translations for editor ([3416095](https://github.com/BOTOOM/Cliprithm/commit/34160957a7e305d02a35565b55c45cb2c4d495e2))
+* **frontend:** add still frame export preview with regenerate button ([90f16c1](https://github.com/BOTOOM/Cliprithm/commit/90f16c1aeefb2d51975b50d66842f79d9694c9ce))
+* **frontend:** update import view and navigation layout ([57648f8](https://github.com/BOTOOM/Cliprithm/commit/57648f844db6dc029f0bd49f224d78a0ad6987a5))
+* **release:** add FFmpeg sidecar verification in release workflow ([0e02de9](https://github.com/BOTOOM/Cliprithm/commit/0e02de9d4072a2c939bb4c5fbf1a0c60f91f0176))
+* **types:** add timeline, media asset, and processing types ([242d2a0](https://github.com/BOTOOM/Cliprithm/commit/242d2a0fac7447c4e02bd0b882ec9b82810df57f))
+
+
+### Bug Fixes
+
+* address Copilot review comments ([a264745](https://github.com/BOTOOM/Cliprithm/commit/a2647458462617f5cdd4f3702e36ce0d69af9e99))
+* **ci:** prepare FFmpeg sidecars before cargo check ([70f5f27](https://github.com/BOTOOM/Cliprithm/commit/70f5f270629f0d6ca3501d1ee24efbe03ba7483f))
+* **editor:** fix UI styling in project editor panel ([d96b40b](https://github.com/BOTOOM/Cliprithm/commit/d96b40b48191eebe82bf41aab17b4d18abbbd9f0))
+* **editor:** further reduce sidebar tooltip icon size ([c33e1ea](https://github.com/BOTOOM/Cliprithm/commit/c33e1eaab4500b869f6f842849d9a865f0a51614))
+* **editor:** improve tooltip behavior and fix sidebar overflow clipping ([99366fe](https://github.com/BOTOOM/Cliprithm/commit/99366fef63fa8405d4dc738814804baffc702323))
+* **editor:** replace native select with custom styled dropdown ([bc88413](https://github.com/BOTOOM/Cliprithm/commit/bc884137f3e17e8c247d03d0e7e614fc9e8e612f))
+* **editor:** replace window.confirm with Tauri dialog confirm ([77e56f7](https://github.com/BOTOOM/Cliprithm/commit/77e56f7cb8ea57db2dab0a72e8fba575b4b07166))
+* **editor:** shrink sidebar tooltip info icon size ([5754835](https://github.com/BOTOOM/Cliprithm/commit/57548359500cda828efe57374aec65070290819e))
+* **editor:** slightly increase sidebar tooltip icon size ([b6394ac](https://github.com/BOTOOM/Cliprithm/commit/b6394ac69fe6e66a2076344b296741ac9724e877))
+* **vaapi:** use 128x128 probe size for hardware encoder detection ([bcc5427](https://github.com/BOTOOM/Cliprithm/commit/bcc5427c1d2beb61f136278023474c146b897ac0))
+
 ## [1.4.5](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.4.4...cliprithm-v1.4.5) (2026-07-18)
 
 
