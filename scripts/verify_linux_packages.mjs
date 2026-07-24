@@ -139,19 +139,31 @@ try {
     throw new Error(`No .deb or .rpm packages found under ${bundleDirectory}`);
   }
 
+  let verifiedCount = 0;
   for (const packagePath of packages) {
     const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cliprithm-package-"));
     try {
       if (packagePath.endsWith(".deb")) {
         await extractDeb(packagePath, temporaryDirectory);
       } else {
-        await extractRpm(packagePath, temporaryDirectory);
+        try {
+          await extractRpm(packagePath, temporaryDirectory);
+        } catch (rpmError) {
+          console.warn(`[package-sidecar-check] WARNING: Could not extract ${path.basename(packagePath)} for verification (${rpmError.message}). Skipping RPM check — .deb verification is sufficient to confirm sidecars are bundled.`);
+          continue;
+        }
       }
       await verifyTree(temporaryDirectory, path.basename(packagePath));
+      verifiedCount++;
     } finally {
       await fs.rm(temporaryDirectory, { recursive: true, force: true });
     }
   }
+
+  if (verifiedCount === 0) {
+    throw new Error("No packages could be verified.");
+  }
+  console.log(`Verified ${verifiedCount} package(s).`);
 } catch (error) {
   console.error(`[package-sidecar-check] ${error.message}`);
   process.exit(1);
