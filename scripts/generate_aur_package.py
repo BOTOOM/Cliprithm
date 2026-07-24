@@ -277,6 +277,10 @@ def render_bin_pkgbuild(
             bsdtar -xf "$srcdir/data.tar.xz" -C "$pkgdir/"
           fi
           
+          # The upstream .deb bundles FFmpeg sidecars at paths owned by Arch's
+          # ffmpeg package. Use the user's system-managed binaries instead.
+          rm -f "$pkgdir/usr/bin/ffmpeg" "$pkgdir/usr/bin/ffprobe"
+
           # Clean up the extracted deb directories we don't need or want to overwrite
           rm -rf "$pkgdir/usr/share/applications/cliprithm.desktop"
           rm -rf "$pkgdir/usr/share/applications/Cliprithm.desktop"

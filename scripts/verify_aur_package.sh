@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/verify_aur_package.sh source [--build-package]
-  scripts/verify_aur_package.sh bin [--build-release] [--appimage /absolute/or/relative/path] [--build-package]
+  scripts/verify_aur_package.sh bin [--build-release] [--deb /absolute/or/relative/path] [--build-package]
 
 What it does:
   1. Generates PKGBUILD + .SRCINFO locally
@@ -14,8 +14,8 @@ What it does:
   4. Optionally builds the package with makepkg -f
 
 Notes:
-  - For 'bin', --build-release can be used to first generate the local AppImage that cliprithm-bin would consume.
-  - For 'bin', the default AppImage path matches the local Tauri release output.
+  - For 'bin', --build-release can be used to first generate the local .deb that cliprithm-bin consumes.
+  - For 'bin', the default .deb path matches the local Tauri release output.
 EOF
 }
 
@@ -34,8 +34,7 @@ fi
 
 build_release=0
 build_package=0
-appimage_path=""
-expected_bin_appimage_path=""
+deb_path=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -45,8 +44,8 @@ while [[ $# -gt 0 ]]; do
     --build-package)
       build_package=1
       ;;
-    --appimage)
-      appimage_path="$2"
+    --deb)
+      deb_path="$2"
       shift
       ;;
     --)
@@ -93,24 +92,22 @@ else
     bash scripts/verify_release_linux.sh
   fi
 
-  if [[ -z "$appimage_path" ]]; then
-    appimage_path="src-tauri/target/release/bundle/appimage/Cliprithm_${version}_amd64.AppImage"
+  if [[ -z "$deb_path" ]]; then
+    deb_path="src-tauri/target/release/bundle/deb/Cliprithm_${version}_amd64.deb"
   fi
 
-  if [[ ! -f "$appimage_path" ]]; then
-    echo "AppImage not found: $appimage_path" >&2
+  if [[ ! -f "$deb_path" ]]; then
+    echo "Debian package not found: $deb_path" >&2
     echo "Build it first with 'bash scripts/verify_release_linux.sh' or pass --build-release." >&2
     exit 1
   fi
-
-  expected_bin_appimage_path="$(realpath "$appimage_path")"
 
   python3 scripts/generate_aur_package.py \
     --package bin \
     --version "$version" \
     --tag "$tag" \
     --output-dir "$workspace" \
-    --artifact-url "file://$(realpath "$appimage_path")" \
+    --artifact-url "file://$(realpath "$deb_path")" \
     --icon-url "file://$(realpath src-tauri/icons/128x128.png)" \
     --license-url "file://$(realpath LICENSE)"
 fi
@@ -126,47 +123,19 @@ verify_built_bin_package() {
     exit 1
   fi
 
-  local tmp_dir
-  tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"; cleanup' EXIT
+  local package_contents
+  package_contents="$(bsdtar -tf "$package_file")"
 
-  bsdtar -xf "$package_file" -C "$tmp_dir" opt/cliprithm/cliprithm.AppImage
-
-  local packaged_appimage="$tmp_dir/opt/cliprithm/cliprithm.AppImage"
-  if [[ ! -f "$packaged_appimage" ]]; then
-    echo "Built package does not contain /opt/cliprithm/cliprithm.AppImage." >&2
+  if ! grep -Fxq "usr/bin/cliprithm" <<<"$package_contents"; then
+    echo "Built package does not contain /usr/bin/cliprithm." >&2
     exit 1
   fi
 
-  local expected_size packaged_size expected_sha packaged_sha
-  expected_size="$(stat -c '%s' "$expected_bin_appimage_path")"
-  packaged_size="$(stat -c '%s' "$packaged_appimage")"
-  expected_sha="$(sha256sum "$expected_bin_appimage_path" | awk '{print $1}')"
-  packaged_sha="$(sha256sum "$packaged_appimage" | awk '{print $1}')"
-
-  if [[ "$packaged_size" != "$expected_size" ]]; then
-    echo "Packaged AppImage size mismatch: expected $expected_size bytes, got $packaged_size bytes." >&2
-    echo "This usually means makepkg stripped the AppImage and removed its SquashFS payload." >&2
+  if grep -Fxq "usr/bin/ffmpeg" <<<"$package_contents" ||
+    grep -Fxq "usr/bin/ffprobe" <<<"$package_contents"; then
+    echo "Built package still contains system-owned FFmpeg paths." >&2
     exit 1
   fi
-
-  if [[ "$packaged_sha" != "$expected_sha" ]]; then
-    echo "Packaged AppImage sha256 mismatch: expected $expected_sha, got $packaged_sha." >&2
-    exit 1
-  fi
-
-  (
-    cd "$tmp_dir"
-    ./opt/cliprithm/cliprithm.AppImage --appimage-extract >/dev/null
-  )
-
-  if [[ ! -d "$tmp_dir/squashfs-root" ]]; then
-    echo "Packaged AppImage did not extract a squashfs-root directory." >&2
-    exit 1
-  fi
-
-  rm -rf "$tmp_dir"
-  trap cleanup EXIT
 }
 
 echo "==> Validating generated .SRCINFO"
@@ -182,7 +151,7 @@ if [[ "$build_package" -eq 1 ]]; then
   makepkg -f
 
   if [[ "$package_kind" == "bin" ]]; then
-    echo "==> Verifying packaged AppImage payload"
+    echo "==> Verifying packaged .deb contents"
     verify_built_bin_package
   fi
 fi

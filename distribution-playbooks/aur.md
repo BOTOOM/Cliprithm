@@ -15,9 +15,10 @@ Cliprithm should maintain two AUR packages:
 ## Artifact strategy
 
 - `cliprithm` consumes the tagged GitHub source tarball.
-- `cliprithm-bin` consumes the release AppImage.
-- The `cliprithm-bin` wrapper exports `APPIMAGE_EXTRACT_AND_RUN=1`, `WEBKIT_DISABLE_DMABUF_RENDERING=1`, `WEBKIT_DISABLE_COMPOSITING_MODE=1`, and `LIBGL_ALWAYS_SOFTWARE=1` to avoid common AppImage / EGL problems on Arch-family systems.
-- `cliprithm-bin` must set `options=('!strip')`. AppImages are ELF runtimes with an appended SquashFS payload, and default `makepkg` stripping can remove that payload and leave a broken runtime-only file.
+- `cliprithm-bin` consumes the release `.deb`.
+- The AUR `cliprithm-bin` package removes the `.deb` copies of `/usr/bin/ffmpeg` and `/usr/bin/ffprobe`, because those paths belong to Arch's `ffmpeg` package. The `ffmpeg` dependency remains and users provide the system-managed binaries.
+- The `cliprithm-bin` wrapper exports `WEBKIT_DISABLE_DMABUF_RENDERING=1`, `WEBKIT_DISABLE_COMPOSITING_MODE=1`, and `LIBGL_ALWAYS_SOFTWARE=1` to avoid common EGL problems on Arch-family systems.
+- `cliprithm-bin` keeps `options=('!strip')` as a conservative setting for the prebuilt ELF runtime.
 - `cliprithm` supports builders whose `rust`/`cargo` dependency is satisfied by `rustup` without a configured default toolchain by selecting a build-local stable toolchain.
 - Both wrappers now also export **distribution-channel env vars** so the app knows it was installed from AUR and switches to **store-managed** update guidance instead of self-updating from GitHub.
 - `cliprithm` / `cliprithm-bin` can now surface newer package versions through the **AUR RPC API**.
@@ -31,7 +32,7 @@ pnpm run verify:linux-release
 # Validate the source AUR package metadata and sources
 pnpm run verify:aur:source
 
-# Validate the binary AUR package against the locally built AppImage
+# Validate the binary AUR package against the locally built .deb
 pnpm run verify:aur:bin
 ```
 
@@ -42,7 +43,7 @@ bash scripts/verify_aur_package.sh source --build-package
 bash scripts/verify_aur_package.sh bin --build-package
 ```
 
-The binary package verification must inspect the built `.pkg.tar.*` and confirm `/opt/cliprithm/cliprithm.AppImage` still matches the release AppImage and can be extracted. A package around 1 MiB is invalid for `cliprithm-bin`; the AppImage payload should remain the full release artifact.
+The binary package verification must inspect the built `.pkg.tar.*`, confirm the launcher is present, and confirm that `/usr/bin/ffmpeg` and `/usr/bin/ffprobe` are absent so installation does not conflict with Arch's `ffmpeg` package.
 
 ## Publishing notes
 
