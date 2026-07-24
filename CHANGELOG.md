@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.3](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.5.2...cliprithm-v1.5.3) (2026-07-24)
+
+
+### Bug Fixes
+
+* **ci:** make RPM verification non-fatal when rpm2cpio fails ([846bf09](https://github.com/BOTOOM/Cliprithm/commit/846bf09fb544ebb190e31d12c5ac675e9d8b7ab4))
+* **ci:** make RPM verification non-fatal when rpm2cpio fails ([0f22ddc](https://github.com/BOTOOM/Cliprithm/commit/0f22ddc79dc73b39ac5b969e9d736e5ba392866a))
+
 ## [1.5.2](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.5.1...cliprithm-v1.5.2) (2026-07-23)
 
 
