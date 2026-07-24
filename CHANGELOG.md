@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.4](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.5.3...cliprithm-v1.5.4) (2026-07-24)
+
+
+### Bug Fixes
+
+* **aur:** avoid ffmpeg file conflicts in bin package ([2559fb4](https://github.com/BOTOOM/Cliprithm/commit/2559fb4e62864b8ed238be998422c223a3ea7396))
+* **aur:** avoid ffmpeg file conflicts in bin package ([e0e0177](https://github.com/BOTOOM/Cliprithm/commit/e0e0177023e381f9d4170092a9071373a53fc3e0))
+
 ## [1.5.3](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.5.2...cliprithm-v1.5.3) (2026-07-24)
 
 
