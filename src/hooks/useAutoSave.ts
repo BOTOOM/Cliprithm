@@ -50,6 +50,11 @@ export function useAutoSave() {
       const id = state.projectId;
       if (!id) return;
 
+      // The "import" view is a transient library-browsing state, not a per-project
+      // view. Persisting it would make the project reopen to the blank import
+      // screen instead of the editor.
+      if (state.currentView === "import") return;
+
       const changed =
         state.clipSegments !== prevState.clipSegments ||
         state.currentView !== prevState.currentView ||
