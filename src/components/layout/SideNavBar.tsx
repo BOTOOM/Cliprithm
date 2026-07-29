@@ -10,15 +10,27 @@ interface SideNavItem {
   label: string;
 }
 
+// Tabs that show the project library, which only renders in the "import" view.
+const LIBRARY_TABS: SideTab[] = ["media", "files"];
+
 export function SideNavBar() {
   const { language, setLanguage, t } = useI18n();
-  const { activeSideTab, setActiveSideTab } = useProjectStore();
+  const { activeSideTab, setActiveSideTab, setView } = useProjectStore();
   const navItems: SideNavItem[] = [
     { id: "media", icon: "video_library", label: t("app.mediaLibrary") },
     { id: "files", icon: "folder_open", label: t("app.projectFiles") },
     { id: "settings", icon: "settings", label: t("app.settings") },
     { id: "diagnostics", icon: "monitor_heart", label: t("app.diagnostics") },
   ];
+
+  const handleSelectTab = (tab: SideTab) => {
+    setActiveSideTab(tab);
+    // The project list lives in the "import" view, so switch back to it when a
+    // library tab is selected. Otherwise it stays unreachable from the editor.
+    if (LIBRARY_TABS.includes(tab)) {
+      setView("import");
+    }
+  };
 
   return (
     <aside className="w-20 flex flex-col items-center py-6 bg-surface-container z-40">
@@ -28,7 +40,7 @@ export function SideNavBar() {
           return (
             <button
               key={item.id}
-              onClick={() => setActiveSideTab(item.id)}
+              onClick={() => handleSelectTab(item.id)}
               className={`w-full flex flex-col items-center gap-1 cursor-pointer py-3 transition-all ease-in-out duration-300 ${
                 isActive
                   ? "border-l-2 border-primary text-primary bg-surface-container-high"
