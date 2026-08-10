@@ -3,6 +3,7 @@ mod commands;
 use commands::app;
 use commands::ffmpeg;
 use commands::library;
+use commands::mcp;
 use commands::media_server;
 use commands::media_tools;
 use tauri_plugin_log::{Target, TargetKind};
@@ -89,13 +90,21 @@ pub fn run() {
                   ALTER TABLE projects ADD COLUMN project_schema_version INTEGER DEFAULT 0;",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "add_edited_preview_path",
+            sql: "ALTER TABLE projects ADD COLUMN edited_preview_path TEXT DEFAULT NULL;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Start the local HTTP media server for video streaming
     let media_server_state = media_server::start();
+    let mcp_state = mcp::McpState::default();
 
     tauri::Builder::default()
         .manage(media_server_state)
+        .manage(mcp_state)
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
@@ -142,6 +151,12 @@ pub fn run() {
             media_server::get_media_server_port,
             media_server::get_media_server_token,
             media_server::authorize_media_path,
+            mcp::get_mcp_server_status,
+            mcp::register_mcp_catalog,
+            mcp::replace_mcp_output,
+            mcp::resolve_mcp_request,
+            mcp::start_mcp_server,
+            mcp::stop_mcp_server,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

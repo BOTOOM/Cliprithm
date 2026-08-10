@@ -3,6 +3,7 @@ import { useI18n } from "../../lib/i18n";
 import { Icon } from "../ui/Icon";
 import { Toggle } from "../ui/Toggle";
 import type { CaptionProvider } from "../../types";
+import { useMcpStore } from "../../stores/mcpStore";
 
 export function SettingsPanel() {
   const { t } = useI18n();
@@ -25,12 +26,75 @@ export function SettingsPanel() {
 
   const providerInfo = PROVIDER_INFO[provider];
   const isLocal = provider === "ollama" || provider === "lmstudio";
+  const {
+    enabled: mcpEnabled,
+    port: mcpPort,
+    status: mcpStatus,
+    url: mcpUrl,
+    token: mcpToken,
+    error: mcpError,
+    setEnabled: setMcpEnabled,
+    setPort: setMcpPort,
+  } = useMcpStore();
 
   return (
     <div className="flex-1 flex flex-col h-full p-6 overflow-y-auto custom-scrollbar">
       <h2 className="text-sm font-bold tracking-widest text-on-surface uppercase mb-6">
         {t("settingsPanel.settings")}
       </h2>
+
+      {/* MCP Section */}
+      <section className="space-y-3 mb-8 pb-6 border-b border-outline-variant/10">
+        <div>
+          <h3 className="text-xs font-bold text-on-surface uppercase tracking-wider">
+            {t("settingsPanel.mcpServer")}
+          </h3>
+          <p className="text-[10px] text-on-surface-variant mt-1">
+            {t("settingsPanel.mcpDescription")}
+          </p>
+        </div>
+        <Toggle
+          label={t("settingsPanel.mcpEnabled")}
+          checked={mcpEnabled}
+          onChange={(value) => void setMcpEnabled(value)}
+        />
+        <div className="space-y-2">
+          <label className="text-[10px] font-semibold uppercase tracking-widest text-on-surface-variant">
+            {t("settingsPanel.mcpPort")}
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={65535}
+            value={mcpPort}
+            onChange={(event) => void setMcpPort(Number(event.target.value))}
+            className="w-full bg-surface-container-lowest border-0 rounded-md focus:ring-1 focus:ring-primary text-on-surface py-2 px-3 text-xs"
+            disabled={!mcpEnabled}
+          />
+        </div>
+        <p className="text-[10px] text-on-surface-variant break-words">
+          {mcpStatus === "running" && mcpUrl
+            ? t("settingsPanel.mcpRunning", { url: mcpUrl })
+            : mcpStatus === "starting"
+              ? t("settingsPanel.mcpStarting")
+              : mcpStatus === "error" && mcpError
+                ? t("settingsPanel.mcpError", { error: mcpError })
+                : t("settingsPanel.mcpStopped")}
+        </p>
+        {mcpStatus === "running" && mcpToken ? (
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold uppercase tracking-widest text-on-surface-variant">
+              {t("settingsPanel.mcpToken")}
+            </label>
+            <code className="block select-all break-all rounded-md bg-surface-container-lowest px-2 py-1.5 text-[10px] text-on-surface">
+              {mcpToken}
+            </code>
+          </div>
+        ) : null}
+        <p className="text-[9px] text-on-surface-variant/60">
+          {t("settingsPanel.mcpSecurity")}
+        </p>
+      </section>
 
       {/* Captions Section */}
       <section className="space-y-6">

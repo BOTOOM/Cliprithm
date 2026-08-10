@@ -19,6 +19,7 @@ import {
   getMediaServerToken,
 } from "../../services/tauriCommands";
 import { useAutoSave } from "../../hooks/useAutoSave";
+import { useMcpStore } from "../../stores/mcpStore";
 import type { ProcessingProgress } from "../../types";
 
 export function MainLayout() {
@@ -35,6 +36,16 @@ export function MainLayout() {
     useProjectStore();
 
   useAutoSave();
+  const initializeMcp = useMcpStore((state) => state.initialize);
+  const shutdownMcp = useMcpStore((state) => state.shutdown);
+
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
+    void initializeMcp();
+    return () => {
+      void shutdownMcp();
+    };
+  }, [initializeMcp, shutdownMcp]);
 
   useEffect(() => {
     if (!isDesktopRuntime()) return;

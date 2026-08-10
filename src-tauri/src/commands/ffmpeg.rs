@@ -707,11 +707,8 @@ pub async fn export_video(
         .map(|profile| profile != "quality")
         .unwrap_or(false);
     let mut encoder = select_video_encoder(window.app_handle(), use_hardware).await?;
-    let (filter, video_output_label) = prepare_video_filter(
-        &base_filter,
-        &base_video_output_label,
-        &encoder.name,
-    );
+    let (filter, video_output_label) =
+        prepare_video_filter(&base_filter, &base_video_output_label, &encoder.name);
     let mut args = vec!["-y".into()];
     if let Some(device) = &encoder.device {
         args.extend(["-vaapi_device".into(), device.clone()]);
@@ -780,16 +777,9 @@ pub async fn export_video(
             );
             encoder = select_video_encoder(window.app_handle(), false).await?;
             replace_video_encoder_args(&mut args, &encoder, options.profile.as_deref());
-            let (fallback_filter, fallback_video_output_label) = prepare_video_filter(
-                &base_filter,
-                &base_video_output_label,
-                &encoder.name,
-            );
-            replace_video_filter_args(
-                &mut args,
-                &fallback_filter,
-                &fallback_video_output_label,
-            );
+            let (fallback_filter, fallback_video_output_label) =
+                prepare_video_filter(&base_filter, &base_video_output_label, &encoder.name);
+            replace_video_filter_args(&mut args, &fallback_filter, &fallback_video_output_label);
             run_ffmpeg_with_progress(
                 &window,
                 "export-progress",
@@ -1084,7 +1074,9 @@ pub async fn generate_project_preview_frame(
         return Err("No clips available for project preview frame.".to_string());
     }
     if target_width == 0 || target_height == 0 || target_width > 4096 || target_height > 4096 {
-        return Err("Project preview frame dimensions must be between 1 and 4096 pixels.".to_string());
+        return Err(
+            "Project preview frame dimensions must be between 1 and 4096 pixels.".to_string(),
+        );
     }
     if let Some(parent) = std::path::Path::new(&output_path).parent() {
         std::fs::create_dir_all(parent)
@@ -1133,7 +1125,10 @@ pub async fn generate_project_preview_frame(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Project preview frame generation failed: {}", stderr));
+        return Err(format!(
+            "Project preview frame generation failed: {}",
+            stderr
+        ));
     }
 
     Ok(output_path)
@@ -1474,10 +1469,19 @@ fn validate_render_output_path(output_path: &str, extensions: &[&str]) -> Result
             return Err("Render output must be a regular file path.".to_string());
         }
     }
-    if let Some(parent) = path.parent() {
-        if parent.exists() && !parent.is_dir() {
-            return Err("Render output parent is not a directory.".to_string());
+    let mut ancestor = path.parent();
+    while let Some(directory) = ancestor {
+        if let Ok(metadata) = std::fs::symlink_metadata(directory) {
+            if metadata.file_type().is_symlink() {
+                return Err(
+                    "Render output cannot pass through a symbolic link directory.".to_string(),
+                );
+            }
+            if !metadata.is_dir() {
+                return Err("Render output parent is not a directory.".to_string());
+            }
         }
+        ancestor = directory.parent();
     }
     Ok(())
 }
@@ -1970,7 +1974,9 @@ fn prepare_video_filter(
 }
 
 fn replace_video_filter_args(args: &mut [String], filter: &str, video_label: &str) {
-    let Some(filter_index) = args.iter().position(|argument| argument == "-filter_complex")
+    let Some(filter_index) = args
+        .iter()
+        .position(|argument| argument == "-filter_complex")
     else {
         return;
     };
@@ -2165,10 +2171,10 @@ fn parse_ffmpeg_progress_seconds(regex: &Regex, line: &str) -> Option<f64> {
 mod tests {
     use super::{
         begin_job, build_atempo_chain, build_concat_filter, build_project_preview_filter,
-        cached_preview_is_current, estimated_analysis_output_duration, finish_job, paths_match,
-        prepare_video_filter,
-        preview_dimensions, validate_export_segments, validate_render_output_path,
-        write_preview_manifest, ProjectPreviewClip,
+        cached_preview_is_current, cleanup_partial_output, estimated_analysis_output_duration,
+        finish_job, paths_match, prepare_video_filter, preview_dimensions,
+        validate_export_segments, validate_render_output_path, write_preview_manifest,
+        ProjectPreviewClip,
     };
     use std::fs::File;
     use std::io::Write;
@@ -2212,6 +2218,26 @@ mod tests {
             output.to_str().unwrap(),
             &[source_clip]
         ));
+    }
+
+    #[test]
+    fn cleanup_partial_output_removes_preview_manifest() {
+        let directory = tempdir().unwrap();
+        let output = directory.path().join("preview.mp4");
+        let manifest = directory.path().join("preview.mp4.manifest.json");
+        File::create(&output)
+            .unwrap()
+            .write_all(b"partial")
+            .unwrap();
+        File::create(&manifest)
+            .unwrap()
+            .write_all(b"manifest")
+            .unwrap();
+
+        cleanup_partial_output(output.to_str().unwrap());
+
+        assert!(!output.exists());
+        assert!(!manifest.exists());
     }
 
     #[test]
