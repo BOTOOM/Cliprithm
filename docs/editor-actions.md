@@ -1,9 +1,9 @@
 # Cliprithm Editor Action Catalog
 
-**Status:** Draft for implementation
+**Status:** Implemented synchronous editor action contract
 **Action IDs:** English and stable
 
-This catalog is the contract between UI controls, keyboard shortcuts, project mutations, background jobs, and the future MCP adapter. Implementations must dispatch these actions through a single registry instead of mutating timeline state directly from components.
+This catalog defines the synchronous editor-state actions shared by UI controls, keyboard shortcuts, timeline mutations, and MCP composition tools. Project lifecycle, media inspection, asynchronous analysis, preview, export, and job operations are MCP service operations because they require database or background-job I/O; they are defined in `docs/mcp-editor-spec.md` and `src/services/mcpBridge.ts`. Timeline state mutations must dispatch through the single editor action registry instead of mutating timeline state directly from components or the MCP bridge.
 
 ## Action definition
 
@@ -14,115 +14,99 @@ interface EditorActionDefinition<Input> {
   labelKey: string;
   inputSchema: string;
   preconditions: string[];
-  mutation: "project" | "selection" | "job" | "none";
+  mutation: "project" | "selection" | "history";
   undoable: boolean;
-  progress: "instant" | "background" | "blocking";
-  mcp: "planned" | "internal" | "blocked";
-  execute(input: Input): EditorActionResult;
+  progress: "instant" | "background";
+  mcp: "planned" | "internal";
 }
 ```
 
-The TypeScript registry is authoritative for runtime behavior. This document is the human-readable catalog and must stay synchronized with it.
+The TypeScript registry is authoritative for runtime behavior. This document lists only actions that are entries in `EDITOR_ACTIONS`; MCP service operations are listed separately and must not be added to that registry unless they become synchronous state actions.
 
 ## Categories
 
-- `project`: create, open, save, and project metadata;
-- `media`: add and inspect source assets;
-- `selection`: choose clips and playhead ranges;
+- `media`: add or remove source assets;
+- `selection`: choose clips, playhead positions, and timeline ranges;
 - `edit`: mutate clips and track order;
-- `timing`: change trim and speed;
-- `analysis`: detect and apply silence candidates;
-- `preview`: request and cancel derived previews;
-- `history`: undo and redo;
-- `export`: render the project;
-- `internal`: jobs that are not exposed to users or MCP.
+- `timing`: change clip speed;
+- `analysis`: accept validated analysis candidates;
+- `annotation`: create, update, and delete semantic ranges;
+- `history`: undo and redo timeline mutations.
 
-## Project actions
+## Registered synchronous actions
 
-| ID | Input | Preconditions | Undo | MCP |
-|---|---|---|---|---|
-| `project.createFromMedia` | source path and metadata | valid video source | no | planned |
-| `project.open` | project ID | project exists | no | planned |
-| `project.save` | none | project loaded | no | planned |
-| `project.rename` | name | project loaded, non-empty name | yes | planned |
-
-## Media actions
+### Media
 
 | ID | Input | Preconditions | Undo | MCP |
 |---|---|---|---|---|
-| `asset.addVideo` | path and metadata | project loaded, supported video | yes | planned |
-| `asset.remove` | asset ID | asset has no required clip references | yes | planned |
-| `asset.inspect` | asset ID | asset exists | no | planned |
+| `asset.addVideo` | video asset input | project loaded, supported video asset | yes | planned |
+| `asset.remove` | asset ID | asset exists and has no clip or semantic-range references | yes | planned |
 
-## Selection actions
+### Selection
 
 | ID | Input | Preconditions | Undo | MCP |
 |---|---|---|---|---|
 | `selection.selectClip` | clip ID or null | clip exists when non-null | no | planned |
-| `selection.setPlayhead` | timeline seconds | project loaded | no | planned |
-| `selection.selectRange` | start/end | valid timeline range | no | planned |
+| `selection.setPlayhead` | timeline seconds | finite time inside the timeline | no | planned |
+| `selection.selectRange` | start/end seconds | finite ordered range inside the timeline | no | planned |
 
-## Edit actions
-
-| ID | Input | Preconditions | Undo | MCP |
-|---|---|---|---|---|
-| `clip.splitAtPlayhead` | clip ID, timeline time | playhead is inside clip | yes | planned |
-| `clip.trim` | clip ID, new source start/end | valid source interval | yes | planned |
-| `clip.move` | clip ID, destination index | primary track loaded | yes | planned |
-| `clip.duplicate` | clip ID | clip exists | yes | planned |
-| `clip.delete` | clip ID | clip exists | yes | planned |
-| `clip.restore` | clip snapshot | valid snapshot | yes | internal |
-
-## Timing actions
+### Edit
 
 | ID | Input | Preconditions | Undo | MCP |
 |---|---|---|---|---|
-| `clip.setSpeed` | clip ID, speed `0.25..32` | clip exists and speed valid | yes | planned |
+| `clip.splitAtPlayhead` | clip ID, timeline time | clip exists and time is inside the clip | yes | planned |
+| `clip.trim` | clip ID, source start/end | valid source interval | yes | planned |
+| `clip.move` | clip ID, destination index | clip and primary track exist | yes | planned |
+| `clip.duplicate` | clip ID | clip exists and project limits allow another clip | yes | planned |
+| `clip.delete` | clip ID | clip exists and at least one primary clip remains | yes | planned |
+
+### Timing
+
+| ID | Input | Preconditions | Undo | MCP |
+|---|---|---|---|---|
+| `clip.setSpeed` | clip ID, speed `0.25..32` | clip exists and speed is within bounds | yes | planned |
 | `clip.resetSpeed` | clip ID | clip exists | yes | planned |
 
-## Analysis actions
+### Analysis acceptance
 
 | ID | Input | Preconditions | Undo | MCP |
 |---|---|---|---|---|
-| `analysis.prepareSilence` | scope and settings | project loaded, eligible audio exists | no | planned |
-| `analysis.detectSilence` | candidate request | no conflicting analysis job | no | planned |
-| `analysis.updateSettings` | threshold/min duration | candidate open | no | planned |
-| `analysis.acceptCandidate` | candidate ID | candidate matches current revision | yes | planned |
-| `analysis.discardCandidate` | candidate ID | candidate exists | no | planned |
+| `analysis.acceptCandidate` | revision and clip silence candidates | candidate matches the current revision and every segment is bounded, ordered, and leaves content | yes | planned |
 
-Accepted candidates must create normal edit actions so they appear in history and can be undone.
+Accepted candidates create normal timeline history entries and can be undone.
 
-## Preview actions
+### Annotation
 
 | ID | Input | Preconditions | Undo | MCP |
 |---|---|---|---|---|
-| `preview.request` | revision and quality | project loaded | no | planned |
-| `preview.requestWindow` | revision, center, duration | project loaded | no | planned |
-| `preview.cancel` | job ID | job exists | no | internal |
-| `preview.useSource` | none | source preview available | no | planned |
-| `preview.useEdited` | none | current preview available or pending | no | planned |
+| `semanticRange.add` | semantic range draft | valid source anchors, author, tags, title, and description | yes | planned |
+| `semanticRange.update` | range ID and partial updates | range exists and updated fields are valid | yes | planned |
+| `semanticRange.delete` | range ID | range exists | yes | planned |
 
-Preview actions never change user project data.
-
-## History actions
+### History
 
 | ID | Input | Preconditions | Undo | MCP |
 |---|---|---|---|---|
-| `history.undo` | none | undo stack non-empty | no | planned |
-| `history.redo` | none | redo stack non-empty | no | planned |
-| `history.clear` | none | project loaded | no | internal |
+| `history.undo` | none | timeline undo stack is non-empty | no | planned |
+| `history.redo` | none | timeline redo stack is non-empty | no | planned |
 
-## Export actions
+Undo and redo restore composition state while assigning a new monotonic project revision so optimistic concurrency checks cannot accept mutations from a divergent history branch.
 
-| ID | Input | Preconditions | Undo | MCP |
-|---|---|---|---|---|
-| `export.validate` | export settings | project has exportable video | no | planned |
-| `export.renderProject` | output path/settings | validation passes, engine available | no | planned |
-| `export.cancel` | job ID | export job exists | no | planned |
+## MCP service operations
 
-## Internal actions and jobs
+The following operations are implemented in the MCP service layer and are intentionally not entries in `EDITOR_ACTIONS`:
 
-These are implementation details and are not displayed as projects or exposed through MCP:
+- project lifecycle: `project.createFromMedia`, `project.open`, `project.save`, `project.rename`, `project.delete`;
+- media inspection: `asset.inspect`;
+- analysis: `analysis.getSettings`, `analysis.updateSettings`, `analysis.detectSilence`, `analysis.getCandidate`, `analysis.discardCandidate`;
+- preview and jobs: `preview.request`, `preview.requestWindow`, `preview.useSource`, `preview.useEdited`, `preview.cancel`, `job.get`, `job.cancel`;
+- export: `export.validate`, `export.renderProject`, `export.cancel`.
+
+Their public MCP names, schemas, result envelopes, and asynchronous behavior are defined in `docs/mcp-editor-spec.md` and `src/services/mcpBridge.ts`.
+
+## Internal jobs
+
+Internal jobs are implementation details and are not displayed as project actions or exposed through MCP:
 
 - `internal.assetProxy.create`;
 - `internal.sequencePreview.create`;
@@ -135,10 +119,10 @@ Every internal job must include a source project revision and cache key. Results
 
 ## MCP readiness rules
 
-When an MCP server is implemented:
+When an MCP service operation dispatches a synchronous composition mutation:
 
 1. expose only actions marked `planned`;
-2. validate inputs through the same schemas used by the UI;
+2. validate composition inputs through the same action validation used by the UI;
 3. return structured results with action ID, revision, affected IDs, and user-visible warnings;
 4. never expose raw FFmpeg command strings as the public contract;
 5. keep internal jobs opaque and report their status through typed action results;
