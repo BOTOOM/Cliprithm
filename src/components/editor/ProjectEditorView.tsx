@@ -10,7 +10,7 @@ import {
   getTimelineDuration,
   timelineTimeToSourceTime,
 } from "../../lib/editor/timeline";
-import { stableHash } from "../../lib/editor/preview";
+import { shouldShowEditedPreview, stableHash } from "../../lib/editor/preview";
 import { useProjectStore } from "../../stores/projectStore";
 import {
   authorizeMediaPath,
@@ -25,6 +25,7 @@ import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 import { Toggle } from "../ui/Toggle";
 import { Tooltip } from "../ui/Tooltip";
+import { SemanticRangeInspector } from "./SemanticRangeInspector";
 
 const MIN_ZOOM = 4;
 const MAX_ZOOM = 40;
@@ -55,6 +56,8 @@ export function ProjectEditorView() {
     projectId,
     editedPreviewFilePath,
     setEditedPreviewFilePath,
+    setEditedPreviewPending,
+    previewMode,
     selectedClipId,
     dispatchEditorAction,
     detectionSettings,
@@ -88,7 +91,8 @@ export function ProjectEditorView() {
   const selectedAsset = selectedClip && timelineProject ? getAsset(timelineProject, selectedClip.assetId) : null;
   const mediaPort = useProjectStore((state) => state.mediaServerPort);
   const mediaToken = useProjectStore((state) => state.mediaServerToken);
-  const mediaPath = editedPreviewFilePath || selectedAsset?.path || null;
+  const showingEditedPreview = shouldShowEditedPreview(previewMode, editedPreviewFilePath);
+  const mediaPath = showingEditedPreview ? editedPreviewFilePath : selectedAsset?.path || null;
 
   useEffect(() => {
     let cancelled = false;
@@ -111,7 +115,7 @@ export function ProjectEditorView() {
         ? mediaServerUrl(mediaPort, mediaToken, selectedAsset.path)
         : ""
     : "";
-  const videoSrc = editedPreviewFilePath
+  const videoSrc = showingEditedPreview && editedPreviewFilePath
     ? !isDesktopRuntime() || editedPreviewFilePath.startsWith("blob:")
       ? resolveMediaSrc(editedPreviewFilePath)
       : authorizedMediaPath === editedPreviewFilePath && mediaPort && mediaToken
@@ -138,14 +142,14 @@ export function ProjectEditorView() {
     const video = videoRef.current;
     if (!video || !selectedClip) return;
 
-    video.playbackRate = editedPreviewFilePath ? 1 : selectedClip.speed;
-    if (editedPreviewFilePath) return;
+    video.playbackRate = showingEditedPreview ? 1 : selectedClip.speed;
+    if (showingEditedPreview) return;
 
     const source = selectedClip.sourceStart;
     if (Math.abs(video.currentTime - source) > 0.15) {
       video.currentTime = source;
     }
-  }, [editedPreviewFilePath, selectedClip]);
+  }, [selectedClip, showingEditedPreview]);
 
   useEffect(() => {
     if (!timelineProject || !isDesktopRuntime() || !projectId) return;
@@ -158,6 +162,7 @@ export function ProjectEditorView() {
     const jobId = `project-preview-${projectId}-${timelineProject.revision}-${requestId}`;
     previewRequestRef.current = requestId;
     setEditedPreviewFilePath(null);
+    setEditedPreviewPending(true);
     const timer = window.setTimeout(() => {
       previewRunningRef.current = true;
       previewJobIdRef.current = jobId;
@@ -211,6 +216,9 @@ export function ProjectEditorView() {
             previewJobIdRef.current = null;
             previewRunningRef.current = false;
           }
+          if (previewRequestRef.current === requestId) {
+            setEditedPreviewPending(false);
+          }
           if (previewQueuedRef.current) {
             previewQueuedRef.current = false;
             setPreviewTick((current) => current + 1);
@@ -223,8 +231,11 @@ export function ProjectEditorView() {
       if (previewJobIdRef.current === jobId) {
         void cancelProjectRender(jobId).catch(() => undefined);
       }
+      if (previewRequestRef.current === requestId) {
+        setEditedPreviewPending(false);
+      }
     };
-  }, [positionedClips, previewTick, projectId, setEditedPreviewFilePath, t, timelineProject]);
+  }, [positionedClips, previewTick, projectId, setEditedPreviewFilePath, setEditedPreviewPending, t, timelineProject]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -261,7 +272,7 @@ export function ProjectEditorView() {
   });
 
   function advanceSourceClip() {
-    if (editedPreviewFilePath || !selectedClip) return false;
+    if (showingEditedPreview || !selectedClip) return false;
     if (sourceAdvanceRef.current) return true;
     const selectedIndex = positionedClips.findIndex((clip) => clip.id === selectedClip.id);
     const nextClip = positionedClips[selectedIndex + 1];
@@ -302,7 +313,7 @@ export function ProjectEditorView() {
     dispatchEditorAction({ type: "selection.setPlayhead", timelineTime: time });
     dispatchEditorAction({ type: "selection.selectClip", clipId: mapped.clip.id });
     if (videoRef.current) {
-      videoRef.current.currentTime = editedPreviewFilePath ? time : mapped.sourceTime;
+      videoRef.current.currentTime = showingEditedPreview ? time : mapped.sourceTime;
     }
   }
 
@@ -465,8 +476,8 @@ export function ProjectEditorView() {
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
                   onLoadedMetadata={(event) => {
-                    event.currentTarget.playbackRate = editedPreviewFilePath ? 1 : selectedClip.speed;
-                    event.currentTarget.currentTime = editedPreviewFilePath
+                    event.currentTarget.playbackRate = showingEditedPreview ? 1 : selectedClip.speed;
+                    event.currentTarget.currentTime = showingEditedPreview
                       ? playhead
                       : selectedClip.sourceStart;
                     if (isPlaying && event.currentTarget.paused) {
@@ -474,7 +485,7 @@ export function ProjectEditorView() {
                     }
                   }}
                   onTimeUpdate={(event) => {
-                    if (editedPreviewFilePath) {
+                    if (showingEditedPreview) {
                       const nextTime = event.currentTarget.currentTime;
                       dispatchEditorAction({ type: "selection.setPlayhead", timelineTime: nextTime });
                       const nextClip = positionedClips.find(
@@ -756,6 +767,7 @@ export function ProjectEditorView() {
               </div>
             ) : null}
           </div>
+          <SemanticRangeInspector project={timelineProject} playhead={playhead} />
           <div className="mt-auto rounded-xl bg-surface-container p-3 text-[11px] leading-relaxed text-on-surface-variant">
             <div className="mb-1 flex items-center gap-2 text-on-surface"><Icon name="auto_awesome" className="text-sm text-secondary" />{t("editor.previewStatus")}</div>
             {t("editor.previewStatusDescription")}

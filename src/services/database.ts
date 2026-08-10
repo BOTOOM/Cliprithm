@@ -1,5 +1,7 @@
 import Database from "@tauri-apps/plugin-sql";
+import { appDataDir, resolve } from "@tauri-apps/api/path";
 import { remove, exists } from "@tauri-apps/plugin-fs";
+import { isOwnedEditedPreviewPath } from "../lib/editor/preview";
 import { log } from "../lib/logger";
 import { isDesktopRuntime } from "../lib/runtime";
 
@@ -15,6 +17,7 @@ export interface ProjectRecord {
   codec: string;
   file_size: number;
   processed_path: string | null;
+  edited_preview_path: string | null;
   status: string;
   noise_threshold: number;
   min_duration: number;
@@ -37,6 +40,7 @@ let dbPromise: Promise<Database> | null = null;
 let memoryNextId = 1;
 const memoryProjects: ProjectRecord[] = [];
 const memorySettings = new Map<string, string>();
+let projectUpdateQueue: Promise<void> = Promise.resolve();
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -91,6 +95,7 @@ export async function createProject(
     | "created_at"
     | "updated_at"
     | "processed_path"
+    | "edited_preview_path"
     | "status"
     | "silence_segments"
     | "clip_segments"
@@ -110,6 +115,7 @@ export async function createProject(
       ...data,
       id,
       processed_path: null,
+      edited_preview_path: null,
       status: "imported",
       silence_segments: "[]",
       clip_segments: "[]",
@@ -149,12 +155,13 @@ export async function createProject(
   return result.lastInsertId ?? 0;
 }
 
-export async function updateProject(
+export function updateProject(
   id: number,
   data: Partial<
     Pick<
       ProjectRecord,
       | "processed_path"
+      | "edited_preview_path"
       | "status"
       | "noise_threshold"
       | "min_duration"
@@ -172,32 +179,51 @@ export async function updateProject(
     >
   >
 ): Promise<void> {
-  if (!isDesktopRuntime()) {
-    const project = memoryProjects.find((item) => item.id === id);
-    if (project) {
-      Object.assign(project, data, { updated_at: nowIso() });
+  const update = async () => {
+    if (!isDesktopRuntime()) {
+      const project = memoryProjects.find((item) => item.id === id);
+      if (project) {
+        Object.assign(project, data, { updated_at: nowIso() });
+      }
+      return;
     }
-    return;
+
+    const database = await getDb();
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    for (const [key, value] of Object.entries(data)) {
+      fields.push(`${key} = $${idx}`);
+      values.push(value);
+      idx += 1;
+    }
+
+    fields.push("updated_at = datetime('now')");
+    values.push(id);
+
+    await database.execute(
+      `UPDATE projects SET ${fields.join(", ")} WHERE id = $${idx}`,
+      values
+    );
+  };
+
+  const queued = projectUpdateQueue.then(update, update);
+  projectUpdateQueue = queued.catch(() => undefined);
+  return queued;
+}
+
+async function ownedEditedPreviewArtifacts(path: string): Promise<string[]> {
+  try {
+    const appDataDirectory = await appDataDir();
+    const resolvedAppDataDirectory = await resolve(appDataDirectory);
+    const resolvedPath = await resolve(path);
+    if (!isOwnedEditedPreviewPath(resolvedAppDataDirectory, resolvedPath)) return [];
+    return [resolvedPath, `${resolvedPath}.manifest.json`];
+  } catch (error) {
+    log.warn("[db]", "Could not validate the edited preview ownership:", error);
+    return [];
   }
-
-  const database = await getDb();
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  let idx = 1;
-
-  for (const [key, value] of Object.entries(data)) {
-    fields.push(`${key} = $${idx}`);
-    values.push(value);
-    idx += 1;
-  }
-
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-
-  await database.execute(
-    `UPDATE projects SET ${fields.join(", ")} WHERE id = $${idx}`,
-    values
-  );
 }
 
 export async function deleteProject(id: number): Promise<void> {
@@ -215,6 +241,9 @@ export async function deleteProject(id: number): Promise<void> {
     const filesToRemove: string[] = [];
     if (project.thumbnail_path) filesToRemove.push(project.thumbnail_path);
     if (project.processed_path) filesToRemove.push(project.processed_path);
+    if (project.edited_preview_path) {
+      filesToRemove.push(...await ownedEditedPreviewArtifacts(project.edited_preview_path));
+    }
 
     for (const filePath of filesToRemove) {
       try {
