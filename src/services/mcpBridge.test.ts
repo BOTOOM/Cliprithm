@@ -176,20 +176,23 @@ describe("MCP tool contract", () => {
       expectedRevision: 1,
       title: "A range",
       description: "A description",
-      sourceAnchors: [{ assetId: "asset-1", sourceStart: 1, sourceEnd: 2, extra: true }],
+      timelineStart: 1,
+      timelineEnd: 2,
+      unexpected: true,
     })).toMatchObject({ valid: false });
     expect(validateMcpToolArguments("semantic_range_update", {
       projectId: 43,
       expectedRevision: 1,
       rangeId: "range-1",
-      updates: { sourceAnchors: [{ assetId: "asset-1", sourceStart: 1 }] },
+      updates: { timelineStart: "1" },
     })).toMatchObject({ valid: false });
     expect(validateMcpToolArguments("semantic_range_create", {
       projectId: 43,
       expectedRevision: 1,
       title: "A range",
       description: "A description",
-      sourceAnchors: [{ assetId: "asset-1", sourceStart: 1, sourceEnd: 2 }],
+      timelineStart: 1,
+      timelineEnd: 2,
     })).toEqual({ valid: true });
   });
 

@@ -53,7 +53,7 @@ describe("project autosave snapshots", () => {
       7,
       expect.objectContaining({
         timeline_json: JSON.stringify(timelineProject),
-        project_schema_version: 2,
+        project_schema_version: 3,
       }),
     );
   });

@@ -26,6 +26,7 @@ import { Icon } from "../ui/Icon";
 import { Toggle } from "../ui/Toggle";
 import { Tooltip } from "../ui/Tooltip";
 import { SemanticRangeInspector } from "./SemanticRangeInspector";
+import { SemanticRangeTrack } from "./SemanticRangeTrack";
 
 const MIN_ZOOM = 4;
 const MAX_ZOOM = 40;
@@ -65,11 +66,15 @@ export function ProjectEditorView() {
     timelineZoom,
     setTimelineZoom,
     canUndoTimeline,
+    selectedSemanticRangeId,
     playhead,
     progress,
     setProgress,
   } = useProjectStore();
   const [isPlaying, setIsPlaying] = useState(false);
+  const [semanticRangeToolActive, setSemanticRangeToolActive] = useState(false);
+  const [semanticRangeDraft, setSemanticRangeDraft] = useState<{ start: number; end: number } | null>(null);
+  const [openSemanticRangeId, setOpenSemanticRangeId] = useState<string | null>(null);
   const [previewNotice, setPreviewNotice] = useState("");
   const [candidateRanges, setCandidateRanges] = useState<{
     id: string;
@@ -122,7 +127,16 @@ export function ProjectEditorView() {
         ? mediaServerUrl(mediaPort, mediaToken, editedPreviewFilePath)
         : ""
     : sourceVideoSrc;
-  const timelineWidth = Math.max(640, duration * timelineZoom);
+  const semanticEnd = timelineProject?.semanticRanges.reduce(
+    (maximum, range) => Math.max(maximum, range.timelineEnd ?? 0),
+    0,
+  ) ?? 0;
+  const timelineRenderDuration = Math.max(duration, semanticEnd);
+  const timelineWidth = Math.max(640, timelineRenderDuration * timelineZoom);
+  const timelineCanvasWidth = timelineWidth + 96;
+  const selectedSemanticRange = timelineProject?.semanticRanges.find(
+    (range) => range.id === openSemanticRangeId,
+  ) ?? null;
 
   useEffect(() => {
     dispatchEditorAction({ type: "selection.setPlayhead", timelineTime: Math.min(playhead, duration) });
@@ -258,9 +272,13 @@ export function ProjectEditorView() {
         event.preventDefault();
         dispatchEditorAction({ type: "clip.splitAtPlayhead", clipId: selectedClip.id, timelineTime: playhead });
       } else if (event.key === "Delete" || event.key === "Backspace") {
-        if (!selectedClip) return;
-        event.preventDefault();
-        dispatchEditorAction({ type: "clip.delete", clipId: selectedClip.id });
+        if (selectedSemanticRangeId) {
+          event.preventDefault();
+          dispatchEditorAction({ type: "semanticRange.delete", rangeId: selectedSemanticRangeId });
+        } else if (selectedClip) {
+          event.preventDefault();
+          dispatchEditorAction({ type: "clip.delete", clipId: selectedClip.id });
+        }
       } else if (event.code === "Space") {
         event.preventDefault();
         togglePlayback();
@@ -372,6 +390,23 @@ export function ProjectEditorView() {
     } finally {
       setCandidateBusy(false);
     }
+  }
+
+  function selectSemanticRange(rangeId: string) {
+    dispatchEditorAction({ type: "selection.selectSemanticRange", rangeId });
+  }
+
+  function handleSemanticRangeResize(rangeId: string, start: number, end: number) {
+    dispatchEditorAction({
+      type: "semanticRange.update",
+      rangeId,
+      updates: { timelineStart: start, timelineEnd: end },
+    });
+  }
+
+  function handleSemanticRangeCreate(start: number, end: number) {
+    setSemanticRangeDraft({ start, end });
+    setSemanticRangeToolActive(false);
   }
 
   async function handleAddVideo() {
@@ -767,7 +802,6 @@ export function ProjectEditorView() {
               </div>
             ) : null}
           </div>
-          <SemanticRangeInspector project={timelineProject} playhead={playhead} />
           <div className="mt-auto rounded-xl bg-surface-container p-3 text-[11px] leading-relaxed text-on-surface-variant">
             <div className="mb-1 flex items-center gap-2 text-on-surface"><Icon name="auto_awesome" className="text-sm text-secondary" />{t("editor.previewStatus")}</div>
             {t("editor.previewStatusDescription")}
@@ -775,7 +809,7 @@ export function ProjectEditorView() {
         </aside>
       </div>
 
-      <div className="h-72 shrink-0 border-t border-outline-variant/10 bg-surface-container p-3">
+      <div className="h-80 shrink-0 border-t border-outline-variant/10 bg-surface-container p-3">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="text-xs font-bold uppercase tracking-[0.16em] text-on-surface-variant">{t("timeline.timeline")}</span>
@@ -796,6 +830,15 @@ export function ProjectEditorView() {
               <Tooltip variant="wrap" delay={2000} content={t("editor.deleteTooltip")}>
                 <Button variant="ghost" size="sm" className="text-error" onClick={() => dispatchEditorAction({ type: "clip.delete", clipId: selectedClip.id })} aria-label={t("editor.delete")}><Icon name="delete" className="text-sm" /></Button>
               </Tooltip>
+              <Button
+                variant={semanticRangeToolActive ? "primary" : "surface"}
+                size="sm"
+                onClick={() => setSemanticRangeToolActive((active) => !active)}
+                aria-pressed={semanticRangeToolActive}
+                aria-label={t("editor.addSemanticRange")}
+              >
+                <Icon name="bookmark_add" className="text-sm" />
+              </Button>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -806,39 +849,69 @@ export function ProjectEditorView() {
         </div>
         <div className="h-[calc(100%-3rem)] overflow-x-auto timeline-scrollbar rounded-xl bg-surface-container-lowest" onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
-          const x = event.clientX - rect.left + event.currentTarget.scrollLeft;
+          const x = event.clientX - rect.left + event.currentTarget.scrollLeft - 96;
+          if (x < 0) return;
           seekTimeline(Math.max(0, Math.min(duration, x / timelineZoom)));
         }}>
-          <div className="relative h-full" style={{ width: timelineWidth }}>
+          <div className="relative h-full" style={{ width: timelineCanvasWidth }}>
             <div className="absolute inset-x-0 top-0 h-8 border-b border-outline-variant/10 text-[10px] text-on-surface-variant">
-              {Array.from({ length: Math.ceil(duration / 10) + 1 }, (_, index) => index * 10).map((time) => (
-                <span key={time} className="absolute top-2 -translate-x-1/2 font-mono" style={{ left: time * timelineZoom }}>{formatTime(Math.min(time, duration))}</span>
+              {Array.from({ length: Math.ceil(timelineRenderDuration / 10) + 1 }, (_, index) => index * 10).map((time) => (
+                <span key={time} className="absolute top-2 -translate-x-1/2 font-mono" style={{ left: 96 + time * timelineZoom }}>{formatTime(Math.min(time, timelineRenderDuration))}</span>
               ))}
             </div>
-            <div className="absolute inset-x-0 bottom-4 top-12 rounded-lg bg-surface-container p-2">
-              <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-widest text-on-surface-variant"><Icon name="movie" className="text-sm text-primary" />{t("editor.videoTrack")}</div>
-              <div className="relative h-28">
-                {positionedClips.map((clip) => (
-                  <button
-                    type="button"
-                    key={clip.id}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      dispatchEditorAction({ type: "selection.selectClip", clipId: clip.id });
-                      seekTimeline(clip.timelineStart);
-                    }}
-                    className={`absolute bottom-2 top-2 overflow-hidden rounded-lg px-2 py-2 text-left transition-colors ${selectedClipId === clip.id ? "bg-primary/40 ring-1 ring-primary" : "bg-surface-container-highest hover:bg-surface-bright"}`}
-                    style={{ left: clip.timelineStart * timelineZoom, width: Math.max(clip.timelineDuration * timelineZoom - 2, 6) }}
-                  >
-                    <span className="block truncate text-[10px] font-semibold text-on-surface">{clip.label}</span>
-                    <span className="mt-1 block truncate font-mono text-[10px] text-on-surface-variant">{clip.speed}× · {formatTime(clip.timelineDuration)}</span>
-                  </button>
-                ))}
+            <div className="absolute inset-x-0 bottom-4 top-12 overflow-hidden rounded-lg bg-surface-container p-2">
+              <SemanticRangeTrack
+                project={timelineProject}
+                duration={duration}
+                timelineZoom={timelineZoom}
+                timelineWidth={timelineWidth}
+                selectedRangeId={selectedSemanticRangeId}
+                toolActive={semanticRangeToolActive}
+                onToggleTool={() => setSemanticRangeToolActive((active) => !active)}
+                onSelect={selectSemanticRange}
+                onOpen={(rangeId) => {
+                  selectSemanticRange(rangeId);
+                  setOpenSemanticRangeId(rangeId);
+                }}
+                onCreate={handleSemanticRangeCreate}
+                onResize={handleSemanticRangeResize}
+              />
+              <div className="mt-2 flex h-28" style={{ width: timelineCanvasWidth }}>
+                <div className="flex w-24 shrink-0 items-start gap-2 border-r border-outline-variant/10 px-2 pt-2 text-[10px] uppercase tracking-widest text-on-surface-variant">
+                  <Icon name="movie" className="text-sm text-primary" />
+                  <span>{t("editor.videoTrack")}</span>
+                </div>
+                <div className="relative h-28 flex-1">
+                  {positionedClips.map((clip) => (
+                    <button
+                      type="button"
+                      key={clip.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        dispatchEditorAction({ type: "selection.selectClip", clipId: clip.id });
+                        seekTimeline(clip.timelineStart);
+                      }}
+                      className={`absolute bottom-2 top-2 overflow-hidden rounded-lg px-2 py-2 text-left transition-colors ${selectedClipId === clip.id ? "bg-primary/40 ring-1 ring-primary" : "bg-surface-container-highest hover:bg-surface-bright"}`}
+                      style={{ left: clip.timelineStart * timelineZoom, width: Math.max(clip.timelineDuration * timelineZoom - 2, 6) }}
+                    >
+                      <span className="block truncate text-[10px] font-semibold text-on-surface">{clip.label}</span>
+                      <span className="mt-1 block truncate font-mono text-[10px] text-on-surface-variant">{clip.speed}× · {formatTime(clip.timelineDuration)}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-            <div className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-primary shadow-[0_0_12px_rgba(186,158,255,0.9)]" style={{ left: playhead * timelineZoom }}><div className="-ml-1.5 mt-1 h-3 w-3 rounded-full bg-primary" /></div>
+            <div className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-primary shadow-[0_0_12px_rgba(186,158,255,0.9)]" style={{ left: 96 + playhead * timelineZoom }}><div className="-ml-1.5 mt-1 h-3 w-3 rounded-full bg-primary" /></div>
           </div>
         </div>
+        <SemanticRangeInspector
+          range={selectedSemanticRange}
+          draft={semanticRangeDraft}
+          onClose={() => {
+            setOpenSemanticRangeId(null);
+            setSemanticRangeDraft(null);
+          }}
+        />
       </div>
     </div>
   );

@@ -40,7 +40,9 @@ export function createSemanticRange(input: {
   title: string;
   description: string;
   tags?: string[];
-  sourceAnchors: SemanticRangeAnchor[];
+  timelineStart?: number | null;
+  timelineEnd?: number | null;
+  sourceAnchors?: SemanticRangeAnchor[];
   createdBy: SemanticRange["createdBy"];
 }): SemanticRange {
   const timestamp = nowIso();
@@ -49,7 +51,9 @@ export function createSemanticRange(input: {
     title: input.title.trim(),
     description: input.description.trim(),
     tags: normalizeSemanticTags(input.tags ?? []),
-    sourceAnchors: input.sourceAnchors.map((anchor) => ({ ...anchor })),
+    timelineStart: input.timelineStart ?? null,
+    timelineEnd: input.timelineEnd ?? null,
+    sourceAnchors: (input.sourceAnchors ?? []).map((anchor) => ({ ...anchor })),
     createdBy: input.createdBy,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -88,6 +92,44 @@ export function getSemanticRangeContext(
   project: TimelineProject,
   range: SemanticRange
 ): SemanticRangeContext {
+  if (range.timelineStart !== null && range.timelineEnd !== null) {
+    const occurrences: SemanticRangeOccurrence[] = [];
+    const timelineDuration = range.timelineEnd - range.timelineStart;
+    let coveredTimelineDuration = 0;
+    getPositionedClips(project).forEach((clip) => {
+      const timelineStart = Math.max(range.timelineStart!, clip.timelineStart);
+      const timelineEnd = Math.min(range.timelineEnd!, clip.timelineEnd);
+      if (timelineEnd - timelineStart < MIN_CLIP_DURATION) return;
+      const sourceStart = clip.sourceStart + (timelineStart - clip.timelineStart) * clip.speed;
+      const sourceEnd = clip.sourceStart + (timelineEnd - clip.timelineStart) * clip.speed;
+      coveredTimelineDuration += timelineEnd - timelineStart;
+      occurrences.push({
+        anchorIndex: occurrences.length,
+        clipId: clip.id,
+        timelineStart,
+        timelineEnd,
+        sourceStart,
+        sourceEnd,
+        coverage: timelineDuration > 0 ? (timelineEnd - timelineStart) / timelineDuration : 0,
+      });
+    });
+    const coverage = timelineDuration > 0 ? coveredTimelineDuration / timelineDuration : 0;
+    const presence =
+      coverage >= 1 - 1e-6
+        ? "fully_present"
+        : coverage > 0
+          ? "partially_present"
+          : "not_present";
+    return {
+      range: {
+        ...range,
+        sourceAnchors: sourceAnchorsFromTimelineSelection(project, range.timelineStart, range.timelineEnd),
+      },
+      occurrences,
+      presence,
+    };
+  }
+
   const occurrences: SemanticRangeOccurrence[] = [];
   let totalSourceDuration = 0;
   let coveredSourceDuration = 0;
@@ -138,10 +180,24 @@ export function getSemanticRangeContexts(project: TimelineProject): SemanticRang
   return project.semanticRanges.map((range) => getSemanticRangeContext(project, range));
 }
 
+export function synchronizeSemanticRangeSourceAnchors(project: TimelineProject): TimelineProject {
+  return {
+    ...project,
+    semanticRanges: project.semanticRanges.map((range) => {
+      if (range.timelineStart === null || range.timelineEnd === null) return range;
+      return {
+        ...range,
+        sourceAnchors: sourceAnchorsFromTimelineSelection(project, range.timelineStart, range.timelineEnd),
+      };
+    }),
+  };
+}
+
 export function validateSemanticRangeInProject(
   project: TimelineProject,
   range: SemanticRange
 ): boolean {
+  const hasTimelinePlacement = range.timelineStart !== null || range.timelineEnd !== null;
   if (
     typeof range.id !== "string" ||
     range.id.length === 0 ||
@@ -156,8 +212,13 @@ export function validateSemanticRangeInProject(
     !range.tags.every((tag) => typeof tag === "string" && tag.trim().length > 0 && tag.length <= 64) ||
     !["user", "ai"].includes(range.createdBy) ||
     !Array.isArray(range.sourceAnchors) ||
-    range.sourceAnchors.length === 0 ||
-    range.sourceAnchors.length > MAX_SEMANTIC_RANGE_ANCHORS
+    range.sourceAnchors.length > MAX_SEMANTIC_RANGE_ANCHORS ||
+    (!hasTimelinePlacement && range.sourceAnchors.length === 0) ||
+    (hasTimelinePlacement &&
+      (!Number.isFinite(range.timelineStart) ||
+        !Number.isFinite(range.timelineEnd) ||
+        range.timelineStart! < 0 ||
+        range.timelineEnd! - range.timelineStart! < MIN_CLIP_DURATION))
   ) return false;
 
   return range.sourceAnchors.every((anchor) => {

@@ -6,6 +6,8 @@ import {
 import {
   createSemanticRange,
   MAX_SEMANTIC_RANGES,
+  sourceAnchorsFromTimelineSelection,
+  synchronizeSemanticRangeSourceAnchors,
   validateSemanticRangeInProject,
 } from "../lib/editor/semanticRanges";
 import {
@@ -55,6 +57,7 @@ interface ClipHistoryEntry {
 interface TimelineHistoryEntry {
   project: TimelineProject;
   selectedClipId: string | null;
+  selectedSemanticRangeId: string | null;
 }
 
 function sameClipSegments(a: ClipSegment[], b: ClipSegment[]): boolean {
@@ -70,16 +73,17 @@ function sameClipSegments(a: ClipSegment[], b: ClipSegment[]): boolean {
 }
 
 function pushTimelineHistory(
-  state: Pick<ProjectState, "timelineProject" | "timelineUndoStack" | "timelineRedoStack" | "selectedClipId" | "selectedRange" | "editedPreviewFilePath" | "editedPreviewPending" | "editedPreviewJobId" | "previewMode">,
+  state: Pick<ProjectState, "timelineProject" | "timelineUndoStack" | "timelineRedoStack" | "selectedClipId" | "selectedSemanticRangeId" | "selectedRange" | "editedPreviewFilePath" | "editedPreviewPending" | "editedPreviewJobId" | "previewMode">,
   nextProject: TimelineProject,
   nextSelectedClipId: string | null
-): Pick<ProjectState, "timelineProject" | "timelineUndoStack" | "timelineRedoStack" | "selectedClipId" | "selectedRange" | "canUndoTimeline" | "editedPreviewFilePath" | "editedPreviewPending" | "editedPreviewJobId" | "previewMode"> {
+): Pick<ProjectState, "timelineProject" | "timelineUndoStack" | "timelineRedoStack" | "selectedClipId" | "selectedSemanticRangeId" | "selectedRange" | "canUndoTimeline" | "editedPreviewFilePath" | "editedPreviewPending" | "editedPreviewJobId" | "previewMode"> {
   if (state.timelineProject === nextProject) {
     return {
       timelineProject: state.timelineProject,
       timelineUndoStack: state.timelineUndoStack,
       timelineRedoStack: state.timelineRedoStack,
       selectedClipId: state.selectedClipId,
+      selectedSemanticRangeId: state.selectedSemanticRangeId,
       selectedRange: state.selectedRange,
       editedPreviewFilePath: state.editedPreviewFilePath,
       editedPreviewPending: state.editedPreviewPending,
@@ -89,16 +93,19 @@ function pushTimelineHistory(
     };
   }
 
+  const synchronizedProject = synchronizeSemanticRangeSourceAnchors(nextProject);
   const snapshot: TimelineHistoryEntry = {
     project: state.timelineProject as TimelineProject,
     selectedClipId: state.selectedClipId,
+    selectedSemanticRangeId: state.selectedSemanticRangeId,
   };
 
   return {
-    timelineProject: nextProject,
+    timelineProject: synchronizedProject,
     timelineUndoStack: [...state.timelineUndoStack, snapshot].slice(-100),
     timelineRedoStack: [],
     selectedClipId: nextSelectedClipId,
+    selectedSemanticRangeId: null,
     selectedRange: null,
     editedPreviewFilePath: null,
     editedPreviewPending: false,
@@ -203,12 +210,14 @@ interface ProjectState {
   addSemanticRange: (range: Parameters<typeof createSemanticRange>[0]) => void;
   updateSemanticRange: (
     rangeId: string,
-    updates: Partial<Pick<TimelineProject["semanticRanges"][number], "title" | "description" | "tags" | "sourceAnchors">>
+    updates: Partial<Pick<TimelineProject["semanticRanges"][number], "title" | "description" | "tags" | "timelineStart" | "timelineEnd">>
   ) => void;
   deleteSemanticRange: (rangeId: string) => void;
   dispatchEditorAction: (action: EditorAction) => boolean;
   selectedClipId: string | null;
   setSelectedClipId: (clipId: string | null) => void;
+  selectedSemanticRangeId: string | null;
+  setSelectedSemanticRangeId: (rangeId: string | null) => void;
   selectedRange: TimelineSelectionRange | null;
   setSelectedRange: (range: TimelineSelectionRange | null) => void;
   playhead: number;
@@ -315,6 +324,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       editedPreviewPending: false,
       editedPreviewJobId: null,
       previewMode: "source",
+      selectedSemanticRangeId: null,
       selectedRange: null,
     }),
   setVideoMetadata: (metadata) => set({ videoMetadata: metadata }),
@@ -522,7 +532,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   addSemanticRange: (range) =>
     set((state) => {
       if (!state.timelineProject) return state;
-      const nextRange = createSemanticRange(range);
+      const sourceAnchors = typeof range.timelineStart === "number" && typeof range.timelineEnd === "number"
+        ? sourceAnchorsFromTimelineSelection(state.timelineProject, range.timelineStart, range.timelineEnd)
+        : range.sourceAnchors ?? [];
+      const nextRange = createSemanticRange({ ...range, sourceAnchors });
       if (
         state.timelineProject.semanticRanges.length >= MAX_SEMANTIC_RANGES ||
         !validateSemanticRangeInProject(state.timelineProject, nextRange)
@@ -532,19 +545,28 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         semanticRanges: [...state.timelineProject.semanticRanges, nextRange],
         revision: state.timelineProject.revision + 1,
       };
-      return pushTimelineHistory(state, project, state.selectedClipId);
+      return {
+        ...pushTimelineHistory(state, project, state.selectedClipId),
+        selectedSemanticRangeId: nextRange.id,
+      };
     }),
   updateSemanticRange: (rangeId, updates) =>
     set((state) => {
       if (!state.timelineProject) return state;
       const existing = state.timelineProject.semanticRanges.find((range) => range.id === rangeId);
       if (!existing) return state;
+      const timelineStart = updates.timelineStart ?? existing.timelineStart;
+      const timelineEnd = updates.timelineEnd ?? existing.timelineEnd;
       const nextRange = {
         ...existing,
         title: updates.title ?? existing.title,
         description: updates.description ?? existing.description,
         tags: updates.tags ?? existing.tags,
-        sourceAnchors: updates.sourceAnchors ?? existing.sourceAnchors,
+        timelineStart,
+        timelineEnd,
+        sourceAnchors: timelineStart !== null && timelineEnd !== null
+          ? sourceAnchorsFromTimelineSelection(state.timelineProject, timelineStart, timelineEnd)
+          : existing.sourceAnchors,
         updatedAt: new Date().toISOString(),
       };
       if (!validateSemanticRangeInProject(state.timelineProject, nextRange)) return state;
@@ -590,6 +612,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         break;
       case "selection.selectRange":
         state.setSelectedRange({ start: action.start, end: action.end });
+        break;
+      case "selection.selectSemanticRange":
+        state.setSelectedSemanticRangeId(action.rangeId);
         break;
       case "asset.addVideo":
         state.addVideoToTimeline(action.asset);
@@ -694,7 +719,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       };
     }),
   selectedClipId: null,
-  setSelectedClipId: (clipId) => set({ selectedClipId: clipId }),
+  setSelectedClipId: (clipId) => set({ selectedClipId: clipId, selectedSemanticRangeId: null }),
+  selectedSemanticRangeId: null,
+  setSelectedSemanticRangeId: (rangeId) => set({ selectedSemanticRangeId: rangeId }),
   selectedRange: null,
   setSelectedRange: (range) => set({ selectedRange: range }),
   playhead: 0,
@@ -723,9 +750,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         timelineUndoStack: state.timelineUndoStack.slice(0, -1),
         timelineRedoStack: [
           ...state.timelineRedoStack,
-          { project: state.timelineProject, selectedClipId: state.selectedClipId },
+          {
+            project: state.timelineProject,
+            selectedClipId: state.selectedClipId,
+            selectedSemanticRangeId: state.selectedSemanticRangeId,
+          },
         ].slice(-100),
         selectedClipId: previous.selectedClipId,
+        selectedSemanticRangeId: previous.selectedSemanticRangeId,
         selectedRange: null,
         editedPreviewFilePath: null,
         editedPreviewPending: false,
@@ -745,10 +777,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         },
         timelineUndoStack: [
           ...state.timelineUndoStack,
-          { project: state.timelineProject, selectedClipId: state.selectedClipId },
+          {
+            project: state.timelineProject,
+            selectedClipId: state.selectedClipId,
+            selectedSemanticRangeId: state.selectedSemanticRangeId,
+          },
         ].slice(-100),
         timelineRedoStack: state.timelineRedoStack.slice(0, -1),
         selectedClipId: next.selectedClipId,
+        selectedSemanticRangeId: next.selectedSemanticRangeId,
         selectedRange: null,
         editedPreviewFilePath: null,
         editedPreviewPending: false,
@@ -810,6 +847,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       canUndoTimeline: false,
       selectedClipId:
         opts.timelineProject?.tracks[0]?.clipIds[0] ?? opts.clipSegments[0]?.id ?? null,
+      selectedSemanticRangeId: null,
       selectedRange: null,
       playhead: 0,
       currentView: opts.currentView,
@@ -844,6 +882,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       clipSegments: [],
       timelineProject: null,
       selectedClipId: null,
+      selectedSemanticRangeId: null,
       selectedRange: null,
       playhead: 0,
       timelineZoom: 10,

@@ -81,6 +81,8 @@ export interface SemanticRange {
   title: string;
   description: string;
   tags: string[];
+  timelineStart: number | null;
+  timelineEnd: number | null;
   sourceAnchors: SemanticRangeAnchor[];
   createdBy: SemanticRangeAuthor;
   createdAt: string;
@@ -104,7 +106,7 @@ export interface SemanticRangeContext {
 }
 
 export interface TimelineProject {
-  schemaVersion: 2;
+  schemaVersion: 3;
   assets: MediaAsset[];
   tracks: TimelineTrack[];
   clips: TimelineClip[];

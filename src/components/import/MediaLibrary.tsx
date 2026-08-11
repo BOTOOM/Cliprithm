@@ -151,7 +151,7 @@ export function MediaLibrary() {
           typeof parsedTimelineProject === "object" &&
           parsedTimelineProject !== null &&
           "schemaVersion" in parsedTimelineProject &&
-          parsedTimelineProject.schemaVersion !== 2
+          parsedTimelineProject.schemaVersion !== 3
         );
         // Merge with defaults so new fields (e.g. playbackRate) get a value
         const savedSettings: DetectionSettings = {

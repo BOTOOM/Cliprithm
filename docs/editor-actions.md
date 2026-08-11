@@ -49,6 +49,7 @@ The TypeScript registry is authoritative for runtime behavior. This document lis
 | `selection.selectClip` | clip ID or null | clip exists when non-null | no | planned |
 | `selection.setPlayhead` | timeline seconds | finite time inside the timeline | no | planned |
 | `selection.selectRange` | start/end seconds | finite ordered range inside the timeline | no | planned |
+| `selection.selectSemanticRange` | range ID or null | range exists when non-null | no | internal |
 
 ### Edit
 
@@ -79,8 +80,8 @@ Accepted candidates create normal timeline history entries and can be undone.
 
 | ID | Input | Preconditions | Undo | MCP |
 |---|---|---|---|---|
-| `semanticRange.add` | semantic range draft | valid source anchors, author, tags, title, and description | yes | planned |
-| `semanticRange.update` | range ID and partial updates | range exists and updated fields are valid | yes | planned |
+| `semanticRange.add` | semantic range draft + absolute timeline start/end | valid absolute timeline interval, author, tags, title, and description | yes | planned |
+| `semanticRange.update` | range ID and partial metadata/timeline updates | range exists and updated fields are valid | yes | planned |
 | `semanticRange.delete` | range ID | range exists | yes | planned |
 
 ### History

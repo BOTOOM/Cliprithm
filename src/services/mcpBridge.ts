@@ -168,23 +168,14 @@ export interface McpRequest {
 const stringProperty = (description: string) => ({ type: "string", description });
 const numberProperty = (description: string) => ({ type: "number", description });
 const integerProperty = (description: string) => ({ type: "integer", description });
-const semanticRangeAnchorSchema: JsonSchemaNode = {
-  type: "object",
-  properties: {
-    assetId: { type: "string", minLength: 1, maxLength: 256 },
-    sourceStart: { type: "number", minimum: 0 },
-    sourceEnd: { type: "number", minimum: 0 },
-  },
-  required: ["assetId", "sourceStart", "sourceEnd"],
-  additionalProperties: false,
-};
 const semanticRangeUpdateSchema: JsonSchemaNode = {
   type: "object",
   properties: {
     title: { type: "string", minLength: 1, maxLength: 120 },
     description: { type: "string", minLength: 1, maxLength: 4_000 },
     tags: { type: "array", items: { type: "string", minLength: 1, maxLength: 64 }, maxItems: 20 },
-    sourceAnchors: { type: "array", items: semanticRangeAnchorSchema, minItems: 1, maxItems: 100 },
+    timelineStart: { type: "number", minimum: 0 },
+    timelineEnd: { type: "number", minimum: 0 },
   },
   additionalProperties: false,
 };
@@ -528,19 +519,20 @@ export const MCP_TOOL_CATALOG: McpToolDefinition[] = [
   ),
   tool(
     "semantic_range_get",
-    "Read one semantic range with source anchors and derived timeline occurrences.",
+    "Read one absolute-timeline semantic range with derived source context and presence.",
     schema({ projectId: rangeProperties.projectId, rangeId: stringProperty("Semantic range ID.") }, ["projectId", "rangeId"]),
   ),
   tool(
     "semantic_range_create",
-    "Create a semantic range with title, description, tags, and source anchors. The range is undoable.",
+    "Create an absolute-timeline semantic range with title, description, and tags. The range is undoable.",
     schema({
       ...rangeProperties,
       title: { ...stringProperty("Short range title."), minLength: 1, maxLength: 120 },
       description: { ...stringProperty("What happens in the marked range."), minLength: 1, maxLength: 4_000 },
       tags: { type: "array", items: { type: "string", minLength: 1, maxLength: 64 }, maxItems: 20, description: "Optional searchable tags." },
-      sourceAnchors: { type: "array", items: semanticRangeAnchorSchema, minItems: 1, maxItems: 100, description: "Ordered source asset intervals." },
-    }, ["projectId", "expectedRevision", "title", "description", "sourceAnchors"]),
+      timelineStart: numberProperty("Absolute timeline start in seconds."),
+      timelineEnd: numberProperty("Absolute timeline end in seconds."),
+    }, ["projectId", "expectedRevision", "title", "description", "timelineStart", "timelineEnd"]),
     { readOnlyHint: false, idempotentHint: false },
   ),
   tool(
@@ -1270,7 +1262,7 @@ async function openProjectRecord(
     typeof storedTimeline === "object" &&
     storedTimeline !== null &&
     "schemaVersion" in storedTimeline &&
-    storedTimeline.schemaVersion !== 2
+    storedTimeline.schemaVersion !== 3
   );
   const timelineProject = savedTimelineProject ?? migrateLegacyProject({
     asset: {
@@ -1716,7 +1708,7 @@ export async function handleTool(name: string, args: Record<string, unknown>) {
         outputDirectory = null;
       }
       return success("system.getCapabilities", {
-        contractVersion: "1.0.0",
+        contractVersion: "1.1.0",
         activeProjectId: state.projectId,
         revision: state.timelineProject?.revision ?? null,
         toolCount: MCP_TOOL_CATALOG.length,
@@ -2276,10 +2268,11 @@ export async function handleTool(name: string, args: Record<string, unknown>) {
     case "semantic_range_create": {
       const title = stringArg(args, "title");
       const description = stringArg(args, "description");
-      const sourceAnchors = Array.isArray(args.sourceAnchors) ? args.sourceAnchors : null;
+      const timelineStart = numberArg(args, "timelineStart");
+      const timelineEnd = numberArg(args, "timelineEnd");
       const tags = args.tags === undefined ? [] : args.tags;
-      if (!title || !description || !sourceAnchors || !Array.isArray(tags) || !tags.every((tag) => typeof tag === "string")) {
-        return invalid("title, description, sourceAnchors, and string tags are required.");
+      if (!title || !description || timelineStart === null || timelineEnd === null || !Array.isArray(tags) || !tags.every((tag) => typeof tag === "string")) {
+        return invalid("title, description, timelineStart, timelineEnd, and string tags are required.");
       }
       return dispatchAndSave(args, {
         type: "semanticRange.add",
@@ -2287,7 +2280,8 @@ export async function handleTool(name: string, args: Record<string, unknown>) {
           title,
           description,
           tags,
-          sourceAnchors: sourceAnchors as SemanticRange["sourceAnchors"],
+          timelineStart,
+          timelineEnd,
           createdBy: "ai",
         },
       }, "semanticRange.add");
@@ -2298,11 +2292,11 @@ export async function handleTool(name: string, args: Record<string, unknown>) {
         return invalid("rangeId and an updates object are required.");
       }
       const rawUpdates = args.updates as Record<string, unknown>;
-      const allowed = ["title", "description", "tags", "sourceAnchors"];
+      const allowed = ["title", "description", "tags", "timelineStart", "timelineEnd"];
       if (Object.keys(rawUpdates).some((key) => !allowed.includes(key))) {
-        return invalid("Only title, description, tags, and sourceAnchors may be updated.");
+        return invalid("Only title, description, tags, timelineStart, and timelineEnd may be updated.");
       }
-      const updates: Partial<Pick<SemanticRange, "title" | "description" | "tags" | "sourceAnchors">> = {};
+      const updates: Partial<Pick<SemanticRange, "title" | "description" | "tags" | "timelineStart" | "timelineEnd">> = {};
       if (Object.prototype.hasOwnProperty.call(rawUpdates, "title")) {
         if (typeof rawUpdates.title !== "string") return invalid("title must be a string.");
         updates.title = rawUpdates.title;
@@ -2315,9 +2309,13 @@ export async function handleTool(name: string, args: Record<string, unknown>) {
         if (!Array.isArray(rawUpdates.tags) || !rawUpdates.tags.every((tag) => typeof tag === "string")) return invalid("tags must be an array of strings.");
         updates.tags = rawUpdates.tags;
       }
-      if (Object.prototype.hasOwnProperty.call(rawUpdates, "sourceAnchors")) {
-        if (!Array.isArray(rawUpdates.sourceAnchors)) return invalid("sourceAnchors must be an array.");
-        updates.sourceAnchors = rawUpdates.sourceAnchors as SemanticRange["sourceAnchors"];
+      if (Object.prototype.hasOwnProperty.call(rawUpdates, "timelineStart")) {
+        if (rawUpdates.timelineStart !== null && typeof rawUpdates.timelineStart !== "number") return invalid("timelineStart must be a finite number.");
+        updates.timelineStart = rawUpdates.timelineStart as number | null;
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUpdates, "timelineEnd")) {
+        if (rawUpdates.timelineEnd !== null && typeof rawUpdates.timelineEnd !== "number") return invalid("timelineEnd must be a finite number.");
+        updates.timelineEnd = rawUpdates.timelineEnd as number | null;
       }
       return dispatchAndSave(args, { type: "semanticRange.update", rangeId, updates }, "semanticRange.update", [rangeId]);
     }

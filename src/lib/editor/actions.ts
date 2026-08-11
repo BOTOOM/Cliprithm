@@ -21,8 +21,11 @@ import {
 
 type VideoAssetInput = Omit<MediaAsset, "id" | "kind"> & Partial<Pick<MediaAsset, "id" | "kind">>;
 type SilenceCandidates = Array<{ clipId: string; segments: SilenceSegment[] }>;
-type SemanticRangeDraft = Omit<SemanticRange, "id" | "createdAt" | "updatedAt">;
-type SemanticRangeUpdates = Partial<Pick<SemanticRange, "title" | "description" | "tags" | "sourceAnchors">>;
+type SemanticRangeDraft = Pick<SemanticRange, "title" | "description" | "tags" | "timelineStart" | "timelineEnd"> & {
+  sourceAnchors?: SemanticRange["sourceAnchors"];
+  createdBy: SemanticRange["createdBy"];
+};
+type SemanticRangeUpdates = Partial<Pick<SemanticRange, "title" | "description" | "tags" | "timelineStart" | "timelineEnd">>;
 
 export type EditorAction =
   | { type: "asset.addVideo"; asset: VideoAssetInput }
@@ -30,6 +33,7 @@ export type EditorAction =
   | { type: "selection.selectClip"; clipId: string | null }
   | { type: "selection.setPlayhead"; timelineTime: number }
   | { type: "selection.selectRange"; start: number; end: number }
+  | { type: "selection.selectSemanticRange"; rangeId: string | null }
   | { type: "clip.splitAtPlayhead"; clipId: string; timelineTime: number }
   | { type: "clip.trim"; clipId: string; sourceStart: number; sourceEnd: number }
   | { type: "clip.move"; clipId: string; destinationIndex: number }
@@ -126,6 +130,17 @@ export const EDITOR_ACTIONS: Record<EditorAction["type"], EditorActionDefinition
     undoable: false,
     progress: "instant",
     mcp: "planned",
+  },
+  "selection.selectSemanticRange": {
+    id: "selection.selectSemanticRange",
+    category: "selection",
+    labelKey: "editor.semanticRanges",
+    inputSchema: "semantic range ID | null",
+    preconditions: ["project loaded", "range exists when non-null"],
+    mutation: "selection",
+    undoable: false,
+    progress: "instant",
+    mcp: "internal",
   },
   "clip.splitAtPlayhead": projectAction({
     id: "clip.splitAtPlayhead",
@@ -339,6 +354,8 @@ export function validateEditorAction(
         action.end <= duration
       );
     }
+    case "selection.selectSemanticRange":
+      return action.rangeId === null || project.semanticRanges.some((range) => range.id === action.rangeId);
     case "asset.addVideo":
       return (
         project.assets.length < MAX_PROJECT_ASSETS &&
@@ -475,6 +492,9 @@ export function validateEditorAction(
         id: "draft-range",
         createdAt: "draft",
         updatedAt: "draft",
+        timelineStart: action.range.timelineStart,
+        timelineEnd: action.range.timelineEnd,
+        sourceAnchors: action.range.sourceAnchors ?? [],
       };
       return (
         (range.createdBy === "user" || range.createdBy === "ai") &&
@@ -495,7 +515,7 @@ export function validateEditorAction(
         return false;
       }
       const updates = action.updates as Record<string, unknown>;
-      const allowedKeys = ["title", "description", "tags", "sourceAnchors"];
+      const allowedKeys = ["title", "description", "tags", "timelineStart", "timelineEnd"];
       if (
         Object.keys(updates).length === 0 ||
         Object.keys(updates).some((key) => !allowedKeys.includes(key))
@@ -504,7 +524,10 @@ export function validateEditorAction(
         (Object.prototype.hasOwnProperty.call(updates, "title") && typeof updates.title !== "string") ||
         (Object.prototype.hasOwnProperty.call(updates, "description") && typeof updates.description !== "string") ||
         (Object.prototype.hasOwnProperty.call(updates, "tags") && !Array.isArray(updates.tags)) ||
-        (Object.prototype.hasOwnProperty.call(updates, "sourceAnchors") && !Array.isArray(updates.sourceAnchors))
+        (Object.prototype.hasOwnProperty.call(updates, "timelineStart") &&
+          updates.timelineStart !== null && typeof updates.timelineStart !== "number") ||
+        (Object.prototype.hasOwnProperty.call(updates, "timelineEnd") &&
+          updates.timelineEnd !== null && typeof updates.timelineEnd !== "number")
       ) {
         return false;
       }
@@ -519,9 +542,12 @@ export function validateEditorAction(
         tags: Object.prototype.hasOwnProperty.call(updates, "tags")
           ? updates.tags as string[]
           : existing.tags,
-        sourceAnchors: Object.prototype.hasOwnProperty.call(updates, "sourceAnchors")
-          ? updates.sourceAnchors as SemanticRange["sourceAnchors"]
-          : existing.sourceAnchors,
+        timelineStart: Object.prototype.hasOwnProperty.call(updates, "timelineStart")
+          ? updates.timelineStart as number | null
+          : existing.timelineStart,
+        timelineEnd: Object.prototype.hasOwnProperty.call(updates, "timelineEnd")
+          ? updates.timelineEnd as number | null
+          : existing.timelineEnd,
       };
       return validateSemanticRangeInProject(project, range);
     }

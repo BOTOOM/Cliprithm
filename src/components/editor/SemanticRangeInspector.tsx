@@ -1,152 +1,165 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../lib/i18n";
-import { sourceAnchorsFromTimelineSelection } from "../../lib/editor/semanticRanges";
 import { useProjectStore } from "../../stores/projectStore";
-import type { TimelineProject } from "../../types";
+import type { SemanticRange } from "../../types";
 import { Button } from "../ui/Button";
+import { Icon } from "../ui/Icon";
 
 interface SemanticRangeInspectorProps {
-  project: TimelineProject;
-  playhead: number;
+  range: SemanticRange | null;
+  draft: { start: number; end: number } | null;
+  onClose: () => void;
 }
 
-export function SemanticRangeInspector({ project, playhead }: SemanticRangeInspectorProps) {
+export function SemanticRangeInspector({ range, draft, onClose }: SemanticRangeInspectorProps) {
   const { t } = useI18n();
   const dispatchEditorAction = useProjectStore((state) => state.dispatchEditorAction);
-  const [rangeStart, setRangeStart] = useState<number | null>(null);
-  const [rangeEnd, setRangeEnd] = useState<number | null>(null);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [tags, setTags] = useState("");
-  const [error, setError] = useState("");
+  const titleRef = useRef<HTMLInputElement>(null);
+  const [title, setTitle] = useState(range?.title ?? "");
+  const [description, setDescription] = useState(range?.description ?? "");
+  const [tags, setTags] = useState(range?.tags.join(", ") ?? "");
+  const start = range?.timelineStart ?? draft?.start ?? 0;
+  const end = range?.timelineEnd ?? draft?.end ?? 0;
+  const isEditing = Boolean(range);
 
-  const createRange = () => {
-    if (rangeStart === null) {
-      setError(t("editor.rangeSetStartFirst"));
-      return;
-    }
-    const endPoint = rangeEnd ?? playhead;
-    const start = Math.min(rangeStart, endPoint);
-    const end = Math.max(rangeStart, endPoint);
-    const sourceAnchors = sourceAnchorsFromTimelineSelection(project, start, end);
-    if (!title.trim() || !description.trim() || sourceAnchors.length === 0) {
-      setError(t("editor.rangeRequiredFields"));
-      return;
-    }
-    const created = dispatchEditorAction({
-      type: "semanticRange.add",
-      range: {
-        title: title.trim(),
-        description: description.trim(),
-        tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean),
-        sourceAnchors,
-        createdBy: "user",
-      },
-    });
-    if (!created) {
-      setError(t("editor.rangeCreateFailed"));
-      return;
-    }
-    setRangeStart(null);
-    setRangeEnd(null);
-    setTitle("");
-    setDescription("");
-    setTags("");
-    setError("");
+  useEffect(() => {
+    setTitle(range?.title ?? "");
+    setDescription(range?.description ?? "");
+    setTags(range?.tags.join(", ") ?? "");
+    window.setTimeout(() => titleRef.current?.focus(), 0);
+  }, [range, draft]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  if (!range && !draft) return null;
+
+  const save = () => {
+    const normalizedTags = tags.split(",").map((tag) => tag.trim()).filter(Boolean);
+    const saved = isEditing && range
+      ? dispatchEditorAction({
+          type: "semanticRange.update",
+          rangeId: range.id,
+          updates: { title: title.trim(), description: description.trim(), tags: normalizedTags },
+        })
+      : dispatchEditorAction({
+          type: "semanticRange.add",
+          range: {
+            title: title.trim(),
+            description: description.trim(),
+            tags: normalizedTags,
+            timelineStart: start,
+            timelineEnd: end,
+            createdBy: "user",
+          },
+        });
+    if (saved) onClose();
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-outline-variant/10 bg-surface-container p-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-[10px] font-bold uppercase tracking-[0.16em] text-on-surface-variant">
-            {t("editor.semanticRanges")}
-          </h3>
-          <p className="mt-1 text-[10px] text-on-surface-variant/70">
-            {t("editor.semanticRangesDescription")}
-          </p>
-        </div>
-        <span className="font-mono text-[10px] text-primary">{project.semanticRanges.length}</span>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        <Button
-          variant={rangeStart === null ? "surface" : "primary"}
-          size="sm"
-          onClick={() => {
-            setRangeStart(playhead);
-            setRangeEnd(null);
-            useProjectStore.getState().setSelectedRange(null);
-            setError("");
-          }}
-        >
-          {rangeStart === null ? t("editor.setRangeStart") : `${t("editor.rangeStart")}: ${rangeStart.toFixed(2)}s`}
-        </Button>
-        <Button
-          variant="surface"
-          size="sm"
-          onClick={() => {
-            if (rangeStart === null) {
-              setError(t("editor.rangeSetStartFirst"));
-              return;
-            }
-            setRangeEnd(playhead);
-            const start = Math.min(rangeStart, playhead);
-            const end = Math.max(rangeStart, playhead);
-            dispatchEditorAction({ type: "selection.selectRange", start, end });
-            setError("");
-          }}
-        >
-          {rangeEnd === null ? t("editor.setRangeEnd") : `${t("editor.rangeEnd")}: ${rangeEnd.toFixed(2)}s`}
-        </Button>
-      </div>
-
-      {rangeStart !== null && (
-        <div className="space-y-2 border-t border-outline-variant/10 pt-3">
-          <input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder={t("editor.rangeTitle")}
-            className="w-full rounded-md bg-surface-container-lowest px-2 py-1.5 text-xs text-on-surface outline-none focus:ring-1 focus:ring-primary"
-          />
-          <textarea
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder={t("editor.rangeDescription")}
-            rows={3}
-            className="w-full resize-none rounded-md bg-surface-container-lowest px-2 py-1.5 text-xs text-on-surface outline-none focus:ring-1 focus:ring-primary"
-          />
-          <input
-            value={tags}
-            onChange={(event) => setTags(event.target.value)}
-            placeholder={t("editor.rangeTags")}
-            className="w-full rounded-md bg-surface-container-lowest px-2 py-1.5 text-xs text-on-surface outline-none focus:ring-1 focus:ring-primary"
-          />
-          <Button variant="primary" size="sm" onClick={createRange}>
-            {t("editor.createRange")}
-          </Button>
-        </div>
-      )}
-
-      {error && <p className="text-[10px] text-error">{error}</p>}
-
-      <div className="max-h-36 space-y-1 overflow-y-auto custom-scrollbar">
-        {project.semanticRanges.map((range) => (
-          <div key={range.id} className="flex items-start justify-between gap-2 rounded bg-surface-container-high p-2">
-            <div className="min-w-0">
-              <p className="truncate text-[11px] font-medium text-on-surface">{range.title}</p>
-              <p className="line-clamp-2 text-[10px] text-on-surface-variant">{range.description}</p>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="semantic-range-dialog-title"
+        className="w-full max-w-md space-y-4 rounded-xl border border-outline-variant/20 bg-surface-container-highest p-5 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Icon name="bookmark" className="text-base text-secondary" />
+              <h2 id="semantic-range-dialog-title" className="text-sm font-bold text-on-surface">
+                {isEditing ? t("editor.editSemanticRange") : t("editor.createSemanticRange")}
+              </h2>
             </div>
-            <button
-              type="button"
-              aria-label={t("editor.deleteSemanticRange")}
-              onClick={() => dispatchEditorAction({ type: "semanticRange.delete", rangeId: range.id })}
-              className="shrink-0 rounded p-1 text-error/70 hover:bg-error/20"
-            >
-              ×
-            </button>
+            <p className="mt-1 text-[10px] leading-relaxed text-on-surface-variant">
+              {t("editor.semanticRangeModalDescription")}
+            </p>
           </div>
-        ))}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t("editor.closeSemanticRange")}
+            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          >
+            <Icon name="close" className="text-base" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 rounded-lg bg-surface-container p-3 text-[10px]">
+          <div>
+            <span className="block uppercase tracking-widest text-on-surface-variant">{t("editor.rangeStart")}</span>
+            <span className="font-mono text-on-surface">{start.toFixed(2)}s</span>
+          </div>
+          <div>
+            <span className="block uppercase tracking-widest text-on-surface-variant">{t("editor.rangeEnd")}</span>
+            <span className="font-mono text-on-surface">{end.toFixed(2)}s</span>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <label className="block space-y-1">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-on-surface-variant">{t("editor.rangeTitle")}</span>
+            <input
+              ref={titleRef}
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              maxLength={120}
+              className="w-full rounded-md bg-surface-container-lowest px-3 py-2 text-xs text-on-surface outline-none focus:ring-1 focus:ring-primary"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-on-surface-variant">{t("editor.rangeDescription")}</span>
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              maxLength={4000}
+              rows={5}
+              className="w-full resize-y rounded-md bg-surface-container-lowest px-3 py-2 text-xs text-on-surface outline-none focus:ring-1 focus:ring-primary"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-on-surface-variant">{t("editor.rangeTags")}</span>
+            <input
+              value={tags}
+              onChange={(event) => setTags(event.target.value)}
+              className="w-full rounded-md bg-surface-container-lowest px-3 py-2 text-xs text-on-surface outline-none focus:ring-1 focus:ring-primary"
+            />
+          </label>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-outline-variant/10 pt-3">
+          {isEditing && range ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-error"
+              onClick={() => {
+                if (dispatchEditorAction({ type: "semanticRange.delete", rangeId: range.id })) onClose();
+              }}
+            >
+              <Icon name="delete" className="text-sm" />
+              {t("editor.deleteSemanticRange")}
+            </Button>
+          ) : <span />}
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>{t("editor.cancel")}</Button>
+            <Button variant="primary" size="sm" onClick={save} disabled={!title.trim() || !description.trim()}>
+              {t("editor.saveSemanticRange")}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

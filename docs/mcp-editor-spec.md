@@ -1,7 +1,7 @@
 # Cliprithm Editor MCP Specification
 
 **Status:** Implemented
-**Contract version:** `1.0.0`
+**Contract version:** `1.1.0`
 
 ## Scope
 
@@ -87,7 +87,7 @@ Preview and export renders return a job ID immediately. Use `job_get` for status
 
 ## Semantic ranges
 
-A semantic range is persisted inside `TimelineProject.schemaVersion = 2`:
+A semantic range is persisted inside `TimelineProject.schemaVersion = 3`:
 
 ```ts
 interface SemanticRange {
@@ -95,6 +95,8 @@ interface SemanticRange {
   title: string;
   description: string;
   tags: string[];
+  timelineStart: number | null;
+  timelineEnd: number | null;
   sourceAnchors: Array<{
     assetId: string;
     sourceStart: number;
@@ -106,7 +108,7 @@ interface SemanticRange {
 }
 ```
 
-Source anchors are authoritative. Timeline occurrences are derived from the current clip order, trims, and speeds. A range can therefore be fully present, partially present, or not present in the current edit without losing the user's description of the source content.
+Timeline bounds are authoritative for the editor track. Source anchors are derived context for the content currently underneath those absolute seconds. A range remains fixed when clips move, split, or trim; its presence can become partial or not present without losing the user's description.
 
 ## Results and errors
 
@@ -135,6 +137,6 @@ Deleting a saved project, overwriting an existing export, and switching away fro
 3. Requests without the per-session bearer token, invalid Host/Origin, payload, path, ID, range, and revision inputs cause no mutation.
 4. UI and MCP composition tools use the same editor action validation and produce the same revisions; asynchronous MCP service operations use their own typed service validation.
 5. Accepted silence candidates become undoable timeline edits.
-6. Ranges survive split, move, speed, duplicate, trim, and silence application through source anchors.
+6. Absolute range blocks survive split, move, speed, duplicate, trim, and silence application without changing their timeline bounds; source context is recomputed.
 7. Export uses the active composition and reports the rendered revision.
-8. Existing projects migrate from timeline schema v1 without losing source ranges.
+8. Existing projects migrate from timeline schema v1/v2 to schema v3 without losing source ranges; visible legacy occurrences become independent absolute placements.

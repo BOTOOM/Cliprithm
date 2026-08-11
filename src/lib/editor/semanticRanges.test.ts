@@ -4,6 +4,7 @@ import {
   createSemanticRange,
   getSemanticRangeContext,
   sourceAnchorsFromTimelineSelection,
+  synchronizeSemanticRangeSourceAnchors,
   validateSemanticRangeInProject,
 } from "./semanticRanges";
 import {
@@ -56,6 +57,44 @@ describe("semantic ranges", () => {
       [8, 10],
       [10, 15],
     ]);
+  });
+
+  it("keeps an absolute timeline range fixed while source context changes", () => {
+    const project = createVideoProject(asset);
+    const range = createSemanticRange({
+      title: "Absolute annotation",
+      description: "This block belongs to the timeline position.",
+      timelineStart: 4,
+      timelineEnd: 8,
+      createdBy: "user",
+    });
+    const context = getSemanticRangeContext(project, range);
+
+    expect(context.presence).toBe("fully_present");
+    expect(context.occurrences[0]).toMatchObject({ timelineStart: 4, timelineEnd: 8, sourceStart: 4, sourceEnd: 8 });
+    expect(context.range.sourceAnchors).toEqual([{ assetId: project.assets[0].id, sourceStart: 4, sourceEnd: 8 }]);
+  });
+
+  it("resynchronizes persisted source context without moving absolute bounds", () => {
+    const project = createVideoProject(asset);
+    const range = createSemanticRange({
+      title: "Absolute annotation",
+      description: "The source context follows the current edit.",
+      timelineStart: 4,
+      timelineEnd: 8,
+      sourceAnchors: [{ assetId: project.assets[0].id, sourceStart: 0, sourceEnd: 1 }],
+      createdBy: "user",
+    });
+    const synchronized = synchronizeSemanticRangeSourceAnchors({
+      ...project,
+      semanticRanges: [range],
+    });
+
+    expect(synchronized.semanticRanges[0]).toMatchObject({
+      timelineStart: 4,
+      timelineEnd: 8,
+      sourceAnchors: [{ assetId: project.assets[0].id, sourceStart: 4, sourceEnd: 8 }],
+    });
   });
 
   it("maps a source range to current timeline occurrences", () => {

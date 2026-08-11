@@ -103,6 +103,44 @@ describe("project store loading", () => {
     expect(state.canUndo).toBe(false);
   });
 
+  it("creates and resizes an absolute semantic range as one undoable edit each", () => {
+    const timelineProject = createVideoProject(asset);
+    useProjectStore.setState({ timelineProject });
+    const store = useProjectStore.getState();
+
+    expect(store.dispatchEditorAction({
+      type: "semanticRange.add",
+      range: {
+        title: "Speaker point",
+        description: "The speaker explains the key point.",
+        tags: ["key"],
+        timelineStart: 2,
+        timelineEnd: 4,
+        createdBy: "user",
+      },
+    })).toBe(true);
+
+    const created = useProjectStore.getState();
+    const rangeId = created.selectedSemanticRangeId;
+    expect(rangeId).toBeTruthy();
+    expect(created.timelineProject?.semanticRanges[0]).toMatchObject({
+      timelineStart: 2,
+      timelineEnd: 4,
+    });
+    expect(created.timelineUndoStack).toHaveLength(1);
+
+    expect(created.dispatchEditorAction({
+      type: "semanticRange.update",
+      rangeId: rangeId!,
+      updates: { timelineStart: 2.5, timelineEnd: 4.5 },
+    })).toBe(true);
+    expect(useProjectStore.getState().timelineProject?.semanticRanges[0]).toMatchObject({
+      timelineStart: 2.5,
+      timelineEnd: 4.5,
+    });
+    expect(useProjectStore.getState().timelineUndoStack).toHaveLength(2);
+  });
+
   it("clears an edited preview when the timeline revision changes", () => {
     const timelineProject = createVideoProject(asset);
     useProjectStore.setState({

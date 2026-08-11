@@ -150,6 +150,9 @@ function validTimelineClip(value: unknown): value is TimelineClip {
 
 function validSemanticRange(value: unknown): value is SemanticRange {
   if (!isRecord(value)) return false;
+  const timelineStart = value.timelineStart;
+  const timelineEnd = value.timelineEnd;
+  const hasTimelinePlacement = timelineStart !== null || timelineEnd !== null;
   if (
     typeof value.id !== "string" ||
     value.id.length === 0 ||
@@ -164,8 +167,13 @@ function validSemanticRange(value: unknown): value is SemanticRange {
     value.tags.length > 20 ||
     !value.tags.every((tag) => typeof tag === "string" && tag.trim().length > 0 && tag.length <= 64) ||
     !Array.isArray(value.sourceAnchors) ||
-    value.sourceAnchors.length === 0 ||
     value.sourceAnchors.length > 100 ||
+    (!hasTimelinePlacement && value.sourceAnchors.length === 0) ||
+    (hasTimelinePlacement &&
+      (!finiteNumber(timelineStart) ||
+        !finiteNumber(timelineEnd) ||
+        timelineStart < 0 ||
+        timelineEnd - timelineStart < MIN_CLIP_DURATION)) ||
     !["user", "ai"].includes(String(value.createdBy)) ||
     typeof value.createdAt !== "string" ||
     typeof value.updatedAt !== "string"
@@ -258,19 +266,87 @@ function validateTimelineProjectShape(value: Record<string, unknown>, requireSem
 export function validateTimelineProject(value: unknown): value is TimelineProject {
   return Boolean(
     isRecord(value) &&
-    value.schemaVersion === 2 &&
+    value.schemaVersion === 3 &&
     validateTimelineProjectShape(value, true)
   );
 }
 
+function semanticRangeOccurrencesForMigration(
+  project: TimelineProject,
+  range: SemanticRange,
+): Array<{ timelineStart: number; timelineEnd: number; sourceStart: number; sourceEnd: number; assetId: string }> {
+  return range.sourceAnchors
+    .flatMap((anchor) =>
+      getPositionedClips(project).flatMap((clip) => {
+        if (clip.assetId !== anchor.assetId) return [];
+        const sourceStart = Math.max(anchor.sourceStart, clip.sourceStart);
+        const sourceEnd = Math.min(anchor.sourceEnd, clip.sourceEnd);
+        if (sourceEnd - sourceStart < MIN_CLIP_DURATION) return [];
+        const timelineStart = sourceTimeToTimelineTime(project, clip.id, sourceStart);
+        const timelineEnd = sourceTimeToTimelineTime(project, clip.id, sourceEnd);
+        if (timelineStart === null || timelineEnd === null || timelineEnd - timelineStart < MIN_CLIP_DURATION) {
+          return [];
+        }
+        return [{ timelineStart, timelineEnd, sourceStart, sourceEnd, assetId: anchor.assetId }];
+      }),
+    )
+    .sort((left, right) => left.timelineStart - right.timelineStart);
+}
+
+function migratedSemanticRangeId(baseId: string, index: number, usedIds: Set<string>): string {
+  const suffix = index === 0 ? "" : `-placement-${index}`;
+  const base = `${baseId}${suffix}`.slice(0, 256);
+  let id = base;
+  let collision = 1;
+  while (usedIds.has(id)) {
+    const collisionSuffix = `-${collision++}`;
+    id = `${base.slice(0, 256 - collisionSuffix.length)}${collisionSuffix}`;
+  }
+  usedIds.add(id);
+  return id;
+}
+
+function migrateSemanticRangesToV3(value: Record<string, unknown>): SemanticRange[] {
+  const sourceRanges = Array.isArray(value.semanticRanges)
+    ? value.semanticRanges.filter(validSemanticRange)
+    : [];
+  const project = { ...value, schemaVersion: 3, semanticRanges: [] } as unknown as TimelineProject;
+  const usedIds = new Set<string>();
+  return sourceRanges.flatMap((range) => {
+    const occurrences = semanticRangeOccurrencesForMigration(project, range);
+    if (occurrences.length === 0) {
+      return [{
+        ...range,
+        id: migratedSemanticRangeId(range.id, 0, usedIds),
+        timelineStart: null,
+        timelineEnd: null,
+        sourceAnchors: range.sourceAnchors.map((anchor) => ({ ...anchor })),
+      } as SemanticRange];
+    }
+    return occurrences.map((occurrence, index) => ({
+      ...range,
+      id: migratedSemanticRangeId(range.id, index, usedIds),
+      timelineStart: occurrence.timelineStart,
+      timelineEnd: occurrence.timelineEnd,
+      sourceAnchors: [{
+        assetId: occurrence.assetId,
+        sourceStart: occurrence.sourceStart,
+        sourceEnd: occurrence.sourceEnd,
+      }],
+    } as SemanticRange));
+  });
+}
+
 export function migrateTimelineProject(value: unknown): TimelineProject | null {
   if (!isRecord(value)) return null;
-  if (value.schemaVersion === 2 && validateTimelineProject(value)) return value;
-  if (value.schemaVersion !== 1 || !validateTimelineProjectShape(value, false)) return null;
+  if (value.schemaVersion === 3 && validateTimelineProject(value)) return value;
+  if ((value.schemaVersion !== 1 && value.schemaVersion !== 2) || !validateTimelineProjectShape(value, false)) {
+    return null;
+  }
   const migrated = {
     ...value,
-    schemaVersion: 2 as const,
-    semanticRanges: [],
+    schemaVersion: 3 as const,
+    semanticRanges: value.schemaVersion === 2 ? migrateSemanticRangesToV3(value) : [],
   };
   return validateTimelineProject(migrated) ? migrated : null;
 }
@@ -343,7 +419,7 @@ export function createVideoProject(
     : [];
   track.clipIds.push(...clips.map((clip) => clip.id));
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     assets: [{ ...asset, id: assetId, kind: asset.kind ?? "video" }],
     tracks: [track],
     clips,
