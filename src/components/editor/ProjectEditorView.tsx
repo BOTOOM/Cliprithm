@@ -10,7 +10,7 @@ import {
   getTimelineDuration,
   timelineTimeToSourceTime,
 } from "../../lib/editor/timeline";
-import { stableHash } from "../../lib/editor/preview";
+import { shouldShowEditedPreview, stableHash } from "../../lib/editor/preview";
 import { useProjectStore } from "../../stores/projectStore";
 import {
   authorizeMediaPath,
@@ -25,6 +25,8 @@ import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 import { Toggle } from "../ui/Toggle";
 import { Tooltip } from "../ui/Tooltip";
+import { SemanticRangeInspector } from "./SemanticRangeInspector";
+import { SemanticRangeTrack } from "./SemanticRangeTrack";
 
 const MIN_ZOOM = 4;
 const MAX_ZOOM = 40;
@@ -55,6 +57,8 @@ export function ProjectEditorView() {
     projectId,
     editedPreviewFilePath,
     setEditedPreviewFilePath,
+    setEditedPreviewPending,
+    previewMode,
     selectedClipId,
     dispatchEditorAction,
     detectionSettings,
@@ -62,11 +66,15 @@ export function ProjectEditorView() {
     timelineZoom,
     setTimelineZoom,
     canUndoTimeline,
+    selectedSemanticRangeId,
     playhead,
     progress,
     setProgress,
   } = useProjectStore();
   const [isPlaying, setIsPlaying] = useState(false);
+  const [semanticRangeToolActive, setSemanticRangeToolActive] = useState(false);
+  const [semanticRangeDraft, setSemanticRangeDraft] = useState<{ start: number; end: number } | null>(null);
+  const [openSemanticRangeId, setOpenSemanticRangeId] = useState<string | null>(null);
   const [previewNotice, setPreviewNotice] = useState("");
   const [candidateRanges, setCandidateRanges] = useState<{
     id: string;
@@ -88,7 +96,8 @@ export function ProjectEditorView() {
   const selectedAsset = selectedClip && timelineProject ? getAsset(timelineProject, selectedClip.assetId) : null;
   const mediaPort = useProjectStore((state) => state.mediaServerPort);
   const mediaToken = useProjectStore((state) => state.mediaServerToken);
-  const mediaPath = editedPreviewFilePath || selectedAsset?.path || null;
+  const showingEditedPreview = shouldShowEditedPreview(previewMode, editedPreviewFilePath);
+  const mediaPath = showingEditedPreview ? editedPreviewFilePath : selectedAsset?.path || null;
 
   useEffect(() => {
     let cancelled = false;
@@ -111,14 +120,23 @@ export function ProjectEditorView() {
         ? mediaServerUrl(mediaPort, mediaToken, selectedAsset.path)
         : ""
     : "";
-  const videoSrc = editedPreviewFilePath
+  const videoSrc = showingEditedPreview && editedPreviewFilePath
     ? !isDesktopRuntime() || editedPreviewFilePath.startsWith("blob:")
       ? resolveMediaSrc(editedPreviewFilePath)
       : authorizedMediaPath === editedPreviewFilePath && mediaPort && mediaToken
         ? mediaServerUrl(mediaPort, mediaToken, editedPreviewFilePath)
         : ""
     : sourceVideoSrc;
-  const timelineWidth = Math.max(640, duration * timelineZoom);
+  const semanticEnd = timelineProject?.semanticRanges.reduce(
+    (maximum, range) => Math.max(maximum, range.timelineEnd ?? 0),
+    0,
+  ) ?? 0;
+  const timelineRenderDuration = Math.max(duration, semanticEnd);
+  const timelineWidth = Math.max(640, timelineRenderDuration * timelineZoom);
+  const timelineCanvasWidth = timelineWidth + 96;
+  const selectedSemanticRange = timelineProject?.semanticRanges.find(
+    (range) => range.id === openSemanticRangeId,
+  ) ?? null;
 
   useEffect(() => {
     dispatchEditorAction({ type: "selection.setPlayhead", timelineTime: Math.min(playhead, duration) });
@@ -138,14 +156,14 @@ export function ProjectEditorView() {
     const video = videoRef.current;
     if (!video || !selectedClip) return;
 
-    video.playbackRate = editedPreviewFilePath ? 1 : selectedClip.speed;
-    if (editedPreviewFilePath) return;
+    video.playbackRate = showingEditedPreview ? 1 : selectedClip.speed;
+    if (showingEditedPreview) return;
 
     const source = selectedClip.sourceStart;
     if (Math.abs(video.currentTime - source) > 0.15) {
       video.currentTime = source;
     }
-  }, [editedPreviewFilePath, selectedClip]);
+  }, [selectedClip, showingEditedPreview]);
 
   useEffect(() => {
     if (!timelineProject || !isDesktopRuntime() || !projectId) return;
@@ -158,6 +176,7 @@ export function ProjectEditorView() {
     const jobId = `project-preview-${projectId}-${timelineProject.revision}-${requestId}`;
     previewRequestRef.current = requestId;
     setEditedPreviewFilePath(null);
+    setEditedPreviewPending(true);
     const timer = window.setTimeout(() => {
       previewRunningRef.current = true;
       previewJobIdRef.current = jobId;
@@ -211,6 +230,9 @@ export function ProjectEditorView() {
             previewJobIdRef.current = null;
             previewRunningRef.current = false;
           }
+          if (previewRequestRef.current === requestId) {
+            setEditedPreviewPending(false);
+          }
           if (previewQueuedRef.current) {
             previewQueuedRef.current = false;
             setPreviewTick((current) => current + 1);
@@ -223,8 +245,11 @@ export function ProjectEditorView() {
       if (previewJobIdRef.current === jobId) {
         void cancelProjectRender(jobId).catch(() => undefined);
       }
+      if (previewRequestRef.current === requestId) {
+        setEditedPreviewPending(false);
+      }
     };
-  }, [positionedClips, previewTick, projectId, setEditedPreviewFilePath, t, timelineProject]);
+  }, [positionedClips, previewTick, projectId, setEditedPreviewFilePath, setEditedPreviewPending, t, timelineProject]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -247,9 +272,13 @@ export function ProjectEditorView() {
         event.preventDefault();
         dispatchEditorAction({ type: "clip.splitAtPlayhead", clipId: selectedClip.id, timelineTime: playhead });
       } else if (event.key === "Delete" || event.key === "Backspace") {
-        if (!selectedClip) return;
-        event.preventDefault();
-        dispatchEditorAction({ type: "clip.delete", clipId: selectedClip.id });
+        if (selectedSemanticRangeId) {
+          event.preventDefault();
+          dispatchEditorAction({ type: "semanticRange.delete", rangeId: selectedSemanticRangeId });
+        } else if (selectedClip) {
+          event.preventDefault();
+          dispatchEditorAction({ type: "clip.delete", clipId: selectedClip.id });
+        }
       } else if (event.code === "Space") {
         event.preventDefault();
         togglePlayback();
@@ -261,7 +290,7 @@ export function ProjectEditorView() {
   });
 
   function advanceSourceClip() {
-    if (editedPreviewFilePath || !selectedClip) return false;
+    if (showingEditedPreview || !selectedClip) return false;
     if (sourceAdvanceRef.current) return true;
     const selectedIndex = positionedClips.findIndex((clip) => clip.id === selectedClip.id);
     const nextClip = positionedClips[selectedIndex + 1];
@@ -302,7 +331,7 @@ export function ProjectEditorView() {
     dispatchEditorAction({ type: "selection.setPlayhead", timelineTime: time });
     dispatchEditorAction({ type: "selection.selectClip", clipId: mapped.clip.id });
     if (videoRef.current) {
-      videoRef.current.currentTime = editedPreviewFilePath ? time : mapped.sourceTime;
+      videoRef.current.currentTime = showingEditedPreview ? time : mapped.sourceTime;
     }
   }
 
@@ -361,6 +390,23 @@ export function ProjectEditorView() {
     } finally {
       setCandidateBusy(false);
     }
+  }
+
+  function selectSemanticRange(rangeId: string) {
+    dispatchEditorAction({ type: "selection.selectSemanticRange", rangeId });
+  }
+
+  function handleSemanticRangeResize(rangeId: string, start: number, end: number) {
+    dispatchEditorAction({
+      type: "semanticRange.update",
+      rangeId,
+      updates: { timelineStart: start, timelineEnd: end },
+    });
+  }
+
+  function handleSemanticRangeCreate(start: number, end: number) {
+    setSemanticRangeDraft({ start, end });
+    setSemanticRangeToolActive(false);
   }
 
   async function handleAddVideo() {
@@ -465,8 +511,8 @@ export function ProjectEditorView() {
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
                   onLoadedMetadata={(event) => {
-                    event.currentTarget.playbackRate = editedPreviewFilePath ? 1 : selectedClip.speed;
-                    event.currentTarget.currentTime = editedPreviewFilePath
+                    event.currentTarget.playbackRate = showingEditedPreview ? 1 : selectedClip.speed;
+                    event.currentTarget.currentTime = showingEditedPreview
                       ? playhead
                       : selectedClip.sourceStart;
                     if (isPlaying && event.currentTarget.paused) {
@@ -474,7 +520,7 @@ export function ProjectEditorView() {
                     }
                   }}
                   onTimeUpdate={(event) => {
-                    if (editedPreviewFilePath) {
+                    if (showingEditedPreview) {
                       const nextTime = event.currentTarget.currentTime;
                       dispatchEditorAction({ type: "selection.setPlayhead", timelineTime: nextTime });
                       const nextClip = positionedClips.find(
@@ -763,7 +809,7 @@ export function ProjectEditorView() {
         </aside>
       </div>
 
-      <div className="h-72 shrink-0 border-t border-outline-variant/10 bg-surface-container p-3">
+      <div className="h-80 shrink-0 border-t border-outline-variant/10 bg-surface-container p-3">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="text-xs font-bold uppercase tracking-[0.16em] text-on-surface-variant">{t("timeline.timeline")}</span>
@@ -784,6 +830,15 @@ export function ProjectEditorView() {
               <Tooltip variant="wrap" delay={2000} content={t("editor.deleteTooltip")}>
                 <Button variant="ghost" size="sm" className="text-error" onClick={() => dispatchEditorAction({ type: "clip.delete", clipId: selectedClip.id })} aria-label={t("editor.delete")}><Icon name="delete" className="text-sm" /></Button>
               </Tooltip>
+              <Button
+                variant={semanticRangeToolActive ? "primary" : "surface"}
+                size="sm"
+                onClick={() => setSemanticRangeToolActive((active) => !active)}
+                aria-pressed={semanticRangeToolActive}
+                aria-label={t("editor.addSemanticRange")}
+              >
+                <Icon name="bookmark_add" className="text-sm" />
+              </Button>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -794,39 +849,69 @@ export function ProjectEditorView() {
         </div>
         <div className="h-[calc(100%-3rem)] overflow-x-auto timeline-scrollbar rounded-xl bg-surface-container-lowest" onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
-          const x = event.clientX - rect.left + event.currentTarget.scrollLeft;
+          const x = event.clientX - rect.left + event.currentTarget.scrollLeft - 96;
+          if (x < 0) return;
           seekTimeline(Math.max(0, Math.min(duration, x / timelineZoom)));
         }}>
-          <div className="relative h-full" style={{ width: timelineWidth }}>
+          <div className="relative h-full" style={{ width: timelineCanvasWidth }}>
             <div className="absolute inset-x-0 top-0 h-8 border-b border-outline-variant/10 text-[10px] text-on-surface-variant">
-              {Array.from({ length: Math.ceil(duration / 10) + 1 }, (_, index) => index * 10).map((time) => (
-                <span key={time} className="absolute top-2 -translate-x-1/2 font-mono" style={{ left: time * timelineZoom }}>{formatTime(Math.min(time, duration))}</span>
+              {Array.from({ length: Math.ceil(timelineRenderDuration / 10) + 1 }, (_, index) => index * 10).map((time) => (
+                <span key={time} className="absolute top-2 -translate-x-1/2 font-mono" style={{ left: 96 + time * timelineZoom }}>{formatTime(Math.min(time, timelineRenderDuration))}</span>
               ))}
             </div>
-            <div className="absolute inset-x-0 bottom-4 top-12 rounded-lg bg-surface-container p-2">
-              <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-widest text-on-surface-variant"><Icon name="movie" className="text-sm text-primary" />{t("editor.videoTrack")}</div>
-              <div className="relative h-28">
-                {positionedClips.map((clip) => (
-                  <button
-                    type="button"
-                    key={clip.id}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      dispatchEditorAction({ type: "selection.selectClip", clipId: clip.id });
-                      seekTimeline(clip.timelineStart);
-                    }}
-                    className={`absolute bottom-2 top-2 overflow-hidden rounded-lg px-2 py-2 text-left transition-colors ${selectedClipId === clip.id ? "bg-primary/40 ring-1 ring-primary" : "bg-surface-container-highest hover:bg-surface-bright"}`}
-                    style={{ left: clip.timelineStart * timelineZoom, width: Math.max(clip.timelineDuration * timelineZoom - 2, 6) }}
-                  >
-                    <span className="block truncate text-[10px] font-semibold text-on-surface">{clip.label}</span>
-                    <span className="mt-1 block truncate font-mono text-[10px] text-on-surface-variant">{clip.speed}× · {formatTime(clip.timelineDuration)}</span>
-                  </button>
-                ))}
+            <div className="absolute inset-x-0 bottom-4 top-12 overflow-hidden rounded-lg bg-surface-container p-2">
+              <SemanticRangeTrack
+                project={timelineProject}
+                duration={duration}
+                timelineZoom={timelineZoom}
+                timelineWidth={timelineWidth}
+                selectedRangeId={selectedSemanticRangeId}
+                toolActive={semanticRangeToolActive}
+                onToggleTool={() => setSemanticRangeToolActive((active) => !active)}
+                onSelect={selectSemanticRange}
+                onOpen={(rangeId) => {
+                  selectSemanticRange(rangeId);
+                  setOpenSemanticRangeId(rangeId);
+                }}
+                onCreate={handleSemanticRangeCreate}
+                onResize={handleSemanticRangeResize}
+              />
+              <div className="mt-2 flex h-28" style={{ width: timelineCanvasWidth }}>
+                <div className="flex w-24 shrink-0 items-start gap-2 border-r border-outline-variant/10 px-2 pt-2 text-[10px] uppercase tracking-widest text-on-surface-variant">
+                  <Icon name="movie" className="text-sm text-primary" />
+                  <span>{t("editor.videoTrack")}</span>
+                </div>
+                <div className="relative h-28 flex-1">
+                  {positionedClips.map((clip) => (
+                    <button
+                      type="button"
+                      key={clip.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        dispatchEditorAction({ type: "selection.selectClip", clipId: clip.id });
+                        seekTimeline(clip.timelineStart);
+                      }}
+                      className={`absolute bottom-2 top-2 overflow-hidden rounded-lg px-2 py-2 text-left transition-colors ${selectedClipId === clip.id ? "bg-primary/40 ring-1 ring-primary" : "bg-surface-container-highest hover:bg-surface-bright"}`}
+                      style={{ left: clip.timelineStart * timelineZoom, width: Math.max(clip.timelineDuration * timelineZoom - 2, 6) }}
+                    >
+                      <span className="block truncate text-[10px] font-semibold text-on-surface">{clip.label}</span>
+                      <span className="mt-1 block truncate font-mono text-[10px] text-on-surface-variant">{clip.speed}× · {formatTime(clip.timelineDuration)}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-            <div className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-primary shadow-[0_0_12px_rgba(186,158,255,0.9)]" style={{ left: playhead * timelineZoom }}><div className="-ml-1.5 mt-1 h-3 w-3 rounded-full bg-primary" /></div>
+            <div className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-primary shadow-[0_0_12px_rgba(186,158,255,0.9)]" style={{ left: 96 + playhead * timelineZoom }}><div className="-ml-1.5 mt-1 h-3 w-3 rounded-full bg-primary" /></div>
           </div>
         </div>
+        <SemanticRangeInspector
+          range={selectedSemanticRange}
+          draft={semanticRangeDraft}
+          onClose={() => {
+            setOpenSemanticRangeId(null);
+            setSemanticRangeDraft(null);
+          }}
+        />
       </div>
     </div>
   );

@@ -182,6 +182,15 @@ export async function cancelProjectRender(jobId: string): Promise<void> {
   await invoke("cancel_project_render", { jobId });
 }
 
+export async function replaceMcpOutput(
+  temporaryPath: string,
+  outputPath: string,
+  allowExisting: boolean,
+): Promise<void> {
+  assertDesktop("MCP output replacement");
+  await invoke("replace_mcp_output", { temporaryPath, outputPath, allowExisting });
+}
+
 export async function waitForProjectIdle(
   projectId: number | string,
   timeoutMs?: number,

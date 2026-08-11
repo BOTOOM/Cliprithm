@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { createSemanticRange } from "./semanticRanges";
 import {
+  clipSourceTimeAtTimelineTime,
   createVideoProject,
   getTimelineDuration,
   migrateLegacyProject,
@@ -8,6 +10,7 @@ import {
   timelineTimeToSourceTime,
   trimClip,
   validateTimelineProject,
+  migrateTimelineProject,
   setClipSpeed,
   moveClip,
   replaceClipWithSilenceCandidate,
@@ -66,6 +69,38 @@ describe("timeline model", () => {
     ]);
   });
 
+  it("migrates a persisted schema v1 project to v3", () => {
+    const project = createVideoProject(asset);
+    const legacy = { ...project, schemaVersion: 1, semanticRanges: undefined };
+    const migrated = migrateTimelineProject(legacy);
+    expect(migrated).not.toBeNull();
+    expect(migrated?.schemaVersion).toBe(3);
+    expect(migrated?.semanticRanges).toEqual([]);
+    expect(migrated?.clips.map((clip) => [clip.sourceStart, clip.sourceEnd])).toEqual([[0, 20]]);
+    expect(validateTimelineProject(migrated)).toBe(true);
+  });
+
+  it("expands legacy source ranges into independent absolute placements", () => {
+    const base = createVideoProject(asset);
+    const project = duplicateClip(base, base.clips[0].id);
+    const range = createSemanticRange({
+      title: "A duplicated moment",
+      description: "The same source moment appears twice.",
+      sourceAnchors: [{ assetId: project.assets[0].id, sourceStart: 2, sourceEnd: 4 }],
+      createdBy: "user",
+    });
+    const migrated = migrateTimelineProject({ ...project, schemaVersion: 2, semanticRanges: [range] });
+
+    expect(migrated).not.toBeNull();
+    expect(migrated?.schemaVersion).toBe(3);
+    expect(migrated?.semanticRanges).toHaveLength(2);
+    expect(migrated?.semanticRanges.map((candidate) => [candidate.timelineStart, candidate.timelineEnd])).toEqual([
+      [2, 4],
+      [22, 24],
+    ]);
+    expect(new Set(migrated?.semanticRanges.map((candidate) => candidate.id)).size).toBe(2);
+  });
+
   it("rejects invalid references, non-finite ranges, and out-of-bounds clips", () => {
     const project = createVideoProject(asset);
     const invalid = {
@@ -112,6 +147,15 @@ describe("timeline model", () => {
       clips: [{ ...project.clips[0], sourceBounds: { start: 2, end: 8 } }],
     };
     expect(validateTimelineProject(invalid)).toBe(false);
+  });
+
+  it("rejects a split that is too close in source time at a slow speed", () => {
+    const project = createVideoProject(asset);
+    const clipId = project.clips[0].id;
+    const slowed = setClipSpeed(project, clipId, 0.25);
+
+    expect(clipSourceTimeAtTimelineTime(slowed, clipId, 0.1)).toBeCloseTo(0.025);
+    expect(splitClipAtTimelineTime(slowed, clipId, 0.1)).toBe(slowed);
   });
 
   it("splits using timeline time and preserves speed mapping", () => {

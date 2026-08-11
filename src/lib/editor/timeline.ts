@@ -6,6 +6,7 @@ import type {
   TimelineProject,
   TimelineTrack,
   VideoMetadata,
+  SemanticRange,
 } from "../../types";
 
 export const MIN_CLIP_DURATION = 0.08;
@@ -40,6 +41,11 @@ function cloneProject(project: TimelineProject): TimelineProject {
     assets: [...project.assets],
     tracks: project.tracks.map((track) => ({ ...track, clipIds: [...track.clipIds] })),
     clips: project.clips.map((clip) => ({ ...clip })),
+    semanticRanges: project.semanticRanges.map((range) => ({
+      ...range,
+      tags: [...range.tags],
+      sourceAnchors: range.sourceAnchors.map((anchor) => ({ ...anchor })),
+    })),
   };
 }
 
@@ -131,7 +137,7 @@ function validTimelineClip(value: unknown): value is TimelineClip {
       finiteNumber(value.sourceBounds.start) &&
       finiteNumber(value.sourceBounds.end) &&
       value.sourceBounds.start >= 0 &&
-      value.sourceBounds.end - value.sourceBounds.start >= MIN_CLIP_DURATION &&
+      value.sourceEnd - value.sourceBounds.start >= MIN_CLIP_DURATION &&
       value.sourceStart >= value.sourceBounds.start &&
       value.sourceEnd <= value.sourceBounds.end
     )) &&
@@ -142,47 +148,207 @@ function validTimelineClip(value: unknown): value is TimelineClip {
   );
 }
 
-export function validateTimelineProject(value: unknown): value is TimelineProject {
+function validSemanticRange(value: unknown): value is SemanticRange {
+  if (!isRecord(value)) return false;
+  const timelineStart = value.timelineStart;
+  const timelineEnd = value.timelineEnd;
+  const hasTimelinePlacement = timelineStart !== null || timelineEnd !== null;
   if (
-    !isRecord(value) ||
-    value.schemaVersion !== 1 ||
+    typeof value.id !== "string" ||
+    value.id.length === 0 ||
+    value.id.length > 256 ||
+    typeof value.title !== "string" ||
+    value.title.trim().length === 0 ||
+    value.title.length > 120 ||
+    typeof value.description !== "string" ||
+    value.description.trim().length === 0 ||
+    value.description.length > 4_000 ||
+    !Array.isArray(value.tags) ||
+    value.tags.length > 20 ||
+    !value.tags.every((tag) => typeof tag === "string" && tag.trim().length > 0 && tag.length <= 64) ||
+    !Array.isArray(value.sourceAnchors) ||
+    value.sourceAnchors.length > 100 ||
+    (!hasTimelinePlacement && value.sourceAnchors.length === 0) ||
+    (hasTimelinePlacement &&
+      (!finiteNumber(timelineStart) ||
+        !finiteNumber(timelineEnd) ||
+        timelineStart < 0 ||
+        timelineEnd - timelineStart < MIN_CLIP_DURATION)) ||
+    !["user", "ai"].includes(String(value.createdBy)) ||
+    typeof value.createdAt !== "string" ||
+    typeof value.updatedAt !== "string"
+  ) {
+    return false;
+  }
+
+  return value.sourceAnchors.every((anchor) =>
+    isRecord(anchor) &&
+    typeof anchor.assetId === "string" &&
+    anchor.assetId.length > 0 &&
+    finiteNumber(anchor.sourceStart) &&
+    finiteNumber(anchor.sourceEnd) &&
+    anchor.sourceStart >= 0 &&
+    anchor.sourceEnd - anchor.sourceStart >= MIN_CLIP_DURATION
+  );
+}
+
+function validateTimelineProjectShape(value: Record<string, unknown>, requireSemanticRanges: boolean): boolean {
+  if (
     !finiteNumber(value.revision) ||
     !Number.isInteger(value.revision) ||
     value.revision < 0
   ) return false;
-  if (!Array.isArray(value.assets) || value.assets.length > MAX_PROJECT_ASSETS) return false;
-  if (!Array.isArray(value.tracks) || !Array.isArray(value.clips) || value.clips.length > MAX_PROJECT_CLIPS) {
+  const assets = value.assets;
+  const tracks = value.tracks;
+  const clips = value.clips;
+  const semanticRanges = value.semanticRanges;
+  if (!Array.isArray(assets) || assets.length > MAX_PROJECT_ASSETS) return false;
+  if (!Array.isArray(tracks) || !Array.isArray(clips) || clips.length > MAX_PROJECT_CLIPS) {
     return false;
   }
-  if (!value.tracks.some((track) => isRecord(track) && track.id === PRIMARY_VIDEO_TRACK_ID && track.kind === "video")) {
+  if (requireSemanticRanges && (!Array.isArray(semanticRanges) || semanticRanges.length > 10_000)) {
     return false;
   }
-  if (!value.assets.every(validMediaAsset) || !value.tracks.every(validTimelineTrack) || !value.clips.every(validTimelineClip)) {
+  if (!tracks.some((track) => isRecord(track) && track.id === PRIMARY_VIDEO_TRACK_ID && track.kind === "video")) {
     return false;
+  }
+  if (!assets.every(validMediaAsset) || !tracks.every(validTimelineTrack) || !clips.every(validTimelineClip)) {
+    return false;
+  }
+  const semanticRangeValues = Array.isArray(semanticRanges) ? semanticRanges : [];
+  if (requireSemanticRanges && !semanticRangeValues.every(validSemanticRange)) return false;
+
+  if (requireSemanticRanges) {
+    const semanticRangeIds = new Set(
+      (semanticRangeValues as SemanticRange[]).map((range) => range.id),
+    );
+    if (semanticRangeIds.size !== semanticRangeValues.length) return false;
   }
 
-  const assetIds = new Set(value.assets.map((asset) => asset.id));
-  const clipIds = new Set(value.clips.map((clip) => clip.id));
-  const trackIds = new Set(value.tracks.map((track) => track.id));
-  if (assetIds.size !== value.assets.length || clipIds.size !== value.clips.length || trackIds.size !== value.tracks.length) {
+  const validAssets = assets as MediaAsset[];
+  const validTracks = tracks as TimelineTrack[];
+  const validClips = clips as TimelineClip[];
+  const assetIds = new Set(validAssets.map((asset) => asset.id));
+  const clipIds = new Set(validClips.map((clip) => clip.id));
+  const trackIds = new Set(validTracks.map((track) => track.id));
+  if (assetIds.size !== validAssets.length || clipIds.size !== validClips.length || trackIds.size !== validTracks.length) {
     return false;
   }
 
   const referencedClipIds = new Set<string>();
-  for (const clip of value.clips) {
-    const asset = value.assets.find((candidate) => candidate.id === clip.assetId);
+  for (const clip of validClips) {
+    const asset = validAssets.find((candidate) => candidate.id === clip.assetId);
     if (!asset || !trackIds.has(clip.trackId)) return false;
-    if (asset.metadata && finiteNumber(asset.metadata.duration)) {
-      if (clip.sourceEnd > asset.metadata.duration) return false;
+    if (asset.metadata && finiteNumber(asset.metadata.duration) && clip.sourceEnd > asset.metadata.duration) {
+      return false;
     }
   }
-  for (const track of value.tracks) {
+  if (requireSemanticRanges) {
+    for (const range of semanticRangeValues as SemanticRange[]) {
+      if (!range.sourceAnchors.every((anchor) => {
+        const asset = validAssets.find((candidate) => candidate.id === anchor.assetId);
+        return Boolean(
+          asset &&
+          (!asset.metadata || !finiteNumber(asset.metadata.duration) || anchor.sourceEnd <= asset.metadata.duration)
+        );
+      })) return false;
+    }
+  }
+  for (const track of validTracks) {
     for (const clipId of track.clipIds) {
       if (!clipIds.has(clipId) || referencedClipIds.has(clipId)) return false;
       referencedClipIds.add(clipId);
     }
   }
-  return referencedClipIds.size === value.clips.length;
+  return referencedClipIds.size === validClips.length;
+}
+
+export function validateTimelineProject(value: unknown): value is TimelineProject {
+  return Boolean(
+    isRecord(value) &&
+    value.schemaVersion === 3 &&
+    validateTimelineProjectShape(value, true)
+  );
+}
+
+function semanticRangeOccurrencesForMigration(
+  project: TimelineProject,
+  range: SemanticRange,
+): Array<{ timelineStart: number; timelineEnd: number; sourceStart: number; sourceEnd: number; assetId: string }> {
+  return range.sourceAnchors
+    .flatMap((anchor) =>
+      getPositionedClips(project).flatMap((clip) => {
+        if (clip.assetId !== anchor.assetId) return [];
+        const sourceStart = Math.max(anchor.sourceStart, clip.sourceStart);
+        const sourceEnd = Math.min(anchor.sourceEnd, clip.sourceEnd);
+        if (sourceEnd - sourceStart < MIN_CLIP_DURATION) return [];
+        const timelineStart = sourceTimeToTimelineTime(project, clip.id, sourceStart);
+        const timelineEnd = sourceTimeToTimelineTime(project, clip.id, sourceEnd);
+        if (timelineStart === null || timelineEnd === null || timelineEnd - timelineStart < MIN_CLIP_DURATION) {
+          return [];
+        }
+        return [{ timelineStart, timelineEnd, sourceStart, sourceEnd, assetId: anchor.assetId }];
+      }),
+    )
+    .sort((left, right) => left.timelineStart - right.timelineStart);
+}
+
+function migratedSemanticRangeId(baseId: string, index: number, usedIds: Set<string>): string {
+  const suffix = index === 0 ? "" : `-placement-${index}`;
+  const base = `${baseId}${suffix}`.slice(0, 256);
+  let id = base;
+  let collision = 1;
+  while (usedIds.has(id)) {
+    const collisionSuffix = `-${collision++}`;
+    id = `${base.slice(0, 256 - collisionSuffix.length)}${collisionSuffix}`;
+  }
+  usedIds.add(id);
+  return id;
+}
+
+function migrateSemanticRangesToV3(value: Record<string, unknown>): SemanticRange[] {
+  const sourceRanges = Array.isArray(value.semanticRanges)
+    ? value.semanticRanges.filter(validSemanticRange)
+    : [];
+  const project = { ...value, schemaVersion: 3, semanticRanges: [] } as unknown as TimelineProject;
+  const usedIds = new Set<string>();
+  return sourceRanges.flatMap((range) => {
+    const occurrences = semanticRangeOccurrencesForMigration(project, range);
+    if (occurrences.length === 0) {
+      return [{
+        ...range,
+        id: migratedSemanticRangeId(range.id, 0, usedIds),
+        timelineStart: null,
+        timelineEnd: null,
+        sourceAnchors: range.sourceAnchors.map((anchor) => ({ ...anchor })),
+      } as SemanticRange];
+    }
+    return occurrences.map((occurrence, index) => ({
+      ...range,
+      id: migratedSemanticRangeId(range.id, index, usedIds),
+      timelineStart: occurrence.timelineStart,
+      timelineEnd: occurrence.timelineEnd,
+      sourceAnchors: [{
+        assetId: occurrence.assetId,
+        sourceStart: occurrence.sourceStart,
+        sourceEnd: occurrence.sourceEnd,
+      }],
+    } as SemanticRange));
+  });
+}
+
+export function migrateTimelineProject(value: unknown): TimelineProject | null {
+  if (!isRecord(value)) return null;
+  if (value.schemaVersion === 3 && validateTimelineProject(value)) return value;
+  if ((value.schemaVersion !== 1 && value.schemaVersion !== 2) || !validateTimelineProjectShape(value, false)) {
+    return null;
+  }
+  const migrated = {
+    ...value,
+    schemaVersion: 3 as const,
+    semanticRanges: value.schemaVersion === 2 ? migrateSemanticRangesToV3(value) : [],
+  };
+  return validateTimelineProject(migrated) ? migrated : null;
 }
 
 export function migrateLegacyProject(input: {
@@ -253,10 +419,11 @@ export function createVideoProject(
     : [];
   track.clipIds.push(...clips.map((clip) => clip.id));
   return {
-    schemaVersion: 1,
+    schemaVersion: 3,
     assets: [{ ...asset, id: assetId, kind: asset.kind ?? "video" }],
     tracks: [track],
     clips,
+    semanticRanges: [],
     revision: 1,
   };
 }
@@ -342,16 +509,32 @@ export function timelineTimeToSourceTime(
   };
 }
 
+export function clipSourceTimeAtTimelineTime(
+  project: TimelineProject,
+  clipId: string,
+  timelineTime: number
+): number | null {
+  if (!finiteNumber(timelineTime)) return null;
+  const positioned = getPositionedClips(project).find((clip) => clip.id === clipId);
+  if (
+    !positioned ||
+    timelineTime < positioned.timelineStart ||
+    timelineTime > positioned.timelineEnd
+  ) {
+    return null;
+  }
+  return positioned.sourceStart +
+    (timelineTime - positioned.timelineStart) * clampSpeed(positioned.speed);
+}
+
 export function splitClipAtTimelineTime(
   project: TimelineProject,
   clipId: string,
   timelineTime: number
 ): TimelineProject {
-  if (!finiteNumber(timelineTime)) return project;
   const positioned = getPositionedClips(project).find((clip) => clip.id === clipId);
-  if (!positioned) return project;
-  const sourceSplit = positioned.sourceStart +
-    (timelineTime - positioned.timelineStart) * clampSpeed(positioned.speed);
+  const sourceSplit = clipSourceTimeAtTimelineTime(project, clipId, timelineTime);
+  if (!positioned || sourceSplit === null) return project;
   if (
     sourceSplit <= positioned.sourceStart + MIN_CLIP_DURATION ||
     sourceSplit >= positioned.sourceEnd - MIN_CLIP_DURATION
@@ -545,6 +728,17 @@ export function addVideoAsset(
   const targetTrack = next.tracks.find((candidate) => candidate.id === track.id);
   if (targetTrack && clip) targetTrack.clipIds.push(clip.id);
   if (clip) next.clips.push(clip);
+  return updateRevision(next);
+}
+
+export function removeVideoAsset(project: TimelineProject, assetId: string): TimelineProject {
+  if (!getAsset(project, assetId)) return project;
+  if (project.clips.some((clip) => clip.assetId === assetId)) return project;
+  if (project.semanticRanges.some((range) => range.sourceAnchors.some((anchor) => anchor.assetId === assetId))) {
+    return project;
+  }
+  const next = cloneProject(project);
+  next.assets = next.assets.filter((asset) => asset.id !== assetId);
   return updateRevision(next);
 }
 

@@ -11,12 +11,17 @@ import { useI18n } from "../../lib/i18n";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
 import { checkFFmpeg, getVideoMetadata } from "../../services/tauriCommands";
-import { createProject, updateProject } from "../../services/database";
+import { createProject, deleteProject, updateProject } from "../../services/database";
 import { openExternalUrl, APP_LINKS } from "../../lib/appInfo";
 import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
 import { MediaLibrary } from "./MediaLibrary";
 import { FfmpegHelpPanel } from "../shared/FfmpegHelpPanel";
+import {
+  projectStateMatchesSnapshot,
+  saveProjectState,
+  snapshotProjectState,
+} from "../../hooks/useAutoSave";
 
 export function EmptyState() {
   const { t, tList } = useI18n();
@@ -24,12 +29,10 @@ export function EmptyState() {
     setFilePath,
     setVideoMetadata,
     setView,
-    setDetectionResult,
-    setProcessedFilePath,
-    setPreviewFilePath,
     setProgress,
     setProjectId,
     initializeTimelineProject,
+    resetProject,
     detectionSettings,
     ffmpegStatus,
     setFfmpegStatus,
@@ -52,30 +55,41 @@ export function EmptyState() {
 
   const handleDesktopFile = useCallback(
     async (path: string) => {
+      let operationSnapshot: ReturnType<typeof snapshotProjectState> | null = null;
       try {
+        const currentState = useProjectStore.getState();
+        const savedStateSnapshot = snapshotProjectState(currentState);
+        operationSnapshot = savedStateSnapshot;
+        if (currentState.projectId) {
+          const saved = await saveProjectState(currentState.projectId, currentState);
+          if (!saved || !projectStateMatchesSnapshot(useProjectStore.getState(), savedStateSnapshot)) {
+            throw new Error(t("mediaLibrary.unsavedProjectSaveFailed"));
+          }
+        }
         setError(null);
         setNotice(null);
         if (ffmpegStatus && !ffmpegStatus.available) {
           setError(t("importView.ffmpegMissingDescription"));
           return;
         }
-        setProcessedFilePath(null);
-        setPreviewFilePath(null);
+        setView("processing");
+        const transitionSnapshot = snapshotProjectState(useProjectStore.getState());
+        operationSnapshot = transitionSnapshot;
+        const metadata = await getVideoMetadata(path);
+        if (!projectStateMatchesSnapshot(useProjectStore.getState(), transitionSnapshot)) {
+          throw new Error(t("mediaLibrary.projectChangedDuringLoad"));
+        }
+        resetProject();
         setFilePath(path);
         setView("processing");
-        setProgress({
-          percent: 8,
-          stage: "metadata",
-          message: "",
-        });
-
-        const metadata = await getVideoMetadata(path);
-        setVideoMetadata(metadata);
         setProgress({
           percent: 11,
           stage: "metadata",
           message: "",
         });
+        setVideoMetadata(metadata);
+        const importSnapshot = snapshotProjectState(useProjectStore.getState());
+        operationSnapshot = importSnapshot;
 
         const fileName = getFileName(path);
         let thumbnailPath: string | null = null;
@@ -89,6 +103,9 @@ export function EmptyState() {
         } catch {
           thumbnailPath = null;
         }
+        if (!projectStateMatchesSnapshot(useProjectStore.getState(), importSnapshot)) {
+          throw new Error(t("mediaLibrary.projectChangedDuringLoad"));
+        }
 
         initializeTimelineProject({
           path,
@@ -97,6 +114,8 @@ export function EmptyState() {
           thumbnailPath,
           sourceFingerprint: `${metadata.file_size}:${metadata.duration}:${metadata.codec}`,
         });
+        const initializedSnapshot = snapshotProjectState(useProjectStore.getState());
+        operationSnapshot = initializedSnapshot;
         setProgress({
           percent: 100,
           stage: "complete",
@@ -118,7 +137,13 @@ export function EmptyState() {
             min_duration: detectionSettings.minDuration,
             mode: detectionSettings.mode,
           });
+          if (!projectStateMatchesSnapshot(useProjectStore.getState(), initializedSnapshot)) {
+            await deleteProject(newProjectId);
+            return;
+          }
           setProjectId(newProjectId);
+          const activeProjectSnapshot = snapshotProjectState(useProjectStore.getState());
+          operationSnapshot = activeProjectSnapshot;
           const timelineProject = useProjectStore.getState().timelineProject;
           if (timelineProject) {
             try {
@@ -137,39 +162,58 @@ export function EmptyState() {
         } catch (dbError) {
           log.warn("[db]", "Failed to save project:", dbError);
         }
+        if (!operationSnapshot || !projectStateMatchesSnapshot(useProjectStore.getState(), operationSnapshot)) {
+          return;
+        }
 
         setView("editor");
       } catch (err) {
         log.error("[import]", "Desktop import failed:", err);
-        setError(t("importView.desktopImportFailed"));
-        setView("import");
+        const currentState = useProjectStore.getState();
+        if (!operationSnapshot || projectStateMatchesSnapshot(currentState, operationSnapshot)) {
+          setError(t("importView.desktopImportFailed"));
+          setView("import");
+        }
       }
     },
     [
       detectionSettings,
       ffmpegStatus,
       initializeTimelineProject,
-      setDetectionResult,
+      resetProject,
       setFilePath,
-      setProcessedFilePath,
-      setPreviewFilePath,
       setProgress,
       setVideoMetadata,
       setView,
       setProjectId,
+      t,
     ]
   );
 
   const handleBrowserFile = useCallback(
     async (file: File) => {
+      let operationSnapshot: ReturnType<typeof snapshotProjectState> | null = null;
       try {
+        const currentState = useProjectStore.getState();
+        const savedStateSnapshot = snapshotProjectState(currentState);
+        operationSnapshot = savedStateSnapshot;
+        if (currentState.projectId) {
+          const saved = await saveProjectState(currentState.projectId, currentState);
+          if (!saved || !projectStateMatchesSnapshot(useProjectStore.getState(), savedStateSnapshot)) {
+            throw new Error(t("mediaLibrary.unsavedProjectSaveFailed"));
+          }
+        }
         setError(null);
         setNotice(
           t("importView.browserNotice")
         );
+        const transitionSnapshot = snapshotProjectState(useProjectStore.getState());
+        operationSnapshot = transitionSnapshot;
         const { url, metadata } = await extractBrowserVideoMetadata(file);
-        setProcessedFilePath(null);
-        setPreviewFilePath(null);
+        if (!projectStateMatchesSnapshot(useProjectStore.getState(), transitionSnapshot)) {
+          throw new Error(t("mediaLibrary.projectChangedDuringLoad"));
+        }
+        resetProject();
         setFilePath(url);
         setVideoMetadata(metadata);
         initializeTimelineProject({
@@ -179,21 +223,23 @@ export function EmptyState() {
           thumbnailPath: null,
           sourceFingerprint: `${file.name}:${file.size}:${file.lastModified}`,
         });
-        setDetectionResult(null);
+        operationSnapshot = snapshotProjectState(useProjectStore.getState());
         setView("editor");
       } catch (err) {
         log.error("[import]", "Browser import failed:", err);
-        setError(t("importView.browserImportFailed"));
+        const currentState = useProjectStore.getState();
+        if (!operationSnapshot || projectStateMatchesSnapshot(currentState, operationSnapshot)) {
+          setError(t("importView.browserImportFailed"));
+        }
       }
     },
     [
       initializeTimelineProject,
-      setDetectionResult,
+      resetProject,
       setFilePath,
-      setProcessedFilePath,
-      setPreviewFilePath,
       setVideoMetadata,
       setView,
+      t,
     ]
   );
 

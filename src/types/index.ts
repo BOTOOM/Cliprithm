@@ -1,6 +1,11 @@
 export type AppView = "import" | "processing" | "detection" | "editor" | "export";
 export type PreviewMode = "source" | "edited";
 
+export interface TimelineSelectionRange {
+  start: number;
+  end: number;
+}
+
 export interface VideoMetadata {
   duration: number;
   width: number;
@@ -63,11 +68,49 @@ export interface TimelineTrack {
   visible: boolean;
 }
 
+export interface SemanticRangeAnchor {
+  assetId: string;
+  sourceStart: number;
+  sourceEnd: number;
+}
+
+export type SemanticRangeAuthor = "user" | "ai";
+
+export interface SemanticRange {
+  id: string;
+  title: string;
+  description: string;
+  tags: string[];
+  timelineStart: number | null;
+  timelineEnd: number | null;
+  sourceAnchors: SemanticRangeAnchor[];
+  createdBy: SemanticRangeAuthor;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SemanticRangeOccurrence {
+  anchorIndex: number;
+  clipId: string;
+  timelineStart: number;
+  timelineEnd: number;
+  sourceStart: number;
+  sourceEnd: number;
+  coverage: number;
+}
+
+export interface SemanticRangeContext {
+  range: SemanticRange;
+  occurrences: SemanticRangeOccurrence[];
+  presence: "fully_present" | "partially_present" | "not_present";
+}
+
 export interface TimelineProject {
-  schemaVersion: 1;
+  schemaVersion: 3;
   assets: MediaAsset[];
   tracks: TimelineTrack[];
   clips: TimelineClip[];
+  semanticRanges: SemanticRange[];
   revision: number;
 }
 

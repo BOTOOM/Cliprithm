@@ -1,35 +1,65 @@
-import type { MediaAsset, SilenceSegment, TimelineProject } from "../../types";
+import type {
+  MediaAsset,
+  SemanticRange,
+  SilenceSegment,
+  TimelineProject,
+} from "../../types";
 import {
   MAX_CLIP_SPEED,
   MAX_PROJECT_ASSETS,
   MAX_PROJECT_CLIPS,
+  MIN_CLIP_DURATION,
   MIN_CLIP_SPEED,
+  clipSourceTimeAtTimelineTime,
   getClip,
   getPositionedClips,
 } from "./timeline";
+import {
+  MAX_SEMANTIC_RANGES,
+  validateSemanticRangeInProject,
+} from "./semanticRanges";
 
 type VideoAssetInput = Omit<MediaAsset, "id" | "kind"> & Partial<Pick<MediaAsset, "id" | "kind">>;
 type SilenceCandidates = Array<{ clipId: string; segments: SilenceSegment[] }>;
+type SemanticRangeDraft = Pick<SemanticRange, "title" | "description" | "tags" | "timelineStart" | "timelineEnd"> & {
+  sourceAnchors?: SemanticRange["sourceAnchors"];
+  createdBy: SemanticRange["createdBy"];
+};
+type SemanticRangeUpdates = Partial<Pick<SemanticRange, "title" | "description" | "tags" | "timelineStart" | "timelineEnd">>;
 
 export type EditorAction =
   | { type: "asset.addVideo"; asset: VideoAssetInput }
+  | { type: "asset.remove"; assetId: string }
   | { type: "selection.selectClip"; clipId: string | null }
   | { type: "selection.setPlayhead"; timelineTime: number }
+  | { type: "selection.selectRange"; start: number; end: number }
+  | { type: "selection.selectSemanticRange"; rangeId: string | null }
   | { type: "clip.splitAtPlayhead"; clipId: string; timelineTime: number }
   | { type: "clip.trim"; clipId: string; sourceStart: number; sourceEnd: number }
   | { type: "clip.move"; clipId: string; destinationIndex: number }
   | { type: "clip.duplicate"; clipId: string }
   | { type: "clip.delete"; clipId: string }
   | { type: "clip.setSpeed"; clipId: string; speed: number }
+  | { type: "clip.resetSpeed"; clipId: string }
   | {
       type: "analysis.acceptCandidate";
       projectRevision: number;
       candidates: SilenceCandidates;
     }
+  | { type: "semanticRange.add"; range: SemanticRangeDraft }
+  | { type: "semanticRange.update"; rangeId: string; updates: SemanticRangeUpdates }
+  | { type: "semanticRange.delete"; rangeId: string }
   | { type: "history.undo" }
   | { type: "history.redo" };
 
-export type EditorActionCategory = "media" | "selection" | "edit" | "timing" | "analysis" | "history";
+export type EditorActionCategory =
+  | "media"
+  | "selection"
+  | "edit"
+  | "timing"
+  | "analysis"
+  | "annotation"
+  | "history";
 export type EditorActionMutation = "project" | "selection" | "history";
 export type EditorActionMcpPolicy = "planned" | "internal";
 
@@ -59,6 +89,15 @@ export const EDITOR_ACTIONS: Record<EditorAction["type"], EditorActionDefinition
     undoable: true,
     progress: "instant",
   }),
+  "asset.remove": projectAction({
+    id: "asset.remove",
+    category: "media",
+    labelKey: "editor.removeAsset",
+    inputSchema: "assetId",
+    preconditions: ["asset exists", "asset has no clip or semantic range references"],
+    undoable: true,
+    progress: "instant",
+  }),
   "selection.selectClip": {
     id: "selection.selectClip",
     category: "selection",
@@ -80,6 +119,28 @@ export const EDITOR_ACTIONS: Record<EditorAction["type"], EditorActionDefinition
     undoable: false,
     progress: "instant",
     mcp: "planned",
+  },
+  "selection.selectRange": {
+    id: "selection.selectRange",
+    category: "selection",
+    labelKey: "editor.selectRange",
+    inputSchema: "timeline start + end seconds",
+    preconditions: ["project loaded", "finite ordered timeline range"],
+    mutation: "selection",
+    undoable: false,
+    progress: "instant",
+    mcp: "planned",
+  },
+  "selection.selectSemanticRange": {
+    id: "selection.selectSemanticRange",
+    category: "selection",
+    labelKey: "editor.semanticRanges",
+    inputSchema: "semantic range ID | null",
+    preconditions: ["project loaded", "range exists when non-null"],
+    mutation: "selection",
+    undoable: false,
+    progress: "instant",
+    mcp: "internal",
   },
   "clip.splitAtPlayhead": projectAction({
     id: "clip.splitAtPlayhead",
@@ -135,12 +196,48 @@ export const EDITOR_ACTIONS: Record<EditorAction["type"], EditorActionDefinition
     undoable: true,
     progress: "instant",
   }),
+  "clip.resetSpeed": projectAction({
+    id: "clip.resetSpeed",
+    category: "timing",
+    labelKey: "editor.resetSpeed",
+    inputSchema: "clipId",
+    preconditions: ["clip exists"],
+    undoable: true,
+    progress: "instant",
+  }),
   "analysis.acceptCandidate": projectAction({
     id: "analysis.acceptCandidate",
     category: "analysis",
     labelKey: "editor.applyCandidate",
     inputSchema: "clipId[] + silence segments[]",
     preconditions: ["candidate matches current project revision"],
+    undoable: true,
+    progress: "instant",
+  }),
+  "semanticRange.add": projectAction({
+    id: "semanticRange.add",
+    category: "annotation",
+    labelKey: "editor.addSemanticRange",
+    inputSchema: "semantic range draft",
+    preconditions: ["project loaded", "valid source anchors", "non-empty title and description"],
+    undoable: true,
+    progress: "instant",
+  }),
+  "semanticRange.update": projectAction({
+    id: "semanticRange.update",
+    category: "annotation",
+    labelKey: "editor.updateSemanticRange",
+    inputSchema: "rangeId + partial updates",
+    preconditions: ["range exists", "updated anchors are valid"],
+    undoable: true,
+    progress: "instant",
+  }),
+  "semanticRange.delete": projectAction({
+    id: "semanticRange.delete",
+    category: "annotation",
+    labelKey: "editor.deleteSemanticRange",
+    inputSchema: "rangeId",
+    preconditions: ["range exists"],
     undoable: true,
     progress: "instant",
   }),
@@ -178,15 +275,48 @@ function isFiniteNumber(value: number): boolean {
   return Number.isFinite(value);
 }
 
-function isValidSilenceSegment(segment: SilenceSegment): boolean {
+function isValidSilenceSegment(
+  segment: SilenceSegment,
+  clip: TimelineProject["clips"][number],
+): boolean {
+  if (
+    !segment ||
+    typeof segment !== "object" ||
+    !isFiniteNumber(segment.start) ||
+    !isFiniteNumber(segment.end) ||
+    !isFiniteNumber(segment.duration)
+  ) {
+    return false;
+  }
+  const duration = segment.end - segment.start;
+  const durationTolerance = Math.max(0.001, duration * 1e-6);
   return (
-    isFiniteNumber(segment.start) &&
-    isFiniteNumber(segment.end) &&
-    isFiniteNumber(segment.duration) &&
-    segment.start >= 0 &&
-    segment.end > segment.start &&
-    segment.duration >= 0
+    segment.start >= clip.sourceStart &&
+    segment.end <= clip.sourceEnd &&
+    duration >= MIN_CLIP_DURATION &&
+    Math.abs(segment.duration - duration) <= durationTolerance
   );
+}
+
+function silenceReplacementClipCount(
+  clip: TimelineProject["clips"][number],
+  candidateSegments: SilenceSegment[],
+): number | null {
+  const segments = candidateSegments.slice().sort((left, right) => left.start - right.start);
+  let previousEnd = clip.sourceStart;
+  for (const segment of segments) {
+    if (!isValidSilenceSegment(segment, clip) || segment.start < previousEnd) return null;
+    previousEnd = segment.end;
+  }
+
+  let cursor = clip.sourceStart;
+  let replacementCount = 0;
+  for (const segment of segments) {
+    if (segment.start > cursor + MIN_CLIP_DURATION) replacementCount += 1;
+    cursor = Math.max(cursor, segment.end);
+  }
+  if (cursor < clip.sourceEnd - MIN_CLIP_DURATION) replacementCount += 1;
+  return replacementCount;
 }
 
 export function validateEditorAction(
@@ -211,6 +341,21 @@ export function validateEditorAction(
       );
       return Number.isFinite(action.timelineTime) && action.timelineTime >= 0 && action.timelineTime <= duration;
     }
+    case "selection.selectRange": {
+      const duration = getPositionedClips(project).reduce(
+        (total, clip) => total + clip.timelineDuration,
+        0
+      );
+      return (
+        Number.isFinite(action.start) &&
+        Number.isFinite(action.end) &&
+        action.start >= 0 &&
+        action.end > action.start &&
+        action.end <= duration
+      );
+    }
+    case "selection.selectSemanticRange":
+      return action.rangeId === null || project.semanticRanges.some((range) => range.id === action.rangeId);
     case "asset.addVideo":
       return (
         project.assets.length < MAX_PROJECT_ASSETS &&
@@ -232,17 +377,28 @@ export function validateEditorAction(
             Number.isFinite(action.asset.metadata.fps) &&
             action.asset.metadata.fps > 0))
       );
+    case "asset.remove":
+      return (
+        project.assets.some((asset) => asset.id === action.assetId) &&
+        !project.clips.some((clip) => clip.assetId === action.assetId) &&
+        !project.semanticRanges.some((range) => range.sourceAnchors.some((anchor) => anchor.assetId === action.assetId))
+      );
     case "clip.splitAtPlayhead": {
       const clip = getClip(project, action.clipId);
       const positioned = getPositionedClips(project).find(
         (candidate) => candidate.id === action.clipId
       );
+      const sourceSplit = clipSourceTimeAtTimelineTime(
+        project,
+        action.clipId,
+        action.timelineTime,
+      );
       return Boolean(
         clip &&
           positioned &&
-          isFiniteNumber(action.timelineTime) &&
-          action.timelineTime > positioned.timelineStart + 0.08 &&
-          action.timelineTime < positioned.timelineEnd - 0.08 &&
+          sourceSplit !== null &&
+          sourceSplit > positioned.sourceStart + MIN_CLIP_DURATION &&
+          sourceSplit < positioned.sourceEnd - MIN_CLIP_DURATION &&
           project.clips.length < MAX_PROJECT_CLIPS
       );
     }
@@ -290,18 +446,113 @@ export function validateEditorAction(
         action.speed <= MAX_CLIP_SPEED &&
         getClip(project, action.clipId) !== null
       );
-    case "analysis.acceptCandidate":
+    case "clip.resetSpeed":
+      return getClip(project, action.clipId) !== null;
+    case "analysis.acceptCandidate": {
+      if (
+        !Number.isInteger(action.projectRevision) ||
+        action.projectRevision !== project.revision ||
+        !Array.isArray(action.candidates) ||
+        action.candidates.length === 0
+      ) {
+        return false;
+      }
+      const candidateClipIds = new Set<string>();
+      let replacementClipCount = 0;
+      const candidatesValid = action.candidates.every((candidate) => {
+        if (!candidate || typeof candidate !== "object") return false;
+        const clip = getClip(project, candidate.clipId);
+        if (
+          !clip ||
+          candidateClipIds.has(candidate.clipId) ||
+          !Array.isArray(candidate.segments) ||
+          candidate.segments.length === 0 ||
+          !candidate.segments.every(
+            (segment) => Boolean(segment && typeof segment === "object")
+          )
+        ) {
+          return false;
+        }
+        candidateClipIds.add(candidate.clipId);
+        const replacementCount = silenceReplacementClipCount(clip, candidate.segments);
+        if (replacementCount === null || replacementCount === 0) return false;
+        replacementClipCount += replacementCount;
+        return true;
+      });
       return (
-        Number.isInteger(action.projectRevision) &&
-        action.projectRevision === project.revision &&
-        action.candidates.length > 0 &&
-        action.candidates.every(
-          (candidate) =>
-            getClip(project, candidate.clipId) !== null &&
-            candidate.segments.length > 0 &&
-            candidate.segments.every(isValidSilenceSegment)
-        )
+        candidatesValid &&
+        project.clips.length < MAX_PROJECT_CLIPS &&
+        project.clips.length - action.candidates.length + replacementClipCount <= MAX_PROJECT_CLIPS
       );
+    }
+    case "semanticRange.add": {
+      if (project.semanticRanges.length >= MAX_SEMANTIC_RANGES) return false;
+      const range: SemanticRange = {
+        ...action.range,
+        id: "draft-range",
+        createdAt: "draft",
+        updatedAt: "draft",
+        timelineStart: action.range.timelineStart,
+        timelineEnd: action.range.timelineEnd,
+        sourceAnchors: action.range.sourceAnchors ?? [],
+      };
+      return (
+        (range.createdBy === "user" || range.createdBy === "ai") &&
+        Array.isArray(range.tags) &&
+        range.tags.length <= 20 &&
+        range.tags.every((tag) => typeof tag === "string" && tag.trim().length > 0 && tag.length <= 64) &&
+        validateSemanticRangeInProject(project, range)
+      );
+    }
+    case "semanticRange.update": {
+      const existing = project.semanticRanges.find((range) => range.id === action.rangeId);
+      if (
+        !existing ||
+        !action.updates ||
+        typeof action.updates !== "object" ||
+        Array.isArray(action.updates)
+      ) {
+        return false;
+      }
+      const updates = action.updates as Record<string, unknown>;
+      const allowedKeys = ["title", "description", "tags", "timelineStart", "timelineEnd"];
+      if (
+        Object.keys(updates).length === 0 ||
+        Object.keys(updates).some((key) => !allowedKeys.includes(key))
+      ) return false;
+      if (
+        (Object.prototype.hasOwnProperty.call(updates, "title") && typeof updates.title !== "string") ||
+        (Object.prototype.hasOwnProperty.call(updates, "description") && typeof updates.description !== "string") ||
+        (Object.prototype.hasOwnProperty.call(updates, "tags") && !Array.isArray(updates.tags)) ||
+        (Object.prototype.hasOwnProperty.call(updates, "timelineStart") &&
+          updates.timelineStart !== null && typeof updates.timelineStart !== "number") ||
+        (Object.prototype.hasOwnProperty.call(updates, "timelineEnd") &&
+          updates.timelineEnd !== null && typeof updates.timelineEnd !== "number")
+      ) {
+        return false;
+      }
+      const range: SemanticRange = {
+        ...existing,
+        title: Object.prototype.hasOwnProperty.call(updates, "title")
+          ? updates.title as string
+          : existing.title,
+        description: Object.prototype.hasOwnProperty.call(updates, "description")
+          ? updates.description as string
+          : existing.description,
+        tags: Object.prototype.hasOwnProperty.call(updates, "tags")
+          ? updates.tags as string[]
+          : existing.tags,
+        timelineStart: Object.prototype.hasOwnProperty.call(updates, "timelineStart")
+          ? updates.timelineStart as number | null
+          : existing.timelineStart,
+        timelineEnd: Object.prototype.hasOwnProperty.call(updates, "timelineEnd")
+          ? updates.timelineEnd as number | null
+          : existing.timelineEnd,
+      };
+      return validateSemanticRangeInProject(project, range);
+    }
+    case "semanticRange.delete":
+      return project.semanticRanges.some((range) => range.id === action.rangeId);
   }
 }
 

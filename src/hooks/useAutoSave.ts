@@ -3,6 +3,42 @@ import { useProjectStore } from "../stores/projectStore";
 import { updateProject } from "../services/database";
 import { log } from "../lib/logger";
 import { isDesktopRuntime } from "../lib/runtime";
+import { persistedPreviewMode } from "../lib/editor/preview";
+
+type ProjectStoreState = ReturnType<typeof useProjectStore.getState>;
+
+export interface ProjectStateSnapshot {
+  projectId: number | null;
+  clipSegmentsJson: string;
+  currentView: string;
+  previewMode: string;
+  editedPreviewPath: string | null;
+  detectionResultJson: string | null;
+  detectionSettingsJson: string;
+  videoMetadataJson: string | null;
+  timelineJson: string | null;
+}
+
+export function snapshotProjectState(state: ProjectStoreState): ProjectStateSnapshot {
+  return {
+    projectId: state.projectId,
+    clipSegmentsJson: JSON.stringify(state.clipSegments),
+    currentView: state.currentView,
+    previewMode: persistedPreviewMode(state.previewMode, state.editedPreviewFilePath),
+    editedPreviewPath: state.editedPreviewFilePath,
+    detectionResultJson: state.detectionResult ? JSON.stringify(state.detectionResult) : null,
+    detectionSettingsJson: JSON.stringify(state.detectionSettings),
+    videoMetadataJson: state.videoMetadata ? JSON.stringify(state.videoMetadata) : null,
+    timelineJson: state.timelineProject ? JSON.stringify(state.timelineProject) : null,
+  };
+}
+
+export function projectStateMatchesSnapshot(
+  state: ProjectStoreState,
+  snapshot: ProjectStateSnapshot,
+): boolean {
+  return JSON.stringify(snapshotProjectState(state)) === JSON.stringify(snapshot);
+}
 
 export function useAutoSave() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -19,6 +55,7 @@ export function useAutoSave() {
         state.currentView !== prevState.currentView ||
         state.detectionResult !== prevState.detectionResult ||
         state.previewMode !== prevState.previewMode ||
+        state.editedPreviewFilePath !== prevState.editedPreviewFilePath ||
         state.detectionSettings !== prevState.detectionSettings ||
         state.videoMetadata !== prevState.videoMetadata ||
         state.timelineProject !== prevState.timelineProject;
@@ -26,8 +63,9 @@ export function useAutoSave() {
       if (!changed) return;
 
       if (timerRef.current) clearTimeout(timerRef.current);
+      const snapshot = state;
       timerRef.current = setTimeout(() => {
-        void saveProjectState(id, state);
+        void saveProjectState(id, snapshot);
       }, 1500);
     });
 
@@ -38,11 +76,13 @@ export function useAutoSave() {
   }, []);
 }
 
-async function saveProjectState(
+export async function saveProjectState(
   id: number,
-  state: ReturnType<typeof useProjectStore.getState>
-) {
+  state: ReturnType<typeof useProjectStore.getState>,
+): Promise<boolean> {
   try {
+    if (state.projectId !== id) return false;
+
     const hasEdits =
       state.clipSegments.length > 0 ||
       state.detectionResult !== null ||
@@ -52,7 +92,8 @@ async function saveProjectState(
     await updateProject(id, {
       clip_segments: JSON.stringify(state.clipSegments),
       current_view: state.currentView,
-      preview_mode: state.previewMode,
+      preview_mode: persistedPreviewMode(state.previewMode, state.editedPreviewFilePath),
+      edited_preview_path: state.editedPreviewFilePath,
       silence_segments: JSON.stringify(
         state.detectionResult?.segments ?? []
       ),
@@ -70,7 +111,9 @@ async function saveProjectState(
       status,
     });
     log.debug("[auto-save]", `Project ${id} saved (${status})`);
+    return true;
   } catch (err) {
     log.warn("[auto-save]", "Failed to save project state:", err);
+    return false;
   }
 }

@@ -6,6 +6,7 @@ import { useI18n } from "../../lib/i18n";
 import { Icon } from "../ui/Icon";
 import {
   getAllProjects,
+  getProjectById,
   deleteProject,
   updateProject,
   type ProjectRecord,
@@ -13,9 +14,15 @@ import {
 import { buildClipSegmentsFromSilence } from "../../lib/editor";
 import {
   migrateLegacyProject,
-  validateTimelineProject,
+  migrateTimelineProject,
 } from "../../lib/editor/timeline";
 import { useProjectStore } from "../../stores/projectStore";
+import {
+  projectStateMatchesSnapshot,
+  saveProjectState,
+  snapshotProjectState,
+} from "../../hooks/useAutoSave";
+import { exists } from "@tauri-apps/plugin-fs";
 import { getVideoMetadata, detectSilence } from "../../services/tauriCommands";
 import { formatTime, formatFileSize } from "../../lib/utils";
 import type {
@@ -55,19 +62,24 @@ function isValidVideoMetadata(value: unknown): value is VideoMetadata {
     && typeof metadata.has_audio === "boolean";
 }
 
+async function existingEditedPreviewPath(path: string | null): Promise<string | null> {
+  if (!path) return null;
+  try {
+    return await exists(path) ? path : null;
+  } catch {
+    return null;
+  }
+}
+
 export function MediaLibrary() {
   const { t } = useI18n();
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const {
-    setFilePath,
-    setVideoMetadata,
     setDetectionResult,
     setView,
     setProgress,
-    setProcessedFilePath,
-    setPreviewFilePath,
     loadProject,
     detectionSettings,
   } = useProjectStore();
@@ -93,8 +105,27 @@ export function MediaLibrary() {
 
   const handleOpenProject = useCallback(
     async (project: ProjectRecord) => {
+      let transitionSnapshot: ReturnType<typeof snapshotProjectState> | null = null;
+      let loadedProjectSnapshot: ReturnType<typeof snapshotProjectState> | null = null;
       try {
+        const currentState = useProjectStore.getState();
+        const savedStateSnapshot = snapshotProjectState(currentState);
+        transitionSnapshot = savedStateSnapshot;
+        if (currentState.projectId) {
+          const saved = await saveProjectState(currentState.projectId, currentState);
+          if (!saved || !projectStateMatchesSnapshot(useProjectStore.getState(), savedStateSnapshot)) {
+            throw new Error(t("mediaLibrary.unsavedProjectSaveFailed"));
+          }
+          if (currentState.projectId === project.id) {
+            const refreshedProject = await getProjectById(project.id);
+            if (!refreshedProject || !projectStateMatchesSnapshot(useProjectStore.getState(), savedStateSnapshot)) {
+              throw new Error(t("mediaLibrary.projectChangedDuringLoad"));
+            }
+            project = refreshedProject;
+          }
+        }
         setView("processing");
+        transitionSnapshot = snapshotProjectState(useProjectStore.getState());
         setProgress({
           percent: 10,
           stage: "metadata",
@@ -115,9 +146,13 @@ export function MediaLibrary() {
           project.timeline_json,
           null
         );
-        const savedTimelineProject = validateTimelineProject(parsedTimelineProject)
-          ? parsedTimelineProject
-          : null;
+        const savedTimelineProject = migrateTimelineProject(parsedTimelineProject);
+        const needsTimelinePersistence = !savedTimelineProject || (
+          typeof parsedTimelineProject === "object" &&
+          parsedTimelineProject !== null &&
+          "schemaVersion" in parsedTimelineProject &&
+          parsedTimelineProject.schemaVersion !== 3
+        );
         // Merge with defaults so new fields (e.g. playbackRate) get a value
         const savedSettings: DetectionSettings = {
           ...defaultDetectionSettings,
@@ -128,6 +163,12 @@ export function MediaLibrary() {
         };
         const savedView = (project.current_view || "import") as AppView;
         const savedPreviewMode = (project.preview_mode || "source") as PreviewMode;
+        const editedPreviewPath = await existingEditedPreviewPath(project.edited_preview_path);
+        const restoredPreviewMode = savedPreviewMode === "edited" && editedPreviewPath
+          ? "edited"
+          : "source";
+        const needsPreviewPersistence =
+          project.preview_mode !== restoredPreviewMode || project.edited_preview_path !== editedPreviewPath;
         const parsedMetadata = parseJsonSafe<unknown>(
           project.video_metadata_json,
           null
@@ -164,6 +205,38 @@ export function MediaLibrary() {
             message: t("mediaLibrary.restoringProject"),
           });
           const removedSegments = savedDetectionResult?.segments ?? savedSilenceSegments;
+          if (!transitionSnapshot || !projectStateMatchesSnapshot(useProjectStore.getState(), transitionSnapshot)) {
+            throw new Error(t("mediaLibrary.projectChangedDuringLoad"));
+          }
+
+          if (needsTimelinePersistence || needsPreviewPersistence) {
+            try {
+              await updateProject(project.id, {
+                ...(needsTimelinePersistence
+                  ? {
+                      timeline_json: JSON.stringify(migratedTimelineProject),
+                      project_schema_version: migratedTimelineProject.schemaVersion,
+                    }
+                  : {}),
+                ...(needsPreviewPersistence
+                  ? {
+                      preview_mode: restoredPreviewMode,
+                      edited_preview_path: editedPreviewPath,
+                    }
+                  : {}),
+                status: "in_progress",
+              });
+            } catch (migrationError) {
+              log.warn("[restore]", "Failed to persist migrated timeline:", migrationError);
+            }
+            if (!transitionSnapshot || !projectStateMatchesSnapshot(useProjectStore.getState(), transitionSnapshot)) {
+              const currentState = useProjectStore.getState();
+              if (currentState.projectId === project.id) {
+                await saveProjectState(project.id, currentState);
+              }
+              throw new Error(t("mediaLibrary.projectChangedDuringLoad"));
+            }
+          }
 
           loadProject({
             projectId: project.id,
@@ -175,22 +248,12 @@ export function MediaLibrary() {
             removedSegments,
             timelineProject: migratedTimelineProject,
             currentView: "processing",
-            previewMode: savedPreviewMode,
+            previewMode: restoredPreviewMode,
+            editedPreviewPath,
             processedPath: project.processed_path,
           });
 
-          if (!savedTimelineProject) {
-            try {
-              await updateProject(project.id, {
-                timeline_json: JSON.stringify(migratedTimelineProject),
-                project_schema_version: migratedTimelineProject.schemaVersion,
-                status: "in_progress",
-              });
-            } catch (migrationError) {
-              log.warn("[restore]", "Failed to persist migrated timeline:", migrationError);
-            }
-          }
-
+          loadedProjectSnapshot = snapshotProjectState(useProjectStore.getState());
           setProgress({
             percent: 100,
             stage: "complete",
@@ -201,15 +264,31 @@ export function MediaLibrary() {
             `Project ${project.id} restored — view:${savedView} clips:${savedClips.length}`
           );
           await new Promise((r) => setTimeout(r, 200));
+          if (!projectStateMatchesSnapshot(useProjectStore.getState(), loadedProjectSnapshot)) {
+            return;
+          }
           setView(savedView === "processing" ? "editor" : savedView);
           return;
         }
 
         // No saved editing state — load from scratch.
-        setProcessedFilePath(project.processed_path);
-        setPreviewFilePath(null);
-        setFilePath(project.file_path);
-        setVideoMetadata(metadata);
+        if (!projectStateMatchesSnapshot(useProjectStore.getState(), transitionSnapshot)) {
+          throw new Error(t("mediaLibrary.projectChangedDuringLoad"));
+        }
+        loadProject({
+          projectId: project.id,
+          filePath: project.file_path,
+          videoMetadata: metadata,
+          detectionResult: null,
+          detectionSettings: savedSettings,
+          clipSegments: [],
+          removedSegments: [],
+          timelineProject: null,
+          currentView: "processing",
+          previewMode: "source",
+          processedPath: project.processed_path,
+        });
+        loadedProjectSnapshot = snapshotProjectState(useProjectStore.getState());
 
         // Has cached silence segments? Use them
         if (savedSilenceSegments.length > 0) {
@@ -259,23 +338,25 @@ export function MediaLibrary() {
           project.noise_threshold || detectionSettings.noiseThreshold,
           project.min_duration || detectionSettings.minDuration
         );
+        if (!loadedProjectSnapshot || !projectStateMatchesSnapshot(useProjectStore.getState(), loadedProjectSnapshot)) {
+          return;
+        }
         setDetectionResult(result);
-        useProjectStore.getState().setProjectId(project.id);
         setView("detection");
       } catch (err) {
         log.error("[import]", "Failed to open project:", err);
-        setView("import");
+        const currentState = useProjectStore.getState();
+        const expectedState = loadedProjectSnapshot ?? transitionSnapshot;
+        if (expectedState && projectStateMatchesSnapshot(currentState, expectedState)) {
+          setView("import");
+        }
       }
     },
     [
       detectionSettings,
       loadProject,
       setDetectionResult,
-      setFilePath,
-      setProcessedFilePath,
-      setPreviewFilePath,
       setProgress,
-      setVideoMetadata,
       setView,
       t,
     ]
