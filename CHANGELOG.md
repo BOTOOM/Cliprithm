@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.6.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.5.4...cliprithm-v1.6.0) (2026-08-11)
+
+
+### Features
+
+* **editor:** add absolute semantic timeline ranges ([7a2330b](https://github.com/BOTOOM/Cliprithm/commit/7a2330bd2c7ac46cf50280de6c232c97f1816264))
+* **editor:** add timeline action model and semantic ranges ([9d920dd](https://github.com/BOTOOM/Cliprithm/commit/9d920ddfef9649c4f76e2288d846109b9ea59d78))
+* **mcp:** add authenticated editor integration ([8b05886](https://github.com/BOTOOM/Cliprithm/commit/8b05886d6f07bab4b29b5783e68c53c4e4cbb62f))
+* **mcp:** add copyable client setup guidance ([3e720da](https://github.com/BOTOOM/Cliprithm/commit/3e720daa2856129f3d313ad16482c48abc05f67e))
+
+
+### Bug Fixes
+
+* **editor:** persist preview state and project transitions ([e0b7755](https://github.com/BOTOOM/Cliprithm/commit/e0b7755ca85016b39dcae89e7dc4ea53dde338d0))
+
 ## [1.5.4](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.5.3...cliprithm-v1.5.4) (2026-07-24)
 
 
