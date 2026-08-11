@@ -267,7 +267,11 @@ export function MediaLibrary() {
           if (!projectStateMatchesSnapshot(useProjectStore.getState(), loadedProjectSnapshot)) {
             return;
           }
-          setView(savedView === "processing" ? "editor" : savedView);
+          // A project with saved editing state should always reopen into the
+          // editor, even if a stale "import"/"processing" view was persisted.
+          const restoreView: AppView =
+            savedView === "processing" || savedView === "import" ? "editor" : savedView;
+          setView(restoreView);
           return;
         }
 

@@ -84,6 +84,24 @@ describe("project autosave snapshots", () => {
     );
   });
 
+  it("keeps the saved view when browsing the library instead of persisting \"import\"", async () => {
+    const timelineProject = createVideoProject(asset);
+    useProjectStore.setState({ projectId: 7, timelineProject, currentView: "editor" });
+
+    await expect(saveProjectState(7, useProjectStore.getState())).resolves.toBe(true);
+    expect(updateProject).toHaveBeenLastCalledWith(
+      7,
+      expect.objectContaining({ current_view: "editor" }),
+    );
+
+    useProjectStore.setState({ currentView: "import" });
+    await expect(saveProjectState(7, useProjectStore.getState())).resolves.toBe(true);
+    expect(updateProject).toHaveBeenLastCalledWith(
+      7,
+      expect.not.objectContaining({ current_view: expect.anything() }),
+    );
+  });
+
   it("does not save a snapshot with a mismatched project ID", async () => {
     const timelineProject = createVideoProject(asset);
     useProjectStore.setState({ projectId: 7, timelineProject });

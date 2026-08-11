@@ -91,7 +91,10 @@ export async function saveProjectState(
 
     await updateProject(id, {
       clip_segments: JSON.stringify(state.clipSegments),
-      current_view: state.currentView,
+      // "import" is a transient library-browsing state, not a per-project view.
+      // Persisting it would make the project reopen to the blank import screen
+      // instead of the editor, so keep whatever view was last saved.
+      ...(state.currentView === "import" ? {} : { current_view: state.currentView }),
       preview_mode: persistedPreviewMode(state.previewMode, state.editedPreviewFilePath),
       edited_preview_path: state.editedPreviewFilePath,
       silence_segments: JSON.stringify(
