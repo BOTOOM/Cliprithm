@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.1](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.6.0...cliprithm-v1.6.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **ui:** don't persist transient import view; reopen projects into editor ([1669479](https://github.com/BOTOOM/Cliprithm/commit/1669479d4a5fe8c534f6668fe834cc09b23f3199))
+* **ui:** skip transient import view on explicit project saves ([fb57fcc](https://github.com/BOTOOM/Cliprithm/commit/fb57fccf319ff737fe2c1ae7bc3a5c0488290fcd))
+
 ## [1.6.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.5.4...cliprithm-v1.6.0) (2026-08-11)
 
 
