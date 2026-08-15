@@ -1,7 +1,7 @@
 # Cliprithm Editor MCP Specification
 
 **Status:** Implemented
-**Contract version:** `1.1.0`
+**Contract version:** `1.2.0`
 
 ## Scope
 
@@ -14,7 +14,7 @@ This contract exposes Cliprithm's video-editor operations through a local MCP se
 - Lifecycle: running only while Cliprithm is open; enabled by default.
 - Configuration: `mcp.enabled` and `mcp.port` in `app_settings`.
 - Security: loopback-only binding, Host/Origin validation, and a per-session bearer token. The token is shown only in the Cliprithm Settings panel and must be sent as `Authorization: Bearer <token>`.
-- File access: source media paths may be outside the app directory for authenticated local imports and inspection. MCP preview/export outputs are restricted to the dedicated `<appDataDir>/mcp-outputs` directory.
+- File access: source media paths may be outside the app directory for authenticated local imports and inspection. MCP preview/export outputs are restricted to the dedicated `<appDataDir>/mcp-outputs` directory. Render tools prefer a safe `fileName` basename and resolve it internally; absolute `outputPath` remains available only inside that directory for compatibility.
 - Mutations: require the active project ID. Composition mutations require `expectedRevision`. Opening or creating a project while the active timeline has unsaved changes requires a short-lived confirmation token.
 
 ## Tools
@@ -73,7 +73,37 @@ Silence detection returns a candidate ID. Applying or discarding a candidate mus
 - `cliprithm_export_render`
 - `cliprithm_export_cancel`
 
-Preview and export renders return a job ID immediately. Use `job_get` for status and `job_cancel` to request cancellation. Jobs are bound to the active project and source revision; completed output from an older revision is never applied to the editor state. Every render writes to a temporary sibling and atomically replaces the destination only after a successful render. Existing outputs are preserved on failure or cancellation, and a destination that appears after validation is never overwritten without the original overwrite authorization.
+### Export settings
+
+`cliprithm_export_validate` and `cliprithm_export_render` accept the same optional export overrides as the desktop export panel. When an override is omitted, the active project export settings are used.
+
+- `preset`: `tiktok`, `reels`, `youtube`, `square`, or `custom`.
+- `resolution`: `1080p` or `4k` for preset canvases.
+- `sizingMode`: `original`, `preset`, or `custom` when `preset` is `custom`.
+- `creatorTarget`: `vertical-social`, `youtube-landscape`, `square-social`, `landscape-4k`, or `vertical-4k`.
+- `width` and `height`: paired custom dimensions from 2 through 4096 pixels.
+- `resizeMode`: `original`, `fit`, `crop`, or `stretch`.
+- `profile`: `fast`, `balanced`, or `quality`.
+- `fps`: `30` or `60`.
+- `playbackRate`: optional global clip-speed multiplier from `0.25` through `4`; individual clip speeds remain bounded by the editor's `0.25x`–`32x` limit.
+
+For example:
+
+```json
+{
+  "projectId": 14,
+  "expectedRevision": 79,
+  "fileName": "3dmodelsparte1.mp4",
+  "preset": "custom",
+  "sizingMode": "preset",
+  "creatorTarget": "vertical-4k",
+  "resizeMode": "fit",
+  "profile": "balanced",
+  "fps": 30
+}
+```
+
+Preview and export renders return a job ID immediately. Use `job_get` for status and `job_cancel` to request cancellation. Jobs are bound to the active project and source revision; completed output from an older revision is never applied to the editor state. Export jobs have priority over previews: an export cancels an active preview for the same project and waits for its process to stop before rendering. Every render writes to a temporary sibling and atomically replaces the destination only after a successful render. Existing outputs are preserved on failure or cancellation, and a destination that appears after validation is never overwritten without the original overwrite authorization. Render tools accept either a safe `.mp4` `fileName` basename or a compatible absolute `outputPath`; the former is resolved inside the MCP output directory.
 
 ### Semantic range and history tools
 

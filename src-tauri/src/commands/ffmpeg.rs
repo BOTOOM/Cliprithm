@@ -10,7 +10,7 @@ use tauri_plugin_shell::process::CommandEvent;
 
 use crate::commands::media_tools::{
     ffmpeg_output, ffmpeg_spawn, ffmpeg_spawn_with_encoder, ffprobe_output, select_video_encoder,
-    VideoEncoderSelection,
+    VideoDecoderSelection, VideoEncoderSelection,
 };
 
 static NEXT_JOB_ID: AtomicU64 = AtomicU64::new(1);
@@ -20,6 +20,13 @@ const MAX_ACTIVE_JOBS: usize = 32;
 const MAX_JOB_ID_LENGTH: usize = 128;
 const MAX_RENDER_PATH_LENGTH: usize = 32_768;
 const PROJECT_PREVIEW_THREADS: &str = "2";
+const JOB_PREEMPTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RenderJobKind {
+    Preview,
+    Export,
+}
 
 #[derive(Default)]
 struct JobRegistry {
@@ -27,6 +34,7 @@ struct JobRegistry {
     cancelled: HashSet<String>,
     project_jobs: HashMap<String, String>,
     job_projects: HashMap<String, String>,
+    job_kinds: HashMap<String, RenderJobKind>,
 }
 
 fn jobs() -> &'static Mutex<JobRegistry> {
@@ -55,7 +63,11 @@ fn validate_project_id(project_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn begin_job(job_id: &str, project_id: Option<&str>) -> Result<(), String> {
+fn begin_job(
+    job_id: &str,
+    project_id: Option<&str>,
+    kind: RenderJobKind,
+) -> Result<Option<String>, String> {
     validate_job_id(job_id)?;
     if let Some(project_id) = project_id {
         validate_project_id(project_id)?;
@@ -67,17 +79,33 @@ fn begin_job(job_id: &str, project_id: Option<&str>) -> Result<(), String> {
     if registry.active.contains(job_id) {
         return Err("A render job with this ID is already active.".to_string());
     }
-    if let Some(project_id) = project_id {
-        if registry.project_jobs.contains_key(project_id) {
+
+    let preempted_job_id = project_id.and_then(|project_id| {
+        registry
+            .project_jobs
+            .get(project_id)
+            .filter(|active_job| registry.active.contains(*active_job))
+            .cloned()
+    });
+    if let Some(active_job_id) = &preempted_job_id {
+        let active_kind = registry
+            .job_kinds
+            .get(active_job_id)
+            .copied()
+            .unwrap_or(RenderJobKind::Preview);
+        if kind != RenderJobKind::Export || active_kind != RenderJobKind::Preview {
             return Err("A render job is already active for this project.".to_string());
         }
+        registry.cancelled.insert(active_job_id.clone());
     }
-    if registry.active.len() >= MAX_ACTIVE_JOBS {
+
+    if registry.active.len() >= MAX_ACTIVE_JOBS && preempted_job_id.is_none() {
         return Err("Too many render jobs are already running.".to_string());
     }
 
     registry.active.insert(job_id.to_string());
     registry.cancelled.remove(job_id);
+    registry.job_kinds.insert(job_id.to_string(), kind);
     if let Some(project_id) = project_id {
         registry
             .project_jobs
@@ -86,13 +114,14 @@ fn begin_job(job_id: &str, project_id: Option<&str>) -> Result<(), String> {
             .job_projects
             .insert(job_id.to_string(), project_id.to_string());
     }
-    Ok(())
+    Ok(preempted_job_id)
 }
 
 fn finish_job(job_id: &str) {
     if let Ok(mut registry) = jobs().lock() {
         registry.active.remove(job_id);
         registry.cancelled.remove(job_id);
+        registry.job_kinds.remove(job_id);
         if let Some(project_id) = registry.job_projects.remove(job_id) {
             if registry
                 .project_jobs
@@ -112,12 +141,34 @@ fn is_job_cancelled(job_id: &str) -> bool {
         .unwrap_or(false)
 }
 
+async fn wait_for_job_finish(job_id: &str) -> Result<(), String> {
+    let start = std::time::Instant::now();
+    loop {
+        let active = jobs()
+            .lock()
+            .map_err(|_| "Render job state is unavailable.".to_string())?
+            .active
+            .contains(job_id);
+        if !active {
+            return Ok(());
+        }
+        if start.elapsed() >= JOB_PREEMPTION_TIMEOUT {
+            return Err("Timed out waiting for the preview render to stop.".to_string());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}
+
 struct JobGuard(String);
 
 impl JobGuard {
-    fn new(job_id: String, project_id: Option<&str>) -> Result<Self, String> {
-        begin_job(&job_id, project_id)?;
-        Ok(Self(job_id))
+    fn new(
+        job_id: String,
+        project_id: Option<&str>,
+        kind: RenderJobKind,
+    ) -> Result<(Self, Option<String>), String> {
+        let preempted_job_id = begin_job(&job_id, project_id, kind)?;
+        Ok((Self(job_id), preempted_job_id))
     }
 }
 
@@ -136,6 +187,7 @@ pub struct VideoMetadata {
     pub codec: String,
     pub file_size: u64,
     pub has_audio: bool,
+    pub audio_codec: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -258,6 +310,11 @@ pub async fn get_video_metadata(
         .find(|s| s["codec_type"].as_str() == Some("video"))
         .ok_or("No video stream found")?;
 
+    let audio_codec = streams
+        .iter()
+        .find(|s| s["codec_type"].as_str() == Some("audio"))
+        .and_then(|stream| stream["codec_name"].as_str())
+        .map(str::to_string);
     let has_audio = streams
         .iter()
         .any(|s| s["codec_type"].as_str() == Some("audio"));
@@ -332,6 +389,7 @@ pub async fn get_video_metadata(
         codec,
         file_size,
         has_audio,
+        audio_codec,
     })
 }
 
@@ -624,6 +682,155 @@ pub async fn cut_silence(
     Ok(output_path)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StreamCopyDecision {
+    CopyBoth,
+    Reencode,
+}
+
+fn stream_copy_decision(
+    options: &ExportOptions,
+    metadata: &VideoMetadata,
+    input_path: &str,
+    output_path: &str,
+    segments: &[(f64, f64)],
+) -> StreamCopyDecision {
+    if segments.len() != 1
+        || options
+            .playback_rate
+            .is_some_and(|rate| !rate.is_finite() || (rate - 1.0).abs() > 0.001)
+        || options
+            .fps
+            .is_some_and(|fps| fps != metadata.fps.round().clamp(1.0, 240.0) as u32)
+        || !matches!(options.resize_mode.as_deref(), None | Some("original"))
+        || !matches!(options.sizing_mode.as_deref(), None | Some("original"))
+    {
+        return StreamCopyDecision::Reencode;
+    }
+
+    let (legacy_width, legacy_height) = legacy_target_dimensions(
+        options.resolution.as_deref(),
+        metadata.width,
+        metadata.height,
+    );
+    let target_width = options.target_width.or(legacy_width);
+    let target_height = options.target_height.or(legacy_height);
+    if target_width != Some(metadata.width) || target_height != Some(metadata.height) {
+        return StreamCopyDecision::Reencode;
+    }
+
+    let input_extension = Path::new(input_path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase());
+    let output_extension = Path::new(output_path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase());
+    if input_extension.is_none() || input_extension != output_extension {
+        return StreamCopyDecision::Reencode;
+    }
+
+    let Some(output_extension) = output_extension else {
+        return StreamCopyDecision::Reencode;
+    };
+    let video_codec = metadata.codec.to_ascii_lowercase();
+    let video_compatible = match output_extension.as_str() {
+        "mp4" | "mov" => matches!(video_codec.as_str(), "h264" | "hevc" | "mpeg4"),
+        "mkv" => true,
+        "webm" => matches!(video_codec.as_str(), "vp8" | "vp9" | "av1"),
+        _ => false,
+    };
+    if !video_compatible {
+        return StreamCopyDecision::Reencode;
+    }
+
+    let audio_compatible = if !metadata.has_audio {
+        true
+    } else {
+        let Some(audio_codec) = metadata.audio_codec.as_deref() else {
+            return StreamCopyDecision::Reencode;
+        };
+        match output_extension.as_str() {
+            "mp4" | "mov" => matches!(audio_codec, "aac" | "mp3" | "ac3"),
+            "mkv" => true,
+            "webm" => matches!(audio_codec, "opus" | "vorbis"),
+            _ => false,
+        }
+    };
+
+    if audio_compatible {
+        StreamCopyDecision::CopyBoth
+    } else {
+        StreamCopyDecision::Reencode
+    }
+}
+
+async fn run_stream_copy_export(
+    window: &Window,
+    options: &ExportOptions,
+    segment: (f64, f64),
+    expected_duration: f64,
+    job_id: &str,
+) -> Result<String, String> {
+    let mut encoder = select_video_encoder(window.app_handle(), false).await?;
+    encoder.decoder = None;
+    let (start, end) = segment;
+    let args = vec![
+        "-y".into(),
+        "-ss".into(),
+        format!("{:.6}", start),
+        "-i".into(),
+        options.input_path.clone(),
+        "-t".into(),
+        format!("{:.6}", end - start),
+        "-map".into(),
+        "0:v:0".into(),
+        "-map".into(),
+        "0:a?".into(),
+        "-c:v".into(),
+        "copy".into(),
+        "-c:a".into(),
+        "copy".into(),
+        "-avoid_negative_ts".into(),
+        "make_zero".into(),
+        options.output_path.clone(),
+    ];
+
+    emit_job_progress(
+        window,
+        "export-progress",
+        Some(job_id),
+        20.0,
+        "encoding",
+        "",
+    );
+    if let Err(error) = run_ffmpeg_with_progress(
+        window,
+        "export-progress",
+        "encoding",
+        &args,
+        expected_duration,
+        job_id,
+        &encoder,
+    )
+    .await
+    {
+        cleanup_partial_output(&options.output_path);
+        return Err(format!("Stream copy failed: {}", error));
+    }
+
+    emit_job_progress(
+        window,
+        "export-progress",
+        Some(job_id),
+        100.0,
+        "complete",
+        "",
+    );
+    Ok(options.output_path.clone())
+}
+
 #[tauri::command]
 pub async fn export_video(
     window: Window,
@@ -632,7 +839,11 @@ pub async fn export_video(
     project_id: Option<String>,
 ) -> Result<String, String> {
     let job_id = job_id.unwrap_or_else(|| new_job_id("export"));
-    let _job_guard = JobGuard::new(job_id.clone(), project_id.as_deref())?;
+    let (_job_guard, preempted_job_id) =
+        JobGuard::new(job_id.clone(), project_id.as_deref(), RenderJobKind::Export)?;
+    if let Some(preempted_job_id) = preempted_job_id {
+        wait_for_job_finish(&preempted_job_id).await?;
+    }
     info!(
         "[export] Starting — input={} output={} res={:?} fps={:?}",
         options.input_path, options.output_path, options.resolution, options.fps
@@ -679,6 +890,30 @@ pub async fn export_video(
         return Err("Invalid export playback rate.".to_string());
     }
 
+    if stream_copy_decision(
+        &options,
+        &metadata,
+        &options.input_path,
+        &options.output_path,
+        &segments_to_keep,
+    ) == StreamCopyDecision::CopyBoth
+    {
+        info!("[export] Using stream copy for compatible cut-only export");
+        match run_stream_copy_export(
+            &window,
+            &options,
+            segments_to_keep[0],
+            expected_duration,
+            &job_id,
+        )
+        .await
+        {
+            Ok(result) => return Ok(result),
+            Err(error) if is_job_cancelled(&job_id) => return Err(error),
+            Err(error) => warn!("[export] {} — falling back to re-encode", error),
+        }
+    }
+
     emit_job_progress(
         &window,
         "export-progress",
@@ -713,15 +948,30 @@ pub async fn export_video(
     if let Some(device) = &encoder.device {
         args.extend(["-vaapi_device".into(), device.clone()]);
     }
+    let output_fps = options
+        .fps
+        .unwrap_or_else(|| metadata.fps.round().clamp(1.0, 240.0) as u32);
     for (start, end) in &segments_to_keep {
         args.extend([
             "-ss".into(),
             format!("{:.6}", start),
             "-t".into(),
             format!("{:.6}", end - start),
-            "-i".into(),
-            options.input_path.clone(),
         ]);
+        append_decoder_args(&mut args, encoder.decoder.as_ref());
+        if let Some(discard) = decoder_frame_discard(
+            metadata.fps,
+            options.playback_rate.unwrap_or(1.0),
+            output_fps,
+        ) {
+            debug!(
+                "[export] Using decoder frame discard={} for {:.2}x playback",
+                discard,
+                options.playback_rate.unwrap_or(1.0)
+            );
+            args.extend(["-skip_frame".into(), discard.into()]);
+        }
+        args.extend(["-i".into(), options.input_path.clone()]);
     }
     args.extend([
         "-filter_complex".into(),
@@ -770,12 +1020,17 @@ pub async fn export_video(
     .await
     {
         cleanup_partial_output(&options.output_path);
-        if encoder.hardware {
+        if is_job_cancelled(&job_id) {
+            return Err(error);
+        }
+        if encoder.hardware || encoder.decoder.is_some() {
             warn!(
-                "[export] Hardware encoder failed; retrying with CPU fallback: {}",
+                "[export] Hardware pipeline failed; retrying with CPU fallback: {}",
                 error
             );
+            remove_hardware_decode_args(&mut args);
             encoder = select_video_encoder(window.app_handle(), false).await?;
+            encoder.decoder = None;
             replace_video_encoder_args(&mut args, &encoder, options.profile.as_deref());
             let (fallback_filter, fallback_video_output_label) =
                 prepare_video_filter(&base_filter, &base_video_output_label, &encoder.name);
@@ -859,6 +1114,210 @@ pub async fn generate_export_preview(
         return Err(format!("Export preview generation failed: {}", stderr));
     }
 
+    Ok(output_path)
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+struct CachedProxySource {
+    path: String,
+    size: u64,
+    modified_ns: u128,
+}
+
+fn proxy_manifest_path(output_path: &str) -> PathBuf {
+    PathBuf::from(format!("{}.manifest.json", output_path))
+}
+
+fn proxy_source_fingerprint(input_path: &str) -> Option<CachedProxySource> {
+    let metadata = std::fs::metadata(input_path).ok()?;
+    let modified_ns = metadata
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    Some(CachedProxySource {
+        path: std::fs::canonicalize(input_path)
+            .ok()?
+            .to_string_lossy()
+            .into_owned(),
+        size: metadata.len(),
+        modified_ns,
+    })
+}
+
+fn cached_proxy_is_current(input_path: &str, output_path: &str) -> bool {
+    let output_is_valid = std::fs::metadata(output_path)
+        .map(|metadata| metadata.is_file() && metadata.len() > 0)
+        .unwrap_or(false);
+    if !output_is_valid {
+        return false;
+    }
+    let Some(expected) = proxy_source_fingerprint(input_path) else {
+        return false;
+    };
+    let Ok(manifest) = std::fs::read_to_string(proxy_manifest_path(output_path)) else {
+        return false;
+    };
+    serde_json::from_str::<CachedProxySource>(&manifest)
+        .map(|actual| actual == expected)
+        .unwrap_or(false)
+}
+
+fn write_proxy_manifest(input_path: &str, output_path: &str) {
+    let Some(source) = proxy_source_fingerprint(input_path) else {
+        warn!(
+            "[preview-proxy] Failed to fingerprint source: {}",
+            input_path
+        );
+        return;
+    };
+    if let Ok(data) = serde_json::to_vec(&source) {
+        if let Err(error) = std::fs::write(proxy_manifest_path(output_path), data) {
+            warn!("[preview-proxy] Failed to write cache manifest: {}", error);
+        }
+    }
+}
+
+fn validate_preview_proxy_output(window: &Window, output_path: &str) -> Result<(), String> {
+    validate_render_output_path(output_path, &["mp4"])?;
+    let app_data_dir = window
+        .app_handle()
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve preview directory: {}", error))?;
+    let preview_root = app_data_dir.join("previews");
+    if !Path::new(output_path).starts_with(&preview_root) {
+        return Err(
+            "Preview proxy output must remain inside the application previews directory."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn generate_preview_proxy(
+    window: Window,
+    video_path: String,
+    output_path: String,
+    job_id: Option<String>,
+    project_id: Option<String>,
+) -> Result<String, String> {
+    let job_id = job_id.unwrap_or_else(|| new_job_id("proxy"));
+    let (_job_guard, preempted_job_id) = JobGuard::new(
+        job_id.clone(),
+        project_id.as_deref(),
+        RenderJobKind::Preview,
+    )?;
+    if let Some(preempted_job_id) = preempted_job_id {
+        wait_for_job_finish(&preempted_job_id).await?;
+    }
+
+    let input = Path::new(&video_path);
+    if !input.is_absolute() || !input.is_file() {
+        return Err("Preview proxy input must be an existing absolute video file.".to_string());
+    }
+    validate_preview_proxy_output(&window, &output_path)?;
+    if paths_match(&video_path, &output_path) {
+        return Err("Preview proxy output must be different from the input video.".to_string());
+    }
+    if cached_proxy_is_current(&video_path, &output_path) {
+        info!("[preview-proxy] Reusing cached proxy: {}", output_path);
+        return Ok(output_path);
+    }
+    if let Some(parent) = Path::new(&output_path).parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create preview directory: {}", error))?;
+    }
+
+    let metadata = get_video_metadata(window.clone(), video_path.clone()).await?;
+    let mut encoder = select_video_encoder(window.app_handle(), true).await?;
+    let base_filter = "[0:v]scale=-2:720,format=yuv420p,setsar=1[vout]";
+    let (filter, video_label) = prepare_video_filter(base_filter, "[vout]", &encoder.name);
+    let mut args = vec!["-y".to_string()];
+    append_decoder_args(&mut args, encoder.decoder.as_ref());
+    args.extend([
+        "-i".to_string(),
+        video_path.clone(),
+        "-filter_complex".to_string(),
+        filter,
+        "-map".to_string(),
+        video_label,
+        "-map".to_string(),
+        "0:a?".to_string(),
+    ]);
+    append_video_encoder_args(&mut args, &encoder, Some("fast"));
+    if encoder.name != "h264_vaapi" {
+        args.extend(["-pix_fmt".to_string(), "yuv420p".to_string()]);
+    }
+    args.extend([
+        "-c:a".to_string(),
+        "aac".to_string(),
+        "-b:a".to_string(),
+        "128k".to_string(),
+        "-movflags".to_string(),
+        "+faststart".to_string(),
+        output_path.clone(),
+    ]);
+
+    if let Err(error) = run_ffmpeg_with_progress(
+        &window,
+        "export-progress",
+        "preview",
+        &args,
+        metadata.duration,
+        &job_id,
+        &encoder,
+    )
+    .await
+    {
+        cleanup_partial_output(&output_path);
+        if is_job_cancelled(&job_id) {
+            return Err(error);
+        }
+        if !encoder.hardware && encoder.decoder.is_none() {
+            return Err(format!("Preview proxy FFmpeg error: {}", error));
+        }
+        warn!(
+            "[preview-proxy] Hardware pipeline failed; retrying with CPU: {}",
+            error
+        );
+        remove_hardware_decode_args(&mut args);
+        encoder = select_video_encoder(window.app_handle(), false).await?;
+        encoder.decoder = None;
+        replace_video_encoder_args(&mut args, &encoder, Some("fast"));
+        let (fallback_filter, fallback_label) =
+            prepare_video_filter(base_filter, "[vout]", &encoder.name);
+        replace_video_filter_args(&mut args, &fallback_filter, &fallback_label);
+        if encoder.name != "h264_vaapi" {
+            if !args.iter().any(|argument| argument == "-pix_fmt") {
+                args.extend(["-pix_fmt".to_string(), "yuv420p".to_string()]);
+            }
+        }
+        run_ffmpeg_with_progress(
+            &window,
+            "export-progress",
+            "preview",
+            &args,
+            metadata.duration,
+            &job_id,
+            &encoder,
+        )
+        .await
+        .inspect_err(|_| cleanup_partial_output(&output_path))
+        .map_err(|error| format!("Preview proxy FFmpeg error: {}", error))?;
+    }
+
+    write_proxy_manifest(&video_path, &output_path);
+    emit_job_progress(
+        &window,
+        "export-progress",
+        Some(&job_id),
+        100.0,
+        "complete",
+        "",
+    );
     Ok(output_path)
 }
 
@@ -1149,7 +1608,16 @@ async fn render_project_video(
     project_id: Option<String>,
 ) -> Result<String, String> {
     let job_id = job_id.unwrap_or_else(|| new_job_id(if preview { "preview" } else { "export" }));
-    let _job_guard = JobGuard::new(job_id.clone(), project_id.as_deref())?;
+    let kind = if preview {
+        RenderJobKind::Preview
+    } else {
+        RenderJobKind::Export
+    };
+    let (_job_guard, preempted_job_id) =
+        JobGuard::new(job_id.clone(), project_id.as_deref(), kind)?;
+    if let Some(preempted_job_id) = preempted_job_id {
+        wait_for_job_finish(&preempted_job_id).await?;
+    }
     if clips.is_empty() {
         return Err("No clips available for project preview.".to_string());
     }
@@ -1242,9 +1710,18 @@ async fn render_project_video(
             format!("{:.6}", clip.source_start),
             "-t".to_string(),
             format!("{:.6}", clip.source_end - clip.source_start),
-            "-i".to_string(),
-            clip.input_path.clone(),
         ]);
+        append_decoder_args(&mut args, encoder.decoder.as_ref());
+        if let Some(discard) = decoder_frame_discard(clip.fps, clip.speed, common_fps) {
+            debug!(
+                "[project-render] Using decoder frame discard={} for clip speed={:.2}x source_fps={:.2}",
+                discard,
+                clip.speed,
+                clip.fps
+            );
+            args.extend(["-skip_frame".to_string(), discard.to_string()]);
+        }
+        args.extend(["-i".to_string(), clip.input_path.clone()]);
     }
     args.extend([
         "-filter_complex".to_string(),
@@ -1293,12 +1770,17 @@ async fn render_project_video(
     .await
     {
         cleanup_partial_output(&output_path);
-        if encoder.hardware {
+        if is_job_cancelled(&job_id) {
+            return Err(error);
+        }
+        if encoder.hardware || encoder.decoder.is_some() {
             warn!(
-                "[project-render] Hardware encoder failed; retrying with CPU fallback: {}",
+                "[project-render] Hardware pipeline failed; retrying with CPU fallback: {}",
                 error
             );
+            remove_hardware_decode_args(&mut args);
             encoder = select_video_encoder(window.app_handle(), false).await?;
+            encoder.decoder = None;
             replace_video_encoder_args(
                 &mut args,
                 &encoder,
@@ -1413,6 +1895,28 @@ fn preview_dimensions(target_width: u32, target_height: u32) -> (u32, u32) {
         (f64::from(target_width) * scale).round().max(2.0) as u32 / 2 * 2,
         (f64::from(target_height) * scale).round().max(2.0) as u32 / 2 * 2,
     )
+}
+
+fn decoder_frame_discard(source_fps: f64, speed: f64, output_fps: u32) -> Option<&'static str> {
+    if !source_fps.is_finite()
+        || !speed.is_finite()
+        || source_fps <= 0.0
+        || speed <= 0.0
+        || output_fps == 0
+    {
+        return None;
+    }
+
+    let redundancy = (source_fps * speed) / f64::from(output_fps);
+    if redundancy < 2.0 {
+        None
+    } else if redundancy < 8.0 {
+        Some("noref")
+    } else if redundancy < 32.0 {
+        Some("bidir")
+    } else {
+        Some("nokey")
+    }
 }
 
 fn validate_export_segments(
@@ -1955,6 +2459,35 @@ fn build_concat_filter(
     (filter_parts.join(";"), video_label)
 }
 
+fn append_decoder_args(args: &mut Vec<String>, decoder: Option<&VideoDecoderSelection>) {
+    let Some(decoder) = decoder else {
+        return;
+    };
+    args.extend(["-hwaccel".to_string(), decoder.hwaccel.clone()]);
+    if let Some(device) = &decoder.device {
+        args.extend(["-hwaccel_device".to_string(), device.clone()]);
+    }
+}
+
+fn remove_hardware_decode_args(args: &mut Vec<String>) {
+    let mut index = 0;
+    while index < args.len() {
+        if args[index] == "-hwaccel" {
+            let end = if args
+                .get(index + 2)
+                .is_some_and(|arg| arg == "-hwaccel_device")
+            {
+                (index + 4).min(args.len())
+            } else {
+                (index + 2).min(args.len())
+            };
+            args.drain(index..end);
+        } else {
+            index += 1;
+        }
+    }
+}
+
 fn prepare_video_filter(
     base_filter: &str,
     base_video_label: &str,
@@ -2100,6 +2633,9 @@ async fn run_ffmpeg_with_progress(
     job_id: &str,
     encoder: &VideoEncoderSelection,
 ) -> Result<(), String> {
+    if is_job_cancelled(job_id) {
+        return Err("Render cancelled.".to_string());
+    }
     let (mut spawn, child) = ffmpeg_spawn_with_encoder(window.app_handle(), encoder, args.to_vec())
         .await
         .map_err(|e| {
@@ -2170,11 +2706,14 @@ fn parse_ffmpeg_progress_seconds(regex: &Regex, line: &str) -> Option<f64> {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        begin_job, build_atempo_chain, build_concat_filter, build_project_preview_filter,
-        cached_preview_is_current, cleanup_partial_output, estimated_analysis_output_duration,
-        finish_job, paths_match, prepare_video_filter, preview_dimensions,
-        validate_export_segments, validate_render_output_path, write_preview_manifest,
-        ProjectPreviewClip,
+        append_decoder_args, begin_job, build_atempo_chain, build_concat_filter,
+        build_project_preview_filter, cached_preview_is_current, cached_proxy_is_current,
+        cleanup_partial_output, decoder_frame_discard, estimated_analysis_output_duration,
+        finish_job, is_job_cancelled, paths_match, prepare_video_filter, preview_dimensions,
+        remove_hardware_decode_args, stream_copy_decision, validate_export_segments,
+        validate_render_output_path, write_preview_manifest, write_proxy_manifest, ExportOptions,
+        ProjectPreviewClip, RenderJobKind, StreamCopyDecision, VideoDecoderSelection,
+        VideoMetadata,
     };
     use std::fs::File;
     use std::io::Write;
@@ -2190,6 +2729,37 @@ mod tests {
             width: 1280,
             height: 720,
             has_audio: false,
+        }
+    }
+
+    fn stream_copy_options() -> ExportOptions {
+        ExportOptions {
+            input_path: "/tmp/source.mp4".to_string(),
+            output_path: "/tmp/output.mp4".to_string(),
+            segments_to_keep: vec![(1.0, 5.0)],
+            resolution: None,
+            target_width: Some(1280),
+            target_height: Some(720),
+            sizing_mode: Some("original".to_string()),
+            resize_mode: Some("original".to_string()),
+            profile: Some("quality".to_string()),
+            fps: Some(30),
+            mode: "cut".to_string(),
+            speed_multiplier: None,
+            playback_rate: None,
+        }
+    }
+
+    fn stream_copy_metadata() -> VideoMetadata {
+        VideoMetadata {
+            duration: 10.0,
+            width: 1280,
+            height: 720,
+            fps: 30.0,
+            codec: "h264".to_string(),
+            file_size: 100,
+            has_audio: true,
+            audio_codec: Some("aac".to_string()),
         }
     }
 
@@ -2221,6 +2791,81 @@ mod tests {
     }
 
     #[test]
+    fn proxy_cache_manifest_invalidates_when_source_changes() {
+        let directory = tempdir().unwrap();
+        let source = directory.path().join("source.mp4");
+        let output = directory.path().join("proxy.mp4");
+        let mut source_file = File::create(&source).unwrap();
+        source_file.write_all(b"source-v1").unwrap();
+        File::create(&output).unwrap().write_all(b"proxy").unwrap();
+        write_proxy_manifest(source.to_str().unwrap(), output.to_str().unwrap());
+        assert!(cached_proxy_is_current(
+            source.to_str().unwrap(),
+            output.to_str().unwrap()
+        ));
+        source_file.write_all(b"-source-v2").unwrap();
+        assert!(!cached_proxy_is_current(
+            source.to_str().unwrap(),
+            output.to_str().unwrap()
+        ));
+    }
+
+    #[test]
+    fn stream_copy_is_selected_for_a_compatible_cut_only_export() {
+        let options = stream_copy_options();
+        assert_eq!(
+            stream_copy_decision(
+                &options,
+                &stream_copy_metadata(),
+                &options.input_path,
+                &options.output_path,
+                &[(1.0, 5.0)],
+            ),
+            StreamCopyDecision::CopyBoth
+        );
+    }
+
+    #[test]
+    fn stream_copy_is_disabled_for_speed_resize_or_multiple_segments() {
+        let mut options = stream_copy_options();
+        let metadata = stream_copy_metadata();
+        options.playback_rate = Some(2.0);
+        assert_eq!(
+            stream_copy_decision(
+                &options,
+                &metadata,
+                &options.input_path,
+                &options.output_path,
+                &[(1.0, 5.0)],
+            ),
+            StreamCopyDecision::Reencode
+        );
+        options.playback_rate = None;
+        options.target_width = Some(640);
+        assert_eq!(
+            stream_copy_decision(
+                &options,
+                &metadata,
+                &options.input_path,
+                &options.output_path,
+                &[(1.0, 5.0)],
+            ),
+            StreamCopyDecision::Reencode
+        );
+        options.target_width = Some(1280);
+        assert_eq!(
+            stream_copy_decision(
+                &options,
+                &metadata,
+                &options.input_path,
+                &options.output_path,
+                &[(1.0, 2.0), (3.0, 5.0)],
+            ),
+            StreamCopyDecision::Reencode
+        );
+    }
+
+    #[test]
     fn cleanup_partial_output_removes_preview_manifest() {
         let directory = tempdir().unwrap();
         let output = directory.path().join("preview.mp4");
@@ -2246,11 +2891,44 @@ mod tests {
         let first_job = "test-job-first";
         let second_job = "test-job-second";
 
-        begin_job(first_job, Some(project_id)).unwrap();
-        assert!(begin_job(second_job, Some(project_id)).is_err());
+        begin_job(first_job, Some(project_id), RenderJobKind::Preview).unwrap();
+        assert!(begin_job(second_job, Some(project_id), RenderJobKind::Preview).is_err());
         finish_job(first_job);
-        begin_job(second_job, Some(project_id)).unwrap();
+        begin_job(second_job, Some(project_id), RenderJobKind::Preview).unwrap();
         finish_job(second_job);
+    }
+
+    #[test]
+    fn export_preempts_preview_without_releasing_the_project_reservation() {
+        let project_id = "test-project-priority";
+        let preview_job = "test-job-priority-preview";
+        let export_job = "test-job-priority-export";
+        let blocked_preview = "test-job-priority-next-preview";
+
+        begin_job(preview_job, Some(project_id), RenderJobKind::Preview).unwrap();
+        assert_eq!(
+            begin_job(export_job, Some(project_id), RenderJobKind::Export).unwrap(),
+            Some(preview_job.to_string())
+        );
+        assert!(is_job_cancelled(preview_job));
+        assert!(begin_job(blocked_preview, Some(project_id), RenderJobKind::Preview).is_err());
+
+        finish_job(preview_job);
+        assert!(begin_job(blocked_preview, Some(project_id), RenderJobKind::Preview).is_err());
+        finish_job(export_job);
+        begin_job(blocked_preview, Some(project_id), RenderJobKind::Preview).unwrap();
+        finish_job(blocked_preview);
+    }
+
+    #[test]
+    fn preview_cannot_preempt_an_export() {
+        let project_id = "test-project-export-priority";
+        let export_job = "test-job-export-priority";
+        let preview_job = "test-job-export-priority-preview";
+
+        begin_job(export_job, Some(project_id), RenderJobKind::Export).unwrap();
+        assert!(begin_job(preview_job, Some(project_id), RenderJobKind::Preview).is_err());
+        finish_job(export_job);
     }
 
     #[test]
@@ -2258,8 +2936,8 @@ mod tests {
         let first_job = "test-job-project-a";
         let second_job = "test-job-project-b";
 
-        begin_job(first_job, Some("test-project-a")).unwrap();
-        begin_job(second_job, Some("test-project-b")).unwrap();
+        begin_job(first_job, Some("test-project-a"), RenderJobKind::Preview).unwrap();
+        begin_job(second_job, Some("test-project-b"), RenderJobKind::Preview).unwrap();
         finish_job(first_job);
         finish_job(second_job);
     }
@@ -2269,8 +2947,8 @@ mod tests {
         let first_job = "test-job-unscoped-a";
         let second_job = "test-job-unscoped-b";
 
-        begin_job(first_job, None).unwrap();
-        begin_job(second_job, None).unwrap();
+        begin_job(first_job, None, RenderJobKind::Preview).unwrap();
+        begin_job(second_job, None, RenderJobKind::Preview).unwrap();
         finish_job(first_job);
         finish_job(second_job);
     }
@@ -2291,6 +2969,35 @@ mod tests {
     fn preview_dimensions_are_lightweight_and_preserve_aspect_ratio() {
         assert_eq!(preview_dimensions(1920, 1080), (480, 270));
         assert_eq!(preview_dimensions(320, 240), (320, 240));
+    }
+
+    #[test]
+    fn decoder_frame_discard_scales_with_temporal_redundancy() {
+        assert_eq!(decoder_frame_discard(30.0, 1.0, 30), None);
+        assert_eq!(decoder_frame_discard(60.0, 1.0, 30), Some("noref"));
+        assert_eq!(decoder_frame_discard(60.0, 9.0, 30), Some("bidir"));
+        assert_eq!(decoder_frame_discard(60.0, 32.0, 30), Some("nokey"));
+        assert_eq!(decoder_frame_discard(30.0, 0.5, 30), None);
+    }
+
+    #[test]
+    fn hardware_decoder_args_are_removed_for_fallback() {
+        let decoder = VideoDecoderSelection {
+            name: "vaapi".to_string(),
+            hwaccel: "vaapi".to_string(),
+            device: Some("/dev/dri/renderD128".to_string()),
+        };
+        let mut args = vec!["-y".to_string(), "-i".to_string(), "source.mp4".to_string()];
+        append_decoder_args(&mut args, Some(&decoder));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "-hwaccel" && pair[1] == "vaapi"));
+        assert!(args
+            .windows(2)
+            .any(|pair| { pair[0] == "-hwaccel_device" && pair[1] == "/dev/dri/renderD128" }));
+        remove_hardware_decode_args(&mut args);
+        assert!(!args.iter().any(|argument| argument == "-hwaccel"));
+        assert!(!args.iter().any(|argument| argument == "-hwaccel_device"));
     }
 
     #[test]

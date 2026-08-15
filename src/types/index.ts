@@ -14,6 +14,7 @@ export interface VideoMetadata {
   codec: string;
   file_size: number;
   has_audio: boolean;
+  audio_codec?: string | null;
 }
 
 export interface SilenceSegment {
@@ -165,6 +166,7 @@ export interface FfmpegStatus {
   ffprobe_path: string | null;
   version: string | null;
   hardware_encoder: string | null;
+  hardware_decoder: string | null;
   hardware_vendor: HardwareAccelerationVendor;
   error: string | null;
 }

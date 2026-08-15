@@ -112,13 +112,17 @@ export async function generateExportPreview(options: {
 
 export async function generatePreviewProxy(
   videoPath: string,
-  outputPath: string
+  outputPath: string,
+  jobId?: string,
+  projectId?: number | null,
 ): Promise<string> {
   assertDesktop("Preview proxy generation");
   log.info("[preview]", `Generating preview proxy → ${outputPath}`);
   const result = await invoke<string>("generate_preview_proxy", {
     videoPath,
     outputPath,
+    jobId: jobId ?? null,
+    projectId: projectId == null ? null : String(projectId),
   });
   log.info("[preview]", "Preview proxy ready:", result);
   return result;

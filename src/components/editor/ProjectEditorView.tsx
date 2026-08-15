@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { appDataDir } from "@tauri-apps/api/path";
 import { confirm, open } from "@tauri-apps/plugin-dialog";
 import { getFileName, mediaServerUrl, resolveMediaSrc } from "../../lib/media";
@@ -16,6 +16,7 @@ import {
   authorizeMediaPath,
   cancelProjectRender,
   detectSilence,
+  generatePreviewProxy,
   generateProjectPreview,
   getVideoMetadata,
 } from "../../services/tauriCommands";
@@ -31,6 +32,14 @@ import { SemanticRangeTrack } from "./SemanticRangeTrack";
 const MIN_ZOOM = 4;
 const MAX_ZOOM = 40;
 const PRIMARY_TRACK_ID = "track-video-1";
+
+function previewWindowFromPath(path: string | null): { start: number; end: number } | null {
+  const match = path?.match(/-window-(\d+)-(\d+)-[a-f0-9]+\.mp4$/i);
+  if (!match) return null;
+  const start = Number(match[1]) / 1000;
+  const end = Number(match[2]) / 1000;
+  return Number.isFinite(start) && Number.isFinite(end) && end > start ? { start, end } : null;
+}
 
 function assetInput(asset: MediaAsset): Omit<MediaAsset, "id" | "kind"> & Partial<Pick<MediaAsset, "id" | "kind">> {
   return {
@@ -48,17 +57,19 @@ export function ProjectEditorView() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const previewRequestRef = useRef(0);
   const previewJobIdRef = useRef<string | null>(null);
-  const previewRunningRef = useRef(false);
-  const previewQueuedRef = useRef(false);
+  const previewRevisionRef = useRef<number | null>(null);
   const sourceAdvanceRef = useRef(false);
-  const [previewTick, setPreviewTick] = useState(0);
+  const [editedPreviewWindow, setEditedPreviewWindow] = useState<{ start: number; end: number } | null>(null);
   const {
     timelineProject,
     projectId,
     editedPreviewFilePath,
+    editedPreviewPending,
     setEditedPreviewFilePath,
     setEditedPreviewPending,
+    setEditedPreviewJobId,
     previewMode,
+    setPreviewMode,
     selectedClipId,
     dispatchEditorAction,
     detectionSettings,
@@ -98,6 +109,11 @@ export function ProjectEditorView() {
   const mediaToken = useProjectStore((state) => state.mediaServerToken);
   const showingEditedPreview = shouldShowEditedPreview(previewMode, editedPreviewFilePath);
   const mediaPath = showingEditedPreview ? editedPreviewFilePath : selectedAsset?.path || null;
+
+  useEffect(() => {
+    if (previewJobIdRef.current) return;
+    setEditedPreviewWindow(previewWindowFromPath(editedPreviewFilePath));
+  }, [editedPreviewFilePath]);
 
   useEffect(() => {
     let cancelled = false;
@@ -165,91 +181,168 @@ export function ProjectEditorView() {
     }
   }, [selectedClip, showingEditedPreview]);
 
+  const cancelEditedPreview = useCallback(() => {
+    const jobId = previewJobIdRef.current;
+    previewRequestRef.current += 1;
+    previewJobIdRef.current = null;
+    previewRevisionRef.current = null;
+    setEditedPreviewWindow(null);
+    setEditedPreviewPending(false);
+    setEditedPreviewJobId(null);
+    setPreviewMode("source");
+    if (jobId) {
+      void cancelProjectRender(jobId).catch(() => undefined);
+    }
+  }, [setEditedPreviewJobId, setEditedPreviewPending, setPreviewMode]);
+
+  const requestEditedPreview = useCallback(() => {
+    if (!timelineProject || !isDesktopRuntime() || !projectId || positionedClips.length === 0) return;
+    if (previewJobIdRef.current) return;
+
+    const projectSnapshot = timelineProject;
+    const clipsSnapshot = positionedClips;
+    const projectIdSnapshot = projectId;
+    const previewDuration = Math.min(30, Math.max(5, duration));
+    const previewStart = Math.min(
+      Math.max(0, duration - previewDuration),
+      Math.max(0, playhead - previewDuration / 2),
+    );
+    const previewEnd = Math.min(duration, previewStart + previewDuration);
+    const previewClipsSnapshot = clipsSnapshot.flatMap((clip) => {
+      const start = Math.max(clip.timelineStart, previewStart);
+      const end = Math.min(clip.timelineEnd, previewEnd);
+      const asset = getAsset(projectSnapshot, clip.assetId);
+      if (!asset || end - start < 0.08) return [];
+      return [{
+        clip,
+        asset,
+        sourceStart: clip.sourceStart + (start - clip.timelineStart) * clip.speed,
+        sourceEnd: clip.sourceStart + (end - clip.timelineStart) * clip.speed,
+      }];
+    });
+    if (previewClipsSnapshot.length === 0) return;
+    const requestId = previewRequestRef.current + 1;
+    const jobId = `project-preview-${projectIdSnapshot}-${projectSnapshot.revision}-${requestId}`;
+    previewRequestRef.current = requestId;
+    previewJobIdRef.current = jobId;
+    previewRevisionRef.current = projectSnapshot.revision;
+    setEditedPreviewFilePath(null);
+    setEditedPreviewWindow({ start: previewStart, end: previewEnd });
+    setEditedPreviewPending(true);
+    setEditedPreviewJobId(jobId);
+    setPreviewMode("edited");
+    setPreviewNotice(t("editor.previewGenerating"));
+
+    void (async () => {
+      try {
+        const dataDir = await appDataDir();
+        const proxyPaths = new Map<string, string>();
+        for (const previewClip of previewClipsSnapshot) {
+          const asset = previewClip.asset;
+          if (proxyPaths.has(asset.id)) continue;
+          const proxyFingerprint = `${asset.id}:${asset.path}:${asset.sourceFingerprint ?? ""}:${asset.metadata?.file_size ?? 0}:${asset.metadata?.duration ?? 0}:${asset.metadata?.codec ?? "unknown"}`;
+          const proxyPath = `${dataDir}/previews/proxies/asset-${stableHash(proxyFingerprint)}.mp4`;
+          const proxyJobId = `${jobId}-proxy-${asset.id}`;
+          previewJobIdRef.current = proxyJobId;
+          const proxy = await generatePreviewProxy(
+            asset.path,
+            proxyPath,
+            proxyJobId,
+            projectIdSnapshot,
+          );
+          if (previewRequestRef.current !== requestId) return;
+          proxyPaths.set(asset.id, proxy);
+        }
+        if (previewRequestRef.current !== requestId) return;
+        previewJobIdRef.current = jobId;
+        const firstAsset = projectSnapshot.assets.find((asset) => asset.metadata);
+        const sourceWidth = firstAsset?.metadata?.width ?? 720;
+        const sourceHeight = firstAsset?.metadata?.height ?? 720;
+        const scale = Math.min(1, 720 / Math.max(sourceWidth, sourceHeight));
+        const targetWidth = Math.max(2, Math.round((sourceWidth * scale) / 2) * 2);
+        const targetHeight = Math.max(2, Math.round((sourceHeight * scale) / 2) * 2);
+        const sourceFingerprint = projectSnapshot.assets
+          .map((asset) => `${asset.id}:${asset.sourceFingerprint ?? asset.path}`)
+          .sort()
+          .join("|");
+        const windowFingerprint = `${sourceFingerprint}|window:${previewStart.toFixed(3)}-${previewEnd.toFixed(3)}`;
+        const outputPath = `${dataDir}/previews/project-${projectIdSnapshot}-revision-${projectSnapshot.revision}-window-${Math.round(previewStart * 1000)}-${Math.round(previewEnd * 1000)}-${stableHash(windowFingerprint)}.mp4`;
+        const result = await generateProjectPreview({
+          outputPath,
+          targetWidth,
+          targetHeight,
+          jobId,
+          projectId: projectIdSnapshot,
+          clips: previewClipsSnapshot.map(({ asset, clip, sourceStart, sourceEnd }) => ({
+            inputPath: proxyPaths.get(asset.id) ?? asset.path,
+            sourceStart,
+            sourceEnd,
+            speed: clip.speed,
+            fps: asset.metadata?.fps ?? 30,
+            width: asset.metadata?.width ?? targetWidth,
+            height: asset.metadata?.height ?? targetHeight,
+            hasAudio: asset.metadata?.has_audio ?? false,
+          })),
+        });
+        const currentState = useProjectStore.getState();
+        if (
+          previewRequestRef.current === requestId &&
+          currentState.projectId === projectIdSnapshot &&
+          currentState.timelineProject?.revision === projectSnapshot.revision
+        ) {
+          setEditedPreviewFilePath(result);
+          setEditedPreviewJobId(null);
+          setPreviewMode("edited");
+          setPreviewNotice(t("editor.previewReady"));
+        }
+      } catch {
+        if (previewRequestRef.current === requestId) {
+          setEditedPreviewJobId(null);
+          setPreviewNotice(t("editor.previewUnavailable"));
+        }
+      } finally {
+        if (previewRequestRef.current === requestId) {
+          previewJobIdRef.current = null;
+          previewRevisionRef.current = null;
+          setEditedPreviewPending(false);
+        }
+      }
+    })();
+  }, [
+    duration,
+    playhead,
+    positionedClips,
+    projectId,
+    setEditedPreviewFilePath,
+    setEditedPreviewJobId,
+    setEditedPreviewPending,
+    setPreviewMode,
+    t,
+    timelineProject,
+  ]);
+
   useEffect(() => {
-    if (!timelineProject || !isDesktopRuntime() || !projectId) return;
-    if (previewRunningRef.current) {
-      previewQueuedRef.current = true;
+    if (
+      !previewJobIdRef.current ||
+      previewRevisionRef.current === null ||
+      previewRevisionRef.current === timelineProject?.revision
+    ) {
       return;
     }
+    cancelEditedPreview();
+  }, [cancelEditedPreview, timelineProject?.revision]);
 
-    const requestId = previewRequestRef.current + 1;
-    const jobId = `project-preview-${projectId}-${timelineProject.revision}-${requestId}`;
-    previewRequestRef.current = requestId;
-    setEditedPreviewFilePath(null);
-    setEditedPreviewPending(true);
-    const timer = window.setTimeout(() => {
-      previewRunningRef.current = true;
-      previewJobIdRef.current = jobId;
-      previewQueuedRef.current = false;
-      void (async () => {
-        try {
-          const dataDir = await appDataDir();
-          const firstAsset = timelineProject.assets.find((asset) => asset.metadata);
-          const sourceWidth = firstAsset?.metadata?.width ?? 720;
-          const sourceHeight = firstAsset?.metadata?.height ?? 720;
-          const scale = Math.min(1, 720 / Math.max(sourceWidth, sourceHeight));
-          const targetWidth = Math.max(2, Math.round((sourceWidth * scale) / 2) * 2);
-          const targetHeight = Math.max(2, Math.round((sourceHeight * scale) / 2) * 2);
-          const sourceFingerprint = timelineProject.assets
-            .map((asset) => `${asset.id}:${asset.sourceFingerprint ?? asset.path}`)
-            .sort()
-            .join("|");
-          const outputPath = `${dataDir}/previews/project-${projectId}-revision-${timelineProject.revision}-${stableHash(sourceFingerprint)}.mp4`;
-          const result = await generateProjectPreview({
-            outputPath,
-            targetWidth,
-            targetHeight,
-            jobId,
-            projectId,
-            clips: positionedClips.flatMap((clip) => {
-              const asset = getAsset(timelineProject, clip.assetId);
-              return asset
-                ? [{
-                    inputPath: asset.path,
-                    sourceStart: clip.sourceStart,
-                    sourceEnd: clip.sourceEnd,
-                    speed: clip.speed,
-                    fps: asset.metadata?.fps ?? 30,
-                    width: asset.metadata?.width ?? targetWidth,
-                    height: asset.metadata?.height ?? targetHeight,
-                    hasAudio: asset.metadata?.has_audio ?? false,
-                  }]
-                : [];
-            }),
-          });
-          if (previewRequestRef.current === requestId) {
-            setEditedPreviewFilePath(result);
-            setPreviewNotice(t("editor.previewReady"));
-          }
-        } catch {
-          if (previewRequestRef.current === requestId) {
-            setPreviewNotice(t("editor.previewUnavailable"));
-          }
-        } finally {
-          if (previewJobIdRef.current === jobId) {
-            previewJobIdRef.current = null;
-            previewRunningRef.current = false;
-          }
-          if (previewRequestRef.current === requestId) {
-            setEditedPreviewPending(false);
-          }
-          if (previewQueuedRef.current) {
-            previewQueuedRef.current = false;
-            setPreviewTick((current) => current + 1);
-          }
-        }
-      })();
-    }, 900);
+  useEffect(() => {
     return () => {
-      window.clearTimeout(timer);
-      if (previewJobIdRef.current === jobId) {
+      previewRequestRef.current += 1;
+      const jobId = previewJobIdRef.current;
+      previewJobIdRef.current = null;
+      previewRevisionRef.current = null;
+      if (jobId) {
         void cancelProjectRender(jobId).catch(() => undefined);
       }
-      if (previewRequestRef.current === requestId) {
-        setEditedPreviewPending(false);
-      }
     };
-  }, [positionedClips, previewTick, projectId, setEditedPreviewFilePath, setEditedPreviewPending, t, timelineProject]);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -331,7 +424,9 @@ export function ProjectEditorView() {
     dispatchEditorAction({ type: "selection.setPlayhead", timelineTime: time });
     dispatchEditorAction({ type: "selection.selectClip", clipId: mapped.clip.id });
     if (videoRef.current) {
-      videoRef.current.currentTime = showingEditedPreview ? time : mapped.sourceTime;
+      videoRef.current.currentTime = showingEditedPreview
+        ? Math.max(0, time - (editedPreviewWindow?.start ?? 0))
+        : mapped.sourceTime;
     }
   }
 
@@ -513,7 +608,7 @@ export function ProjectEditorView() {
                   onLoadedMetadata={(event) => {
                     event.currentTarget.playbackRate = showingEditedPreview ? 1 : selectedClip.speed;
                     event.currentTarget.currentTime = showingEditedPreview
-                      ? playhead
+                      ? Math.max(0, playhead - (editedPreviewWindow?.start ?? 0))
                       : selectedClip.sourceStart;
                     if (isPlaying && event.currentTarget.paused) {
                       void event.currentTarget.play().catch(() => setPreviewNotice(t("editor.previewUnavailable")));
@@ -521,7 +616,7 @@ export function ProjectEditorView() {
                   }}
                   onTimeUpdate={(event) => {
                     if (showingEditedPreview) {
-                      const nextTime = event.currentTarget.currentTime;
+                      const nextTime = event.currentTarget.currentTime + (editedPreviewWindow?.start ?? 0);
                       dispatchEditorAction({ type: "selection.setPlayhead", timelineTime: nextTime });
                       const nextClip = positionedClips.find(
                         (clip) => nextTime >= clip.timelineStart && nextTime < clip.timelineEnd
@@ -803,8 +898,48 @@ export function ProjectEditorView() {
             ) : null}
           </div>
           <div className="mt-auto rounded-xl bg-surface-container p-3 text-[11px] leading-relaxed text-on-surface-variant">
-            <div className="mb-1 flex items-center gap-2 text-on-surface"><Icon name="auto_awesome" className="text-sm text-secondary" />{t("editor.previewStatus")}</div>
-            {t("editor.previewStatusDescription")}
+            <div className="mb-1 flex items-center gap-2 text-on-surface">
+              <Icon name="auto_awesome" className="text-sm text-secondary" />
+              {t("editor.previewStatus")}
+            </div>
+            <p>{t("editor.previewStatusDescription")}</p>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <span className="text-[10px] uppercase tracking-[0.12em] text-on-surface-variant">
+                {editedPreviewPending
+                  ? t("editor.previewGenerating")
+                  : editedPreviewFilePath
+                    ? t("editor.previewReady")
+                    : t("editor.previewNotGenerated")}
+              </span>
+              {editedPreviewPending ? (
+                <Button variant="ghost" size="sm" onClick={cancelEditedPreview}>
+                  <Icon name="stop_circle" className="text-sm" />
+                  {t("editor.previewCancel")}
+                </Button>
+              ) : editedPreviewFilePath ? (
+                <div className="flex gap-1">
+                  <Button
+                    variant={previewMode === "edited" ? "surface" : "ghost"}
+                    size="sm"
+                    onClick={() => setPreviewMode("edited")}
+                  >
+                    {t("editor.previewUseEdited")}
+                  </Button>
+                  <Button
+                    variant={previewMode === "source" ? "surface" : "ghost"}
+                    size="sm"
+                    onClick={() => setPreviewMode("source")}
+                  >
+                    {t("editor.previewUseSource")}
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="surface" size="sm" onClick={requestEditedPreview}>
+                  <Icon name="play_arrow" className="text-sm" />
+                  {t("editor.previewGenerate")}
+                </Button>
+              )}
+            </div>
           </div>
         </aside>
       </div>

@@ -15,6 +15,7 @@ pub struct FfmpegStatus {
     pub ffprobe_path: Option<String>,
     pub version: Option<String>,
     pub hardware_encoder: Option<String>,
+    pub hardware_decoder: Option<String>,
     pub hardware_vendor: Option<String>,
     pub error: Option<String>,
 }
@@ -39,6 +40,13 @@ struct ResolvedBinary {
 }
 
 #[derive(Clone, Debug)]
+pub struct VideoDecoderSelection {
+    pub name: String,
+    pub hwaccel: String,
+    pub device: Option<String>,
+}
+
+#[derive(Clone, Debug)]
 pub struct VideoEncoderSelection {
     pub name: String,
     pub source: &'static str,
@@ -46,6 +54,7 @@ pub struct VideoEncoderSelection {
     pub hardware: bool,
     pub vendor: Option<&'static str>,
     pub device: Option<String>,
+    pub decoder: Option<VideoDecoderSelection>,
     binary: ResolvedBinary,
 }
 
@@ -98,6 +107,7 @@ pub async fn inspect_ffmpeg_runtime<R: Runtime>(app: &AppHandle<R>) -> FfmpegSta
                         ffprobe_path: None,
                         version: None,
                         hardware_encoder: None,
+                        hardware_decoder: None,
                         hardware_vendor: None,
                         error: Some(error),
                     }
@@ -130,6 +140,10 @@ pub async fn inspect_ffmpeg_runtime<R: Runtime>(app: &AppHandle<R>) -> FfmpegSta
                     .as_ref()
                     .filter(|encoder| encoder.hardware)
                     .map(|encoder| encoder.name.clone()),
+                hardware_decoder: selection
+                    .as_ref()
+                    .and_then(|encoder| encoder.decoder.as_ref())
+                    .map(|decoder| decoder.name.clone()),
                 hardware_vendor: selection
                     .as_ref()
                     .filter(|encoder| encoder.hardware)
@@ -145,6 +159,7 @@ pub async fn inspect_ffmpeg_runtime<R: Runtime>(app: &AppHandle<R>) -> FfmpegSta
             ffprobe_path: None,
             version: None,
             hardware_encoder: None,
+            hardware_decoder: None,
             hardware_vendor: None,
             error: Some(error),
         },
@@ -215,6 +230,8 @@ pub async fn select_video_encoder<R: Runtime>(
                 if (name != "h264_vaapi" || device.is_some())
                     && probe_hardware_encoder(app, &binary, name, device.as_deref()).await
                 {
+                    let decoder =
+                        select_decoder_for_encoder(app, &binary, name, device.as_deref()).await;
                     return Ok(VideoEncoderSelection {
                         name: name.to_string(),
                         source: binary.source,
@@ -222,6 +239,7 @@ pub async fn select_video_encoder<R: Runtime>(
                         hardware: true,
                         vendor: detected_vendor.or(Some(vendor)),
                         device,
+                        decoder,
                         binary,
                     });
                 }
@@ -236,6 +254,8 @@ pub async fn select_video_encoder<R: Runtime>(
                 if (name != "h264_vaapi" || device.is_some())
                     && probe_hardware_encoder(app, &binary, name, device.as_deref()).await
                 {
+                    let decoder =
+                        select_decoder_for_encoder(app, &binary, name, device.as_deref()).await;
                     return Ok(VideoEncoderSelection {
                         name: name.to_string(),
                         source: binary.source,
@@ -243,6 +263,7 @@ pub async fn select_video_encoder<R: Runtime>(
                         hardware: true,
                         vendor: detected_vendor.or(Some(vendor)),
                         device,
+                        decoder,
                         binary,
                     });
                 }
@@ -251,6 +272,7 @@ pub async fn select_video_encoder<R: Runtime>(
     }
 
     let binary = resolve_binary(app, BinaryKind::Ffmpeg).await?;
+    let decoder = select_preferred_hardware_decoder(app, &binary).await;
     Ok(VideoEncoderSelection {
         name: "libx264".to_string(),
         source: binary.source,
@@ -258,7 +280,95 @@ pub async fn select_video_encoder<R: Runtime>(
         hardware: false,
         vendor: None,
         device: None,
+        decoder,
         binary,
+    })
+}
+
+async fn select_decoder_for_encoder<R: Runtime>(
+    app: &AppHandle<R>,
+    binary: &ResolvedBinary,
+    encoder: &str,
+    device: Option<&str>,
+) -> Option<VideoDecoderSelection> {
+    let (name, hwaccel) = match encoder {
+        "h264_vaapi" => ("vaapi", "vaapi"),
+        "h264_nvenc" => ("cuda", "cuda"),
+        "h264_qsv" => ("qsv", "qsv"),
+        "h264_amf" if cfg!(target_os = "windows") => ("d3d11va", "d3d11va"),
+        "h264_videotoolbox" => ("videotoolbox", "videotoolbox"),
+        _ => return None,
+    };
+    decoder_if_available(app, binary, name, hwaccel, device).await
+}
+
+async fn select_preferred_hardware_decoder<R: Runtime>(
+    app: &AppHandle<R>,
+    binary: &ResolvedBinary,
+) -> Option<VideoDecoderSelection> {
+    let vaapi_device = vaapi_device_info("h264_vaapi").0;
+    let candidates: &[(&str, &str, Option<String>)] = if cfg!(target_os = "windows") {
+        &[
+            ("d3d11va", "d3d11va", None),
+            ("cuda", "cuda", None),
+            ("qsv", "qsv", None),
+        ]
+    } else if cfg!(target_os = "macos") {
+        &[("videotoolbox", "videotoolbox", None)]
+    } else {
+        &[
+            ("vaapi", "vaapi", vaapi_device),
+            ("cuda", "cuda", None),
+            ("qsv", "qsv", None),
+        ]
+    };
+
+    for (name, hwaccel, device) in candidates {
+        if let Some(decoder) =
+            decoder_if_available(app, binary, name, hwaccel, device.as_deref()).await
+        {
+            return Some(decoder);
+        }
+    }
+    None
+}
+
+async fn decoder_if_available<R: Runtime>(
+    app: &AppHandle<R>,
+    binary: &ResolvedBinary,
+    name: &str,
+    hwaccel: &str,
+    device: Option<&str>,
+) -> Option<VideoDecoderSelection> {
+    let output = command_output(app, binary, vec!["-hide_banner".into(), "-hwaccels".into()])
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let capabilities = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if !capabilities
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case(hwaccel))
+    {
+        return None;
+    }
+    debug!(
+        "[ffmpeg] Hardware decoder available: {} ({}){}",
+        name,
+        hwaccel,
+        device
+            .map(|path| format!(" on {}", path))
+            .unwrap_or_default()
+    );
+    Some(VideoDecoderSelection {
+        name: name.to_string(),
+        hwaccel: hwaccel.to_string(),
+        device: device.map(str::to_string),
     })
 }
 

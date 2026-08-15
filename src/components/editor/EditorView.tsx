@@ -8,7 +8,8 @@ import {
   sourceToEditedTime,
 } from "../../lib/editor";
 import { formatTime } from "../../lib/utils";
-import { getFileName, mediaServerUrl } from "../../lib/media";
+import { mediaServerUrl } from "../../lib/media";
+import { stableHash } from "../../lib/editor/preview";
 import { useI18n } from "../../lib/i18n";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/projectStore";
@@ -35,6 +36,7 @@ export function EditorView() {
   const {
     currentView,
     setView,
+    projectId,
     filePath,
     videoMetadata,
     detectionResult,
@@ -565,9 +567,9 @@ export function EditorView() {
       setIsGeneratingSourceProxy(true);
       setMediaError(t("detection.cannotPlayOriginal", { errorLabel }));
       const dataDir = await appDataDir();
-      const baseName = getFileName(filePath).replace(/\.[^.]+$/, "");
-      const proxyPath = `${dataDir}/previews/${Date.now()}-${baseName}.mp4`;
-      const result = await generatePreviewProxy(filePath, proxyPath);
+      const proxyFingerprint = `${filePath}:${videoMetadata?.file_size ?? 0}:${videoMetadata?.duration ?? 0}:${videoMetadata?.codec ?? "unknown"}:${videoMetadata?.fps ?? 0}`;
+      const proxyPath = `${dataDir}/previews/proxies/source-${stableHash(proxyFingerprint)}.mp4`;
+      const result = await generatePreviewProxy(filePath, proxyPath, undefined, projectId);
       setProxyRetryCount((count) => count + 1);
       setPreviewFilePath(result);
       setMediaError(null);
@@ -580,7 +582,9 @@ export function EditorView() {
   }, [
     filePath,
     isGeneratingSourceProxy,
+    projectId,
     previewFilePath,
+    videoMetadata,
     proxyRetryCount,
     setPreviewFilePath,
     t,

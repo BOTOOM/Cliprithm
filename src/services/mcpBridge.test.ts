@@ -7,10 +7,12 @@ import {
   handleTool,
   isMcpPreviewJobCurrent,
   MAX_MCP_JOBS,
+  isMcpOutputFileNameAllowed,
   isMcpOutputPathAllowed,
   MCP_TOOL_CATALOG,
   normalizeOverwriteConfirmationArgs,
   parseSilenceDetectionRequest,
+  resolveMcpExportSettings,
   snapshotActiveProjectState,
   startMcpRenderJob,
   validateMcpToolArguments,
@@ -536,6 +538,114 @@ describe("MCP tool contract", () => {
     expect(isMcpOutputPathAllowed(root, "/home/user/.local/share/cliprithm/secrets.mp4")).toBe(false);
     expect(isMcpOutputPathAllowed(root, "/home/user/.local/share/cliprithm/mcp-outputs-evil/render.mp4")).toBe(false);
     expect(isMcpOutputPathAllowed(root, "/tmp/render.mp4")).toBe(false);
+  });
+
+  it("accepts safe managed MCP output basenames only", () => {
+    expect(isMcpOutputFileNameAllowed("render.mp4")).toBe(true);
+    expect(isMcpOutputFileNameAllowed("3dmodelsparte1.MP4")).toBe(true);
+    expect(isMcpOutputFileNameAllowed("nested/render.mp4")).toBe(false);
+    expect(isMcpOutputFileNameAllowed("../render.mp4")).toBe(false);
+    expect(isMcpOutputFileNameAllowed("C:render.mp4")).toBe(false);
+    expect(isMcpOutputFileNameAllowed("render.mov")).toBe(false);
+    expect(isMcpOutputFileNameAllowed("a".repeat(256) + ".mp4")).toBe(false);
+  });
+
+  it("advertises managed filenames without requiring a client path", () => {
+    const definition = tool("export_render");
+    expect(definition.inputSchema.required).toEqual(["projectId", "expectedRevision"]);
+    expect(definition.inputSchema.properties.fileName).toMatchObject({ type: "string" });
+    expect(definition.inputSchema.properties.preset).toMatchObject({ type: "string", enum: ["tiktok", "reels", "youtube", "square", "custom"] });
+    expect(definition.inputSchema.properties.fps).toMatchObject({ type: "integer", enum: [30, 60] });
+    expect(definition.inputSchema.properties.profile).toMatchObject({ type: "string", enum: ["fast", "balanced", "quality"] });
+    expect(validateMcpToolArguments("export_render", {
+      projectId: 7,
+      expectedRevision: 4,
+      fileName: "render.mp4",
+    })).toEqual({ valid: true });
+  });
+
+  it("resolves MCP export presets and UI-equivalent settings", () => {
+    const timelineProject = createVideoProject(previewAsset);
+    const settings = {
+      preset: "custom" as const,
+      fileName: "output",
+      resolution: "1080p" as const,
+      width: 1280,
+      height: 720,
+      sizingMode: "original" as const,
+      resizeMode: "original" as const,
+      profile: "quality" as const,
+      fps: 30 as const,
+    };
+
+    expect(resolveMcpExportSettings(settings, timelineProject, {
+      preset: "tiktok",
+      resolution: "4k",
+      profile: "fast",
+      fps: 60,
+    })).toMatchObject({
+      settings: {
+        preset: "tiktok",
+        width: 2160,
+        height: 3840,
+        resizeMode: "fit",
+        profile: "fast",
+        fps: 60,
+        playbackRate: 1,
+      },
+    });
+    expect(resolveMcpExportSettings(settings, timelineProject, {
+      preset: "custom",
+      sizingMode: "preset",
+      creatorTarget: "vertical-4k",
+      resizeMode: "fit",
+      playbackRate: 2,
+    })).toMatchObject({
+      settings: {
+        preset: "custom",
+        sizingMode: "preset",
+        creatorTarget: "vertical-4k",
+        width: 2160,
+        height: 3840,
+        playbackRate: 2,
+      },
+    });
+    expect(resolveMcpExportSettings(settings, timelineProject, {
+      preset: "custom",
+      sizingMode: "custom",
+      width: 1080,
+      height: 1080,
+      resizeMode: "crop",
+      profile: "balanced",
+      fps: 30,
+    })).toMatchObject({
+      settings: {
+        width: 1080,
+        height: 1080,
+        resizeMode: "crop",
+        profile: "balanced",
+      },
+    });
+  });
+
+  it("rejects ambiguous or unsupported MCP export settings", () => {
+    const timelineProject = createVideoProject(previewAsset);
+    const settings = useProjectStore.getState().exportSettings;
+    expect(resolveMcpExportSettings(settings, timelineProject, {
+      preset: "custom",
+      sizingMode: "custom",
+      width: 1080,
+    })).toMatchObject({ error: expect.stringContaining("width and height") });
+    expect(resolveMcpExportSettings(settings, timelineProject, {
+      preset: "custom",
+      sizingMode: "original",
+      width: 1080,
+      height: 1080,
+    })).toMatchObject({ error: expect.stringContaining("cannot be combined") });
+    expect(resolveMcpExportSettings(settings, timelineProject, {
+      preset: "tiktok",
+      resizeMode: "crop",
+    })).toMatchObject({ error: expect.stringContaining("resizeMode=fit") });
   });
 
   it("normalizes overwrite confirmations so the returned token can be reused verbatim", () => {

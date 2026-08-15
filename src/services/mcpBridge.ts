@@ -35,6 +35,10 @@ import {
 import type {
   AppView,
   DetectionSettings,
+  ExportProfile,
+  ExportResizeMode,
+  ExportSettings,
+  ExportSizingMode,
   SemanticRange,
   SilenceDetectionCandidate,
   PreviewJobState,
@@ -182,6 +186,62 @@ const semanticRangeUpdateSchema: JsonSchemaNode = {
 const rangeProperties = {
   projectId: integerProperty("Active project database ID."),
   expectedRevision: integerProperty("Current timeline revision returned by a read."),
+};
+
+const exportOverrideProperties: Record<string, JsonSchemaNode> = {
+  preset: {
+    type: "string",
+    enum: ["tiktok", "reels", "youtube", "square", "custom"],
+    description: "UI export preset. Custom enables sizingMode and explicit dimensions.",
+  },
+  resolution: {
+    type: "string",
+    enum: ["1080p", "4k"],
+    description: "Preset resolution. It controls preset dimensions and is retained in the resolved settings.",
+  },
+  sizingMode: {
+    type: "string",
+    enum: ["original", "preset", "custom"],
+    description: "Custom target mode: source dimensions, creator target, or explicit width/height.",
+  },
+  creatorTarget: {
+    type: "string",
+    enum: ["vertical-social", "youtube-landscape", "square-social", "landscape-4k", "vertical-4k"],
+    description: "Recommended creator canvas from the export UI.",
+  },
+  width: {
+    type: "integer",
+    minimum: 2,
+    maximum: 4096,
+    description: "Custom output width in pixels. Provide width and height together.",
+  },
+  height: {
+    type: "integer",
+    minimum: 2,
+    maximum: 4096,
+    description: "Custom output height in pixels. Provide width and height together.",
+  },
+  resizeMode: {
+    type: "string",
+    enum: ["original", "fit", "crop", "stretch"],
+    description: "How the source fits the target canvas.",
+  },
+  profile: {
+    type: "string",
+    enum: ["fast", "balanced", "quality"],
+    description: "Export speed/quality profile from the UI.",
+  },
+  fps: {
+    type: "integer",
+    enum: [30, 60],
+    description: "Output frame rate from the UI.",
+  },
+  playbackRate: {
+    type: "number",
+    minimum: 0.25,
+    maximum: 4,
+    description: "Optional global speed multiplier applied to the active clips for this export.",
+  },
 };
 
 function schema(
@@ -446,35 +506,42 @@ export const MCP_TOOL_CATALOG: McpToolDefinition[] = [
   ),
   tool(
     "export_validate",
-    "Validate that the active project can be exported with its current composition and settings.",
-    schema({ projectId: rangeProperties.projectId }, ["projectId"]),
+    "Validate the active project and resolve export settings, including preset, canvas, resize, profile, FPS, and optional playback rate.",
+    schema({ projectId: rangeProperties.projectId, ...exportOverrideProperties }, ["projectId"]),
   ),
   tool(
     "export_render",
-    "Start rendering the active project composition to an MP4 output path.",
+    "Start rendering the active project composition to a managed MP4 filename or a compatible MCP output path.",
     schema({
       ...rangeProperties,
-      outputPath: stringProperty("Absolute output MP4 path inside the MCP output directory returned by system_get_capabilities."),
+      ...exportOverrideProperties,
+      fileName: stringProperty("Safe MP4 basename managed inside the MCP output directory."),
+      outputPath: stringProperty("Optional absolute MP4 path inside the MCP output directory for backwards compatibility."),
       overwrite: { type: "boolean", description: "Allow replacing an existing output path." },
       confirmationToken: stringProperty("One-use token returned when overwrite confirmation is required."),
-    }, ["projectId", "expectedRevision", "outputPath"]),
+    }, ["projectId", "expectedRevision"]),
     { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
   ),
   tool(
     "preview_request",
-    "Start a revision-bound full timeline preview job.",
-    schema({ ...rangeProperties, outputPath: stringProperty("Absolute output MP4 path inside the MCP output directory returned by system_get_capabilities.") }, ["projectId", "expectedRevision", "outputPath"]),
+    "Start a revision-bound full timeline preview job using a managed MP4 filename or a compatible MCP output path.",
+    schema({
+      ...rangeProperties,
+      fileName: stringProperty("Safe MP4 basename managed inside the MCP output directory."),
+      outputPath: stringProperty("Optional absolute MP4 path inside the MCP output directory for backwards compatibility."),
+    }, ["projectId", "expectedRevision"]),
     { readOnlyHint: false, idempotentHint: false },
   ),
   tool(
     "preview_request_window",
-    "Start a revision-bound preview job for a timeline window.",
+    "Start a revision-bound preview job for a timeline window using a managed MP4 filename or a compatible MCP output path.",
     schema({
       ...rangeProperties,
-      outputPath: stringProperty("Absolute output MP4 path inside the MCP output directory returned by system_get_capabilities."),
+      fileName: stringProperty("Safe MP4 basename managed inside the MCP output directory."),
+      outputPath: stringProperty("Optional absolute MP4 path inside the MCP output directory for backwards compatibility."),
       center: numberProperty("Timeline center in seconds."),
       duration: numberProperty("Window duration in seconds."),
-    }, ["projectId", "expectedRevision", "outputPath", "center", "duration"]),
+    }, ["projectId", "expectedRevision", "center", "duration"]),
     { readOnlyHint: false, idempotentHint: false },
   ),
   tool(
@@ -992,6 +1059,28 @@ function outputPathArg(args: Record<string, unknown>, key: string, extension: st
   return value && value.toLowerCase().endsWith(extension) ? value : null;
 }
 
+const MAX_MCP_OUTPUT_FILE_NAME_LENGTH = 255;
+
+export function isMcpOutputFileNameAllowed(fileName: string, extension = ".mp4"): boolean {
+  return (
+    fileName.length > 0 &&
+    fileName.length <= MAX_MCP_OUTPUT_FILE_NAME_LENGTH &&
+    fileName.toLowerCase().endsWith(extension) &&
+    fileName !== "." &&
+    fileName !== ".." &&
+    !fileName.includes("/") &&
+    !fileName.includes("\\") &&
+    !fileName.includes(":") &&
+    !fileName.includes("\0") &&
+    !Array.from(fileName).some((character) => character.charCodeAt(0) < 32)
+  );
+}
+
+function fileNameArg(args: Record<string, unknown>, key: string, extension: string): string | null {
+  const value = stringArg(args, key);
+  return value && isMcpOutputFileNameAllowed(value, extension) ? value : null;
+}
+
 async function mcpOutputDirectory(): Promise<string> {
   return resolve(await appDataDir(), "mcp-outputs");
 }
@@ -1068,14 +1157,22 @@ async function secureMcpOutputPathArg(
   key: string,
   extension: string,
 ): Promise<string | null> {
-  const requestedPath = outputPathArg(args, key, extension);
-  if (!requestedPath) return null;
+  const fileNameKey = "fileName";
+  const hasRequestedPath = Object.prototype.hasOwnProperty.call(args, key);
+  const hasFileName = Object.prototype.hasOwnProperty.call(args, fileNameKey);
+  if (hasRequestedPath === hasFileName) return null;
+
+  const requestedPath = hasRequestedPath ? outputPathArg(args, key, extension) : null;
+  const requestedFileName = hasFileName ? fileNameArg(args, fileNameKey, extension) : null;
+  if ((hasRequestedPath && !requestedPath) || (hasFileName && !requestedFileName)) return null;
 
   try {
-    const outputRoot = await mcpOutputDirectory();
-    const normalizedRoot = (await resolve(outputRoot)).replace(/\\/g, "/");
-    const normalizedPath = (await resolve(requestedPath)).replace(/\\/g, "/");
-    return isMcpOutputPathAllowed(normalizedRoot, normalizedPath) ? normalizedPath : null;
+    const outputRoot = (await resolve(await mcpOutputDirectory())).replace(/\\/g, "/");
+    const requestedOutput = requestedPath
+      ? await resolve(requestedPath)
+      : await resolve(outputRoot, requestedFileName!);
+    const normalizedPath = requestedOutput.replace(/\\/g, "/");
+    return isMcpOutputPathAllowed(outputRoot, normalizedPath) ? normalizedPath : null;
   } catch {
     return null;
   }
@@ -1383,6 +1480,181 @@ function projectContext(project = useProjectStore.getState().timelineProject) {
   };
 }
 
+type McpExportPreset = "tiktok" | "reels" | "youtube" | "square" | "custom";
+
+type McpExportSettings = {
+  preset: McpExportPreset;
+  resolution: ExportSettings["resolution"];
+  sizingMode: ExportSizingMode;
+  creatorTarget: string | null;
+  width: number;
+  height: number;
+  resizeMode: ExportResizeMode;
+  profile: ExportProfile;
+  fps: 30 | 60;
+  playbackRate: number;
+};
+
+export type McpExportSettingsResolution =
+  | { settings: McpExportSettings }
+  | { error: string };
+
+const CREATOR_TARGET_DIMENSIONS: Record<string, { width: number; height: number }> = {
+  "vertical-social": { width: 1080, height: 1920 },
+  "youtube-landscape": { width: 1920, height: 1080 },
+  "square-social": { width: 1080, height: 1080 },
+  "landscape-4k": { width: 3840, height: 2160 },
+  "vertical-4k": { width: 2160, height: 3840 },
+};
+
+function mcpPresetDimensions(
+  preset: Exclude<McpExportPreset, "custom">,
+  resolution: ExportSettings["resolution"],
+): { width: number; height: number } {
+  const is4k = resolution === "4k";
+  if (preset === "tiktok" || preset === "reels") {
+    return is4k ? { width: 2160, height: 3840 } : { width: 1080, height: 1920 };
+  }
+  if (preset === "youtube") {
+    return is4k ? { width: 3840, height: 2160 } : { width: 1920, height: 1080 };
+  }
+  return is4k ? { width: 2160, height: 2160 } : { width: 1080, height: 1080 };
+}
+
+function hasArgument(args: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(args, key);
+}
+
+export function resolveMcpExportSettings(
+  activeSettings: ExportSettings,
+  project: TimelineProject,
+  args: Record<string, unknown>,
+): McpExportSettingsResolution {
+  const firstAsset = project.assets.find((asset) => asset.metadata);
+  const sourceWidth = firstAsset?.metadata?.width ?? 1920;
+  const sourceHeight = firstAsset?.metadata?.height ?? 1080;
+  const requestedPreset = stringArg(args, "preset") as McpExportPreset | null;
+  const requestedResolution = stringArg(args, "resolution") as ExportSettings["resolution"] | null;
+  const requestedSizingMode = stringArg(args, "sizingMode") as ExportSizingMode | null;
+  const requestedCreatorTarget = stringArg(args, "creatorTarget");
+  const requestedResizeMode = stringArg(args, "resizeMode") as ExportResizeMode | null;
+  const requestedProfile = stringArg(args, "profile") as ExportProfile | null;
+  const requestedWidth = hasArgument(args, "width") ? integerArg(args, "width") : null;
+  const requestedHeight = hasArgument(args, "height") ? integerArg(args, "height") : null;
+  const requestedFps = hasArgument(args, "fps") ? integerArg(args, "fps") : null;
+  const requestedPlaybackRate = hasArgument(args, "playbackRate")
+    ? numberArg(args, "playbackRate")
+    : null;
+
+  if (hasArgument(args, "width") && requestedWidth === null) {
+    return { error: "width must be an integer when provided." };
+  }
+  if (hasArgument(args, "height") && requestedHeight === null) {
+    return { error: "height must be an integer when provided." };
+  }
+  if (hasArgument(args, "fps") && requestedFps !== 30 && requestedFps !== 60) {
+    return { error: "fps must be either 30 or 60." };
+  }
+  if (
+    hasArgument(args, "playbackRate") &&
+    (requestedPlaybackRate === null || requestedPlaybackRate < 0.25 || requestedPlaybackRate > 4)
+  ) {
+    return { error: "playbackRate must be between 0.25 and 4." };
+  }
+
+  let preset = requestedPreset ?? (activeSettings.preset as McpExportPreset);
+  let resolution = requestedResolution ?? activeSettings.resolution;
+  let sizingMode = requestedSizingMode ?? activeSettings.sizingMode;
+  let creatorTarget = requestedCreatorTarget;
+  let resizeMode = requestedResizeMode ?? activeSettings.resizeMode;
+  let width = requestedWidth ?? activeSettings.width;
+  let height = requestedHeight ?? activeSettings.height;
+
+  if (creatorTarget) {
+    const target = CREATOR_TARGET_DIMENSIONS[creatorTarget];
+    if (!target) return { error: "creatorTarget is not a supported export target." };
+    if (requestedPreset && requestedPreset !== "custom") {
+      return { error: "creatorTarget can only be combined with preset=custom." };
+    }
+    if (hasArgument(args, "width") || hasArgument(args, "height")) {
+      return { error: "creatorTarget cannot be combined with width or height." };
+    }
+    preset = "custom";
+    sizingMode = "preset";
+    width = target.width;
+    height = target.height;
+  }
+
+  if (preset !== "custom") {
+    if (requestedSizingMode || hasArgument(args, "width") || hasArgument(args, "height") || creatorTarget) {
+      return { error: "sizingMode, creatorTarget, width, and height require preset=custom." };
+    }
+    if (requestedResizeMode && requestedResizeMode !== "fit") {
+      return { error: "Non-custom presets use resizeMode=fit." };
+    }
+    const dimensions = mcpPresetDimensions(preset, resolution);
+    width = dimensions.width;
+    height = dimensions.height;
+    sizingMode = "preset";
+    resizeMode = "fit";
+  } else if (sizingMode === "original") {
+    if (hasArgument(args, "width") || hasArgument(args, "height")) {
+      return { error: "width and height cannot be combined with sizingMode=original." };
+    }
+    width = sourceWidth;
+    height = sourceHeight;
+    if (requestedResizeMode && requestedResizeMode !== "original") {
+      return { error: "sizingMode=original requires resizeMode=original." };
+    }
+    resizeMode = "original";
+  } else {
+    if (hasArgument(args, "width") !== hasArgument(args, "height")) {
+      return { error: "width and height must be provided together." };
+    }
+    if (
+      sizingMode === "custom" &&
+      requestedSizingMode === "custom" &&
+      (!hasArgument(args, "width") || !hasArgument(args, "height"))
+    ) {
+      return { error: "sizingMode=custom requires width and height." };
+    }
+    if (sizingMode === "custom" && (!Number.isInteger(width) || !Number.isInteger(height))) {
+      return { error: "sizingMode=custom requires width and height." };
+    }
+    if (resizeMode === "original" && (width !== sourceWidth || height !== sourceHeight)) {
+      return { error: "resizeMode=original requires output dimensions to match the source." };
+    }
+  }
+
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 2 || height < 2 || width > 4096 || height > 4096) {
+    return { error: "Export dimensions must be between 2 and 4096 pixels." };
+  }
+
+  const playbackRate = requestedPlaybackRate ?? 1;
+  const invalidSpeed = getPositionedClips(project).some((clip) => {
+    const speed = clip.speed * playbackRate;
+    return !Number.isFinite(speed) || speed < 0.25 || speed > 32;
+  });
+  if (invalidSpeed) {
+    return { error: "playbackRate would produce a clip speed outside the supported 0.25x–32x range." };
+  }
+
+  return {
+    settings: {
+      preset,
+      resolution,
+      sizingMode,
+      creatorTarget: creatorTarget ?? null,
+      width,
+      height,
+      resizeMode,
+      profile: requestedProfile ?? activeSettings.profile,
+      fps: (requestedFps ?? activeSettings.fps) as 30 | 60,
+      playbackRate,
+    },
+  };
+}
+
 type McpRenderClip = {
   inputPath: string;
   sourceStart: number;
@@ -1397,6 +1669,7 @@ type McpRenderClip = {
 function renderClipsForProject(
   project: TimelineProject,
   window?: { start: number; end: number },
+  playbackRate = 1,
 ): McpRenderClip[] {
   return getPositionedClips(project).flatMap((clip) => {
     const asset = getAsset(project, clip.assetId);
@@ -1408,7 +1681,7 @@ function renderClipsForProject(
       inputPath: asset.path,
       sourceStart: clip.sourceStart + (start - clip.timelineStart) * clip.speed,
       sourceEnd: clip.sourceStart + (end - clip.timelineStart) * clip.speed,
-      speed: clip.speed,
+      speed: clip.speed * playbackRate,
       fps: asset.metadata?.fps ?? 30,
       width: asset.metadata?.width ?? 1920,
       height: asset.metadata?.height ?? 1080,
@@ -1708,11 +1981,12 @@ export async function handleTool(name: string, args: Record<string, unknown>) {
         outputDirectory = null;
       }
       return success("system.getCapabilities", {
-        contractVersion: "1.1.0",
+        contractVersion: "1.2.0",
         activeProjectId: state.projectId,
         revision: state.timelineProject?.revision ?? null,
         toolCount: MCP_TOOL_CATALOG.length,
         outputDirectory,
+        managedOutputNames: true,
         limits: { minClipSpeed: 0.25, maxClipSpeed: 32, minRangeDuration: 0.08 },
       });
     }
@@ -1998,36 +2272,33 @@ export async function handleTool(name: string, args: Record<string, unknown>) {
     case "export_validate": {
       const active = activeProject(args);
       if ("error" in active) return active.error;
+      const resolved = resolveMcpExportSettings(active.state.exportSettings, active.project, args);
+      if ("error" in resolved) return invalid(resolved.error);
       const clips = getPositionedClips(active.project);
       if (clips.length === 0) return invalid("The active project has no exportable clips.", "NO_EXPORTABLE_CLIPS");
-      return success("export.validate", { valid: true, clipCount: clips.length, duration: getTimelineDuration(active.project) });
+      return success("export.validate", {
+        valid: true,
+        clipCount: clips.length,
+        duration: getTimelineDuration(active.project) / resolved.settings.playbackRate,
+        settings: resolved.settings,
+      });
     }
     case "export_render": {
       const outputPath = await secureMcpOutputPathArg(args, "outputPath", ".mp4");
       const active = activeProject(args);
       if ("error" in active) return active.error;
-      if (!outputPath) return invalid("outputPath must be an absolute .mp4 path.");
+      if (!outputPath) return invalid("Provide either fileName as a safe .mp4 basename or outputPath as an absolute path inside mcp-outputs.");
       await waitForMcpOutputCleanup(outputPath);
       const revisionError = checkRevision(args, active.project.revision);
       if (revisionError) return revisionError;
+      const resolved = resolveMcpExportSettings(active.state.exportSettings, active.project, args);
+      if ("error" in resolved) return invalid(resolved.error);
       const overwrite = args.overwrite;
       if (overwrite !== undefined && typeof overwrite !== "boolean") {
         return invalid("overwrite must be a boolean when provided.");
       }
       const securedArgs = { ...args, outputPath };
       const outputExistedBefore = await exists(outputPath);
-      const existingJob = activeMcpJob(active.projectId);
-      if (existingJob) return invalid(`Project already has an active MCP job: ${existingJob.jobId}.`, "JOB_CONFLICT");
-      const outputJob = activeMcpOutputJob(outputPath);
-      if (outputJob) return invalid(`Output path is already being rendered by job ${outputJob.jobId}.`, "JOB_CONFLICT");
-      if (!hasMcpJobCapacity()) {
-        return invalid("The MCP job limit is reached; wait for an active job to finish and retry.", "JOB_LIMIT");
-      }
-      const firstAsset = active.project.assets.find((asset) => asset.metadata);
-      const targetWidth = active.state.exportSettings.width || firstAsset?.metadata?.width || 1920;
-      const targetHeight = active.state.exportSettings.height || firstAsset?.metadata?.height || 1080;
-      const clips = renderClipsForProject(active.project);
-      if (clips.length === 0) return invalid("The active project has no exportable clips.", "NO_EXPORTABLE_CLIPS");
       if (outputExistedBefore) {
         if (overwrite === false) {
           return invalid(
@@ -2041,6 +2312,44 @@ export async function handleTool(name: string, args: Record<string, unknown>) {
           confirmationArgs,
         );
         if (confirmation) return confirmation;
+      }
+      if (!hasMcpJobCapacity()) {
+        return invalid("The MCP job limit is reached; wait for an active job to finish and retry.", "JOB_LIMIT");
+      }
+      const targetWidth = resolved.settings.width;
+      const targetHeight = resolved.settings.height;
+      const clips = renderClipsForProject(active.project, undefined, resolved.settings.playbackRate);
+      if (clips.length === 0) return invalid("The active project has no exportable clips.", "NO_EXPORTABLE_CLIPS");
+      const existingJob = activeMcpJob(active.projectId);
+      if (existingJob?.kind === "export_render") {
+        return invalid(`Project already has an active MCP job: ${existingJob.jobId}.`, "JOB_CONFLICT");
+      }
+      if (existingJob) {
+        try {
+          await cancelProjectRender(existingJob.jobId);
+        } catch (error) {
+          return invalid(
+            `The active preview could not be cancelled: ${error instanceof Error ? error.message : String(error)}`,
+            "JOB_CONFLICT",
+          );
+        }
+        const cancelled = updateMcpJob(existingJob.jobId, {
+          status: "cancelled",
+          error: "Preempted by an export job.",
+        });
+        if (cancelled) {
+          cleanUpMcpJobOutput(cancelled);
+          clearMcpPreviewJobIfOwned(cancelled);
+        }
+        await waitForMcpOutputCleanup(outputPath);
+      }
+      const remainingJob = activeMcpJob(active.projectId);
+      if (remainingJob) {
+        return invalid(`Project already has an active MCP job: ${remainingJob.jobId}.`, "JOB_CONFLICT");
+      }
+      const outputJob = activeMcpOutputJob(outputPath);
+      if (outputJob) return invalid(`Output path is already being rendered by job ${outputJob.jobId}.`, "JOB_CONFLICT");
+      if (outputExistedBefore) {
         forgetMcpOutput(active.projectId, outputPath);
       }
       const jobId = createMcpJobId("export_render");
@@ -2068,22 +2377,27 @@ export async function handleTool(name: string, args: Record<string, unknown>) {
             clips,
             targetWidth,
             targetHeight,
-            resizeMode: active.state.exportSettings.resizeMode,
-            profile: active.state.exportSettings.profile,
-            fps: active.state.exportSettings.fps,
+            resizeMode: resolved.settings.resizeMode,
+            profile: resolved.settings.profile,
+            fps: resolved.settings.fps,
             jobId,
             projectId: active.projectId,
           }),
         ),
       );
       if (!started.ok) return invalid(started.message, started.errorCode);
-      return success("export.renderProject", { jobId, outputPath, renderedRevision: projectRevision }, [jobId]);
+      return success("export.renderProject", {
+        jobId,
+        outputPath,
+        renderedRevision: projectRevision,
+        settings: resolved.settings,
+      }, [jobId]);
     }
     case "preview_request": {
       const outputPath = await secureMcpOutputPathArg(args, "outputPath", ".mp4");
       const active = activeProject(args);
       if ("error" in active) return active.error;
-      if (!outputPath) return invalid("outputPath must be an absolute .mp4 path.");
+      if (!outputPath) return invalid("Provide either fileName as a safe .mp4 basename or outputPath as an absolute path inside mcp-outputs.");
       await waitForMcpOutputCleanup(outputPath);
       const revisionError = checkRevision(args, active.project.revision);
       if (revisionError) return revisionError;
