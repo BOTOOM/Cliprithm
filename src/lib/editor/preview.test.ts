@@ -4,6 +4,7 @@ import {
   isOwnedEditedPreviewPath,
   isPathWithinDirectory,
   persistedPreviewMode,
+  previewWindowFromPath,
   shouldShowEditedPreview,
   stableHash,
 } from "./preview";
@@ -25,6 +26,13 @@ describe("preview mode", () => {
     expect(persistedPreviewMode("edited", null)).toBe("source");
     expect(persistedPreviewMode("edited", "/tmp/preview.mp4")).toBe("edited");
     expect(persistedPreviewMode("source", "/tmp/preview.mp4")).toBe("source");
+  });
+
+  it("uses legacy filename windows only as a compatibility fallback", () => {
+    expect(previewWindowFromPath(
+      "/app/previews/project-1-window-1250-4250-abcdef12.mp4",
+    )).toEqual({ start: 1.25, end: 4.25 });
+    expect(previewWindowFromPath("/app/mcp-outputs/custom-name.mp4")).toBeNull();
   });
 
   it("only treats preview files in app-owned directories as deletable artifacts", () => {

@@ -2,6 +2,7 @@ use log::{debug, error, info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -139,6 +140,45 @@ fn is_job_cancelled(job_id: &str) -> bool {
         .lock()
         .map(|registry| registry.cancelled.contains(job_id))
         .unwrap_or(false)
+}
+
+fn restore_project_job_reservation(
+    project_id: Option<&str>,
+    current_job_id: &str,
+    preempted_job_id: &str,
+) {
+    let Some(project_id) = project_id else {
+        return;
+    };
+    if let Ok(mut registry) = jobs().lock() {
+        if registry
+            .project_jobs
+            .get(project_id)
+            .is_some_and(|job_id| job_id == current_job_id)
+        {
+            if registry.active.contains(preempted_job_id) {
+                registry
+                    .project_jobs
+                    .insert(project_id.to_string(), preempted_job_id.to_string());
+            } else {
+                registry.project_jobs.remove(project_id);
+            }
+        }
+    }
+}
+
+async fn wait_for_preempted_job_finish(
+    current_job_id: &str,
+    project_id: Option<&str>,
+    preempted_job_id: &str,
+) -> Result<(), String> {
+    match wait_for_job_finish(preempted_job_id).await {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            restore_project_job_reservation(project_id, current_job_id, preempted_job_id);
+            Err(error)
+        }
+    }
 }
 
 async fn wait_for_job_finish(job_id: &str) -> Result<(), String> {
@@ -842,7 +882,7 @@ pub async fn export_video(
     let (_job_guard, preempted_job_id) =
         JobGuard::new(job_id.clone(), project_id.as_deref(), RenderJobKind::Export)?;
     if let Some(preempted_job_id) = preempted_job_id {
-        wait_for_job_finish(&preempted_job_id).await?;
+        wait_for_preempted_job_finish(&job_id, project_id.as_deref(), &preempted_job_id).await?;
     }
     info!(
         "[export] Starting — input={} output={} res={:?} fps={:?}",
@@ -1179,6 +1219,39 @@ fn write_proxy_manifest(input_path: &str, output_path: &str) {
     }
 }
 
+fn canonicalize_path_with_missing_components(path: &Path) -> Result<PathBuf, String> {
+    let mut existing = path.to_path_buf();
+    let mut missing_components = Vec::new();
+    while !existing.exists() {
+        let component = match existing.components().next_back() {
+            Some(Component::CurDir) => OsStr::new(".").to_os_string(),
+            Some(Component::ParentDir) => OsStr::new("..").to_os_string(),
+            Some(Component::Normal(value)) => value.to_os_string(),
+            Some(Component::RootDir | Component::Prefix(_)) | None => {
+                return Err("Could not resolve render path components.".to_string());
+            }
+        };
+        missing_components.push(component);
+        if !existing.pop() {
+            return Err("Could not resolve render path components.".to_string());
+        }
+    }
+
+    let mut canonical = std::fs::canonicalize(&existing)
+        .map_err(|error| format!("Could not canonicalize render path: {}", error))?;
+    for component in missing_components.iter().rev() {
+        if component == OsStr::new(".") {
+            continue;
+        }
+        if component == OsStr::new("..") {
+            canonical.pop();
+        } else {
+            canonical.push(component);
+        }
+    }
+    Ok(canonical)
+}
+
 fn validate_preview_proxy_output(window: &Window, output_path: &str) -> Result<(), String> {
     validate_render_output_path(output_path, &["mp4"])?;
     let app_data_dir = window
@@ -1186,8 +1259,9 @@ fn validate_preview_proxy_output(window: &Window, output_path: &str) -> Result<(
         .path()
         .app_data_dir()
         .map_err(|error| format!("Could not resolve preview directory: {}", error))?;
-    let preview_root = app_data_dir.join("previews");
-    if !Path::new(output_path).starts_with(&preview_root) {
+    let preview_root = canonicalize_path_with_missing_components(&app_data_dir.join("previews"))?;
+    let candidate = canonicalize_path_with_missing_components(Path::new(output_path))?;
+    if !candidate.starts_with(&preview_root) {
         return Err(
             "Preview proxy output must remain inside the application previews directory."
                 .to_string(),
@@ -1211,7 +1285,7 @@ pub async fn generate_preview_proxy(
         RenderJobKind::Preview,
     )?;
     if let Some(preempted_job_id) = preempted_job_id {
-        wait_for_job_finish(&preempted_job_id).await?;
+        wait_for_preempted_job_finish(&job_id, project_id.as_deref(), &preempted_job_id).await?;
     }
 
     let input = Path::new(&video_path);
@@ -1616,7 +1690,7 @@ async fn render_project_video(
     let (_job_guard, preempted_job_id) =
         JobGuard::new(job_id.clone(), project_id.as_deref(), kind)?;
     if let Some(preempted_job_id) = preempted_job_id {
-        wait_for_job_finish(&preempted_job_id).await?;
+        wait_for_preempted_job_finish(&job_id, project_id.as_deref(), &preempted_job_id).await?;
     }
     if clips.is_empty() {
         return Err("No clips available for project preview.".to_string());
@@ -2708,9 +2782,10 @@ mod tests {
     use super::{
         append_decoder_args, begin_job, build_atempo_chain, build_concat_filter,
         build_project_preview_filter, cached_preview_is_current, cached_proxy_is_current,
-        cleanup_partial_output, decoder_frame_discard, estimated_analysis_output_duration,
-        finish_job, is_job_cancelled, paths_match, prepare_video_filter, preview_dimensions,
-        remove_hardware_decode_args, stream_copy_decision, validate_export_segments,
+        canonicalize_path_with_missing_components, cleanup_partial_output, decoder_frame_discard,
+        estimated_analysis_output_duration, finish_job, is_job_cancelled, paths_match,
+        prepare_video_filter, preview_dimensions, remove_hardware_decode_args,
+        restore_project_job_reservation, stream_copy_decision, validate_export_segments,
         validate_render_output_path, write_preview_manifest, write_proxy_manifest, ExportOptions,
         ProjectPreviewClip, RenderJobKind, StreamCopyDecision, VideoDecoderSelection,
         VideoMetadata,
@@ -2808,6 +2883,21 @@ mod tests {
             source.to_str().unwrap(),
             output.to_str().unwrap()
         ));
+    }
+
+    #[test]
+    fn preview_proxy_path_normalization_rejects_parent_directory_escape() {
+        let directory = tempdir().unwrap();
+        let preview_root = directory.path().join("previews");
+        std::fs::create_dir_all(&preview_root).unwrap();
+        let candidate = preview_root.join("nested").join("..").join("proxy.mp4");
+        let outside = directory.path().join("outside.mp4");
+        let normalized_candidate = canonicalize_path_with_missing_components(&candidate).unwrap();
+        let normalized_outside = canonicalize_path_with_missing_components(&outside).unwrap();
+        let normalized_root = canonicalize_path_with_missing_components(&preview_root).unwrap();
+
+        assert!(normalized_candidate.starts_with(&normalized_root));
+        assert!(!normalized_outside.starts_with(&normalized_root));
     }
 
     #[test]
@@ -2918,6 +3008,26 @@ mod tests {
         finish_job(export_job);
         begin_job(blocked_preview, Some(project_id), RenderJobKind::Preview).unwrap();
         finish_job(blocked_preview);
+    }
+
+    #[test]
+    fn preemption_timeout_restores_the_preview_project_reservation() {
+        let project_id = "test-project-preemption-timeout";
+        let preview_job = "test-job-preemption-timeout-preview";
+        let export_job = "test-job-preemption-timeout-export";
+        let next_job = "test-job-preemption-timeout-next";
+
+        begin_job(preview_job, Some(project_id), RenderJobKind::Preview).unwrap();
+        assert_eq!(
+            begin_job(export_job, Some(project_id), RenderJobKind::Export).unwrap(),
+            Some(preview_job.to_string())
+        );
+        restore_project_job_reservation(Some(project_id), export_job, preview_job);
+        finish_job(export_job);
+        assert!(begin_job(next_job, Some(project_id), RenderJobKind::Preview).is_err());
+        finish_job(preview_job);
+        begin_job(next_job, Some(project_id), RenderJobKind::Preview).unwrap();
+        finish_job(next_job);
     }
 
     #[test]

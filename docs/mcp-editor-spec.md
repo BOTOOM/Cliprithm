@@ -81,7 +81,7 @@ Silence detection returns a candidate ID. Applying or discarding a candidate mus
 - `resolution`: `1080p` or `4k` for preset canvases.
 - `sizingMode`: `original`, `preset`, or `custom` when `preset` is `custom`.
 - `creatorTarget`: `vertical-social`, `youtube-landscape`, `square-social`, `landscape-4k`, or `vertical-4k`.
-- `width` and `height`: paired custom dimensions from 2 through 4096 pixels.
+- `width` and `height`: paired custom dimensions from 2 through 4096 pixels. Render dimensions are normalized down to even boundaries, and the effective normalized values are returned in `settings`.
 - `resizeMode`: `original`, `fit`, `crop`, or `stretch`.
 - `profile`: `fast`, `balanced`, or `quality`.
 - `fps`: `30` or `60`.
@@ -103,7 +103,7 @@ For example:
 }
 ```
 
-Preview and export renders return a job ID immediately. Use `job_get` for status and `job_cancel` to request cancellation. Jobs are bound to the active project and source revision; completed output from an older revision is never applied to the editor state. Export jobs have priority over previews: an export cancels an active preview for the same project and waits for its process to stop before rendering. Every render writes to a temporary sibling and atomically replaces the destination only after a successful render. Existing outputs are preserved on failure or cancellation, and a destination that appears after validation is never overwritten without the original overwrite authorization. Render tools accept either a safe `.mp4` `fileName` basename or a compatible absolute `outputPath`; the former is resolved inside the MCP output directory.
+Preview and export renders return a job ID immediately. Use `job_get` for status and `job_cancel` to request cancellation. Jobs are bound to the active project and source revision; completed output from an older revision is never applied to the editor state. `preview_request_window` carries its timeline `start`/`end` metadata with the job and persists it with the edited preview, so the editor does not infer the playhead offset from the output filename. Export jobs have priority over previews: an export cancels an active preview for the same project and waits for its process to stop before rendering; if that preemption wait times out, the preview reservation remains until the old process actually finishes. Every render writes to a temporary sibling and atomically replaces the destination only after a successful render. Existing outputs are preserved on failure or cancellation, and a destination that appears after validation is never overwritten without the original overwrite authorization. Render tools accept either a safe `.mp4` `fileName` basename or a compatible absolute `outputPath`; the former is resolved inside the MCP output directory.
 
 ### Semantic range and history tools
 

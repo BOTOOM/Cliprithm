@@ -125,6 +125,11 @@ export interface SilenceDetectionCandidate {
   status: "preparing" | "analyzing" | "reviewable" | "accepted" | "discarded";
 }
 
+export interface PreviewWindow {
+  start: number;
+  end: number;
+}
+
 export interface PreviewJobState {
   jobId: string;
   projectRevision: number;
@@ -133,6 +138,7 @@ export interface PreviewJobState {
   percent: number;
   outputPath: string | null;
   error: string | null;
+  window?: PreviewWindow | null;
 }
 
 export interface PreviewSegment {

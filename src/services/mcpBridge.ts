@@ -22,7 +22,11 @@ import {
 } from "../lib/editor/timeline";
 import { useProjectStore } from "../stores/projectStore";
 import { buildClipSegmentsFromSilence } from "../lib/editor";
-import { hasEditedPreviewAvailable, persistedPreviewMode } from "../lib/editor/preview";
+import {
+  hasEditedPreviewAvailable,
+  persistedPreviewMode,
+  previewWindowFromPath,
+} from "../lib/editor/preview";
 import { log } from "../lib/logger";
 import {
   cancelProjectRender,
@@ -42,6 +46,7 @@ import type {
   SemanticRange,
   SilenceDetectionCandidate,
   PreviewJobState,
+  PreviewWindow,
   ProcessingProgress,
   SilenceSegment,
   TimelineProject,
@@ -814,6 +819,11 @@ function activeMcpOutputJob(outputPath: string): McpJob | null {
   ) ?? null;
 }
 
+function isRenderJobAlreadyFinished(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toLowerCase().includes("render job is not active");
+}
+
 export function isMcpPreviewJobCurrent(
   job: Pick<McpJob, "kind" | "projectRevision" | "status">,
   revision: number,
@@ -917,6 +927,7 @@ export interface ActiveProjectPersistenceSnapshot {
   currentView: string;
   previewMode: string;
   editedPreviewPath: string | null;
+  editedPreviewWindowJson: string;
   detectionResultJson: string | null;
   detectionSettingsJson: string;
   videoMetadataJson: string | null;
@@ -933,6 +944,7 @@ export function snapshotActiveProjectState(
     currentView: state.currentView,
     previewMode: state.previewMode,
     editedPreviewPath: state.editedPreviewFilePath,
+    editedPreviewWindowJson: JSON.stringify(state.editedPreviewWindow),
     detectionResultJson: state.detectionResult ? JSON.stringify(state.detectionResult) : null,
     detectionSettingsJson: JSON.stringify(state.detectionSettings),
     videoMetadataJson: state.videoMetadata ? JSON.stringify(state.videoMetadata) : null,
@@ -979,6 +991,7 @@ async function confirmProjectSwitchIfNeeded(
     persistedRecord.clip_segments !== JSON.stringify(currentState.clipSegments) ||
     persistedRecord.preview_mode !== persistedPreviewMode(currentState.previewMode, currentState.editedPreviewFilePath) ||
     persistedRecord.edited_preview_path !== currentState.editedPreviewFilePath ||
+    persistedRecord.edited_preview_window_json !== JSON.stringify(currentState.editedPreviewWindow) ||
     persistedRecord.current_view !== currentState.currentView ||
     persistedRecord.detection_result_json !== (currentState.detectionResult ? JSON.stringify(currentState.detectionResult) : null) ||
     persistedRecord.detection_settings_json !== JSON.stringify(currentState.detectionSettings) ||
@@ -1376,10 +1389,17 @@ async function openProjectRecord(
     ...parseJson<Partial<DetectionSettings>>(record.detection_settings_json, {}),
   };
   const editedPreviewPath = await existingEditedPreviewPath(record);
+  const editedPreviewWindow = editedPreviewPath
+    ? record.edited_preview_window_json === null
+      ? previewWindowFromPath(editedPreviewPath)
+      : parseJson<PreviewWindow | null>(record.edited_preview_window_json, null)
+    : null;
   const previewMode = record.preview_mode === "edited" && editedPreviewPath ? "edited" : "source";
   const restoredView = projectViewAfterOpen(record.current_view);
   const needsPreviewPersistence =
-    record.preview_mode !== previewMode || record.edited_preview_path !== editedPreviewPath;
+    record.preview_mode !== previewMode ||
+    record.edited_preview_path !== editedPreviewPath ||
+    record.edited_preview_window_json !== JSON.stringify(editedPreviewWindow);
   const needsViewPersistence = record.current_view !== restoredView;
   if (!activeProjectStateMatches(useProjectStore.getState(), expectedActive)) {
     return null;
@@ -1396,6 +1416,7 @@ async function openProjectRecord(
         ? {
             preview_mode: previewMode,
             edited_preview_path: editedPreviewPath,
+            edited_preview_window_json: JSON.stringify(editedPreviewWindow),
           }
         : {}),
       ...(needsViewPersistence ? { current_view: restoredView } : {}),
@@ -1421,6 +1442,7 @@ async function openProjectRecord(
     currentView: restoredView,
     previewMode,
     editedPreviewPath,
+    editedPreviewWindow,
     processedPath: record.processed_path,
   });
   return timelineProject;
@@ -1436,6 +1458,7 @@ async function saveActiveProject(projectId: number) {
     current_view: state.currentView,
     preview_mode: persistedPreviewMode(state.previewMode, state.editedPreviewFilePath),
     edited_preview_path: state.editedPreviewFilePath,
+    edited_preview_window_json: JSON.stringify(state.editedPreviewWindow),
     silence_segments: JSON.stringify(state.detectionResult?.segments ?? []),
     detection_result_json: state.detectionResult ? JSON.stringify(state.detectionResult) : null,
     detection_settings_json: JSON.stringify(state.detectionSettings),
@@ -1630,6 +1653,15 @@ export function resolveMcpExportSettings(
     return { error: "Export dimensions must be between 2 and 4096 pixels." };
   }
 
+  width -= width % 2;
+  height -= height % 2;
+  if (width < 2 || height < 2) {
+    return { error: "Export dimensions must resolve to at least 2 pixels on even boundaries." };
+  }
+  if (resizeMode === "original" && (width !== sourceWidth || height !== sourceHeight)) {
+    return { error: "resizeMode=original requires even source dimensions." };
+  }
+
   const playbackRate = requestedPlaybackRate ?? 1;
   const invalidSpeed = getPositionedClips(project).some((clip) => {
     const speed = clip.speed * playbackRate;
@@ -1795,6 +1827,7 @@ export function startMcpRenderJob(
         state.timelineProject?.revision === current.projectRevision
       ) {
         state.setEditedPreviewFilePath(outputPath);
+        state.setEditedPreviewWindow(current.window ?? null);
         if (state.editedPreviewJobId === current.jobId) {
           state.setEditedPreviewJobId(null);
         }
@@ -2328,10 +2361,16 @@ export async function handleTool(name: string, args: Record<string, unknown>) {
         try {
           await cancelProjectRender(existingJob.jobId);
         } catch (error) {
-          return invalid(
-            `The active preview could not be cancelled: ${error instanceof Error ? error.message : String(error)}`,
-            "JOB_CONFLICT",
-          );
+          const currentPreview = mcpJobs.get(existingJob.jobId);
+          const stillTrackedAsPreview = currentPreview
+            && currentPreview.kind !== "export_render"
+            && (currentPreview.status === "queued" || currentPreview.status === "running");
+          if (!stillTrackedAsPreview || !isRenderJobAlreadyFinished(error)) {
+            return invalid(
+              `The active preview could not be cancelled: ${error instanceof Error ? error.message : String(error)}`,
+              "JOB_CONFLICT",
+            );
+          }
         }
         const cancelled = updateMcpJob(existingJob.jobId, {
           status: "cancelled",
@@ -2492,6 +2531,7 @@ export async function handleTool(name: string, args: Record<string, unknown>) {
           error: null,
           outputExistedBefore,
           cleanupOutput: false,
+          window: { start, end },
         },
         () => renderMcpOutput(
           outputPath,

@@ -33,14 +33,6 @@ const MIN_ZOOM = 4;
 const MAX_ZOOM = 40;
 const PRIMARY_TRACK_ID = "track-video-1";
 
-function previewWindowFromPath(path: string | null): { start: number; end: number } | null {
-  const match = path?.match(/-window-(\d+)-(\d+)-[a-f0-9]+\.mp4$/i);
-  if (!match) return null;
-  const start = Number(match[1]) / 1000;
-  const end = Number(match[2]) / 1000;
-  return Number.isFinite(start) && Number.isFinite(end) && end > start ? { start, end } : null;
-}
-
 function assetInput(asset: MediaAsset): Omit<MediaAsset, "id" | "kind"> & Partial<Pick<MediaAsset, "id" | "kind">> {
   return {
     path: asset.path,
@@ -59,13 +51,14 @@ export function ProjectEditorView() {
   const previewJobIdRef = useRef<string | null>(null);
   const previewRevisionRef = useRef<number | null>(null);
   const sourceAdvanceRef = useRef(false);
-  const [editedPreviewWindow, setEditedPreviewWindow] = useState<{ start: number; end: number } | null>(null);
   const {
     timelineProject,
     projectId,
     editedPreviewFilePath,
+    editedPreviewWindow,
     editedPreviewPending,
     setEditedPreviewFilePath,
+    setEditedPreviewWindow,
     setEditedPreviewPending,
     setEditedPreviewJobId,
     previewMode,
@@ -109,11 +102,6 @@ export function ProjectEditorView() {
   const mediaToken = useProjectStore((state) => state.mediaServerToken);
   const showingEditedPreview = shouldShowEditedPreview(previewMode, editedPreviewFilePath);
   const mediaPath = showingEditedPreview ? editedPreviewFilePath : selectedAsset?.path || null;
-
-  useEffect(() => {
-    if (previewJobIdRef.current) return;
-    setEditedPreviewWindow(previewWindowFromPath(editedPreviewFilePath));
-  }, [editedPreviewFilePath]);
 
   useEffect(() => {
     let cancelled = false;
@@ -193,7 +181,7 @@ export function ProjectEditorView() {
     if (jobId) {
       void cancelProjectRender(jobId).catch(() => undefined);
     }
-  }, [setEditedPreviewJobId, setEditedPreviewPending, setPreviewMode]);
+  }, [setEditedPreviewJobId, setEditedPreviewPending, setEditedPreviewWindow, setPreviewMode]);
 
   const requestEditedPreview = useCallback(() => {
     if (!timelineProject || !isDesktopRuntime() || !projectId || positionedClips.length === 0) return;
@@ -297,6 +285,7 @@ export function ProjectEditorView() {
         }
       } catch {
         if (previewRequestRef.current === requestId) {
+          setEditedPreviewWindow(null);
           setEditedPreviewJobId(null);
           setPreviewNotice(t("editor.previewUnavailable"));
         }
@@ -314,6 +303,7 @@ export function ProjectEditorView() {
     positionedClips,
     projectId,
     setEditedPreviewFilePath,
+    setEditedPreviewWindow,
     setEditedPreviewJobId,
     setEditedPreviewPending,
     setPreviewMode,

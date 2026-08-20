@@ -626,6 +626,18 @@ describe("MCP tool contract", () => {
         profile: "balanced",
       },
     });
+    expect(resolveMcpExportSettings(settings, timelineProject, {
+      preset: "custom",
+      sizingMode: "custom",
+      width: 1081,
+      height: 1921,
+      resizeMode: "fit",
+    })).toMatchObject({
+      settings: {
+        width: 1080,
+        height: 1920,
+      },
+    });
   });
 
   it("rejects ambiguous or unsupported MCP export settings", () => {
