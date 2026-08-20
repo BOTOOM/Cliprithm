@@ -16,6 +16,7 @@ import {
   migrateLegacyProject,
   migrateTimelineProject,
 } from "../../lib/editor/timeline";
+import { previewWindowFromPath } from "../../lib/editor/preview";
 import { useProjectStore } from "../../stores/projectStore";
 import {
   projectStateMatchesSnapshot,
@@ -31,6 +32,7 @@ import type {
   DetectionResult,
   DetectionSettings,
   PreviewMode,
+  PreviewWindow,
   VideoMetadata,
 } from "../../types";
 
@@ -164,11 +166,18 @@ export function MediaLibrary() {
         const savedView = (project.current_view || "import") as AppView;
         const savedPreviewMode = (project.preview_mode || "source") as PreviewMode;
         const editedPreviewPath = await existingEditedPreviewPath(project.edited_preview_path);
+        const editedPreviewWindow = editedPreviewPath
+          ? project.edited_preview_window_json === null
+            ? previewWindowFromPath(editedPreviewPath)
+            : parseJsonSafe<PreviewWindow | null>(project.edited_preview_window_json, null)
+          : null;
         const restoredPreviewMode = savedPreviewMode === "edited" && editedPreviewPath
           ? "edited"
           : "source";
         const needsPreviewPersistence =
-          project.preview_mode !== restoredPreviewMode || project.edited_preview_path !== editedPreviewPath;
+          project.preview_mode !== restoredPreviewMode ||
+          project.edited_preview_path !== editedPreviewPath ||
+          project.edited_preview_window_json !== JSON.stringify(editedPreviewWindow);
         const parsedMetadata = parseJsonSafe<unknown>(
           project.video_metadata_json,
           null
@@ -222,6 +231,7 @@ export function MediaLibrary() {
                   ? {
                       preview_mode: restoredPreviewMode,
                       edited_preview_path: editedPreviewPath,
+                      edited_preview_window_json: JSON.stringify(editedPreviewWindow),
                     }
                   : {}),
                 status: "in_progress",
@@ -250,6 +260,7 @@ export function MediaLibrary() {
             currentView: "processing",
             previewMode: restoredPreviewMode,
             editedPreviewPath,
+            editedPreviewWindow,
             processedPath: project.processed_path,
           });
 

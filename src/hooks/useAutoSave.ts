@@ -97,6 +97,7 @@ export async function saveProjectState(
       ...(state.currentView === "import" ? {} : { current_view: state.currentView }),
       preview_mode: persistedPreviewMode(state.previewMode, state.editedPreviewFilePath),
       edited_preview_path: state.editedPreviewFilePath,
+      edited_preview_window_json: JSON.stringify(state.editedPreviewWindow),
       silence_segments: JSON.stringify(
         state.detectionResult?.segments ?? []
       ),

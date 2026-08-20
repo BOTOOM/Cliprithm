@@ -14,6 +14,7 @@ A desktop application for automatic silence detection and removal in videos. Bui
 - **Project Persistence**: Auto-save progress, resume editing anytime
 - **Undo**: Ctrl+Z to revert edits
 - **Export Presets**: TikTok/Shorts, Instagram Reels, Custom (1080p/4K, 30/60fps)
+- **Render Optimization**: Hardware-aware decode/encode, cached proxy previews, short playhead previews, and stream-copy cuts when compatible
 - **Captions Beta**: Generate transcriptions (OpenRouter, Cerebras, Groq, Ollama, LM Studio)
 - **i18n**: English and Spanish
 - **Auto Updates**: Automatic update checking via GitHub Releases

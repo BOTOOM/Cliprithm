@@ -68,6 +68,7 @@ export function MainLayout() {
           ffprobe_path: null,
           version: null,
           hardware_encoder: null,
+          hardware_decoder: null,
           hardware_vendor: null,
           error: String(error),
         });

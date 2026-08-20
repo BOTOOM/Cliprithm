@@ -1,4 +1,12 @@
-import type { PreviewMode } from "../../types";
+import type { PreviewMode, PreviewWindow } from "../../types";
+
+export function previewWindowFromPath(path: string | null): PreviewWindow | null {
+  const match = path?.match(/-window-(\d+)-(\d+)-[a-f0-9]+\.mp4$/i);
+  if (!match) return null;
+  const start = Number(match[1]) / 1000;
+  const end = Number(match[2]) / 1000;
+  return Number.isFinite(start) && Number.isFinite(end) && end > start ? { start, end } : null;
+}
 
 export function shouldShowEditedPreview(mode: PreviewMode, editedPath: string | null): boolean {
   return mode === "edited" && Boolean(editedPath);

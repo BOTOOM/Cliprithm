@@ -14,6 +14,7 @@ export interface VideoMetadata {
   codec: string;
   file_size: number;
   has_audio: boolean;
+  audio_codec?: string | null;
 }
 
 export interface SilenceSegment {
@@ -124,6 +125,11 @@ export interface SilenceDetectionCandidate {
   status: "preparing" | "analyzing" | "reviewable" | "accepted" | "discarded";
 }
 
+export interface PreviewWindow {
+  start: number;
+  end: number;
+}
+
 export interface PreviewJobState {
   jobId: string;
   projectRevision: number;
@@ -132,6 +138,7 @@ export interface PreviewJobState {
   percent: number;
   outputPath: string | null;
   error: string | null;
+  window?: PreviewWindow | null;
 }
 
 export interface PreviewSegment {
@@ -165,6 +172,7 @@ export interface FfmpegStatus {
   ffprobe_path: string | null;
   version: string | null;
   hardware_encoder: string | null;
+  hardware_decoder: string | null;
   hardware_vendor: HardwareAccelerationVendor;
   error: string | null;
 }

@@ -40,6 +40,7 @@ import type {
   MediaAsset,
   ProcessingProgress,
   PreviewMode,
+  PreviewWindow,
   SilenceSegment,
   TimelineProject,
   TimelineSelectionRange,
@@ -73,10 +74,10 @@ function sameClipSegments(a: ClipSegment[], b: ClipSegment[]): boolean {
 }
 
 function pushTimelineHistory(
-  state: Pick<ProjectState, "timelineProject" | "timelineUndoStack" | "timelineRedoStack" | "selectedClipId" | "selectedSemanticRangeId" | "selectedRange" | "editedPreviewFilePath" | "editedPreviewPending" | "editedPreviewJobId" | "previewMode">,
+  state: Pick<ProjectState, "timelineProject" | "timelineUndoStack" | "timelineRedoStack" | "selectedClipId" | "selectedSemanticRangeId" | "selectedRange" | "editedPreviewFilePath" | "editedPreviewWindow" | "editedPreviewPending" | "editedPreviewJobId" | "previewMode">,
   nextProject: TimelineProject,
   nextSelectedClipId: string | null
-): Pick<ProjectState, "timelineProject" | "timelineUndoStack" | "timelineRedoStack" | "selectedClipId" | "selectedSemanticRangeId" | "selectedRange" | "canUndoTimeline" | "editedPreviewFilePath" | "editedPreviewPending" | "editedPreviewJobId" | "previewMode"> {
+): Pick<ProjectState, "timelineProject" | "timelineUndoStack" | "timelineRedoStack" | "selectedClipId" | "selectedSemanticRangeId" | "selectedRange" | "canUndoTimeline" | "editedPreviewFilePath" | "editedPreviewWindow" | "editedPreviewPending" | "editedPreviewJobId" | "previewMode"> {
   if (state.timelineProject === nextProject) {
     return {
       timelineProject: state.timelineProject,
@@ -86,6 +87,7 @@ function pushTimelineHistory(
       selectedSemanticRangeId: state.selectedSemanticRangeId,
       selectedRange: state.selectedRange,
       editedPreviewFilePath: state.editedPreviewFilePath,
+      editedPreviewWindow: state.editedPreviewWindow,
       editedPreviewPending: state.editedPreviewPending,
       editedPreviewJobId: state.editedPreviewJobId,
       previewMode: state.previewMode,
@@ -108,6 +110,7 @@ function pushTimelineHistory(
     selectedSemanticRangeId: null,
     selectedRange: null,
     editedPreviewFilePath: null,
+    editedPreviewWindow: null,
     editedPreviewPending: false,
     editedPreviewJobId: null,
     previewMode: "source",
@@ -169,6 +172,7 @@ interface ProjectState {
   processedFilePath: string | null;
   previewFilePath: string | null;
   editedPreviewFilePath: string | null;
+  editedPreviewWindow: PreviewWindow | null;
   editedPreviewPending: boolean;
   editedPreviewJobId: string | null;
   previewMode: PreviewMode;
@@ -177,6 +181,7 @@ interface ProjectState {
   setProcessedFilePath: (path: string | null) => void;
   setPreviewFilePath: (path: string | null) => void;
   setEditedPreviewFilePath: (path: string | null) => void;
+  setEditedPreviewWindow: (window: PreviewWindow | null) => void;
   setEditedPreviewPending: (pending: boolean) => void;
   setEditedPreviewJobId: (jobId: string | null) => void;
   setPreviewMode: (mode: PreviewMode) => void;
@@ -257,6 +262,7 @@ interface ProjectState {
     currentView: AppView;
     previewMode: PreviewMode;
     editedPreviewPath?: string | null;
+    editedPreviewWindow?: PreviewWindow | null;
     processedPath: string | null;
   }) => void;
 
@@ -313,6 +319,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   processedFilePath: null,
   previewFilePath: null,
   editedPreviewFilePath: null,
+  editedPreviewWindow: null,
   editedPreviewPending: false,
   editedPreviewJobId: null,
   previewMode: "source",
@@ -321,6 +328,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       filePath: path,
       previewFilePath: null,
       editedPreviewFilePath: null,
+      editedPreviewWindow: null,
       editedPreviewPending: false,
       editedPreviewJobId: null,
       previewMode: "source",
@@ -331,6 +339,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   setProcessedFilePath: (path) => set({ processedFilePath: path }),
   setPreviewFilePath: (path) => set({ previewFilePath: path }),
   setEditedPreviewFilePath: (path) => set({ editedPreviewFilePath: path }),
+  setEditedPreviewWindow: (window) => set({ editedPreviewWindow: window }),
   setEditedPreviewPending: (pending) =>
     set((state) => ({
       editedPreviewPending: pending,
@@ -357,6 +366,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           selectedClipId: clipSegments[0]?.id ?? null,
           selectedRange: null,
           editedPreviewFilePath: null,
+          editedPreviewWindow: null,
           editedPreviewPending: false,
           editedPreviewJobId: null,
           previewMode: "source",
@@ -377,6 +387,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       selectedClipId: segments[0]?.id ?? null,
       selectedRange: null,
       editedPreviewFilePath: null,
+      editedPreviewWindow: null,
       editedPreviewPending: false,
       editedPreviewJobId: null,
       previewMode: "source",
@@ -393,6 +404,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       selectedClipId: project?.tracks[0]?.clipIds[0] ?? null,
       selectedRange: null,
       editedPreviewFilePath: null,
+      editedPreviewWindow: null,
       editedPreviewPending: false,
       editedPreviewJobId: null,
       previewMode: "source",
@@ -409,6 +421,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         selectedClipId: project.tracks[0]?.clipIds[0] ?? null,
         selectedRange: null,
         editedPreviewFilePath: null,
+        editedPreviewWindow: null,
         editedPreviewPending: false,
         editedPreviewJobId: null,
         previewMode: "source",
@@ -760,6 +773,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         selectedSemanticRangeId: previous.selectedSemanticRangeId,
         selectedRange: null,
         editedPreviewFilePath: null,
+        editedPreviewWindow: null,
         editedPreviewPending: false,
         editedPreviewJobId: null,
         previewMode: "source",
@@ -788,6 +802,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         selectedSemanticRangeId: next.selectedSemanticRangeId,
         selectedRange: null,
         editedPreviewFilePath: null,
+        editedPreviewWindow: null,
         editedPreviewPending: false,
         editedPreviewJobId: null,
         previewMode: "source",
@@ -855,6 +870,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       processedFilePath: opts.processedPath,
       previewFilePath: null,
       editedPreviewFilePath: opts.editedPreviewPath ?? null,
+      editedPreviewWindow: opts.editedPreviewWindow ?? null,
       editedPreviewPending: false,
       editedPreviewJobId: null,
       editHistory: [],
@@ -873,6 +889,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       processedFilePath: null,
       previewFilePath: null,
       editedPreviewFilePath: null,
+      editedPreviewWindow: null,
       editedPreviewPending: false,
       editedPreviewJobId: null,
       previewMode: "source",

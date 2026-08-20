@@ -18,6 +18,7 @@ export interface ProjectRecord {
   file_size: number;
   processed_path: string | null;
   edited_preview_path: string | null;
+  edited_preview_window_json: string | null;
   status: string;
   noise_threshold: number;
   min_duration: number;
@@ -96,6 +97,7 @@ export async function createProject(
     | "updated_at"
     | "processed_path"
     | "edited_preview_path"
+    | "edited_preview_window_json"
     | "status"
     | "silence_segments"
     | "clip_segments"
@@ -116,6 +118,7 @@ export async function createProject(
       id,
       processed_path: null,
       edited_preview_path: null,
+      edited_preview_window_json: null,
       status: "imported",
       silence_segments: "[]",
       clip_segments: "[]",
@@ -162,6 +165,7 @@ export function updateProject(
       ProjectRecord,
       | "processed_path"
       | "edited_preview_path"
+      | "edited_preview_window_json"
       | "status"
       | "noise_threshold"
       | "min_duration"
