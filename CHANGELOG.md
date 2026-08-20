@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.6.1...cliprithm-v1.7.0) (2026-08-20)
+
+
+### Features
+
+* **render:** optimize long exports and expose MCP settings ([d111ddc](https://github.com/BOTOOM/Cliprithm/commit/d111ddc57a6b5ba9a97eca1a1765355a5480a43f))
+* **render:** optimize long exports and expose MCP settings ([bcb23c2](https://github.com/BOTOOM/Cliprithm/commit/bcb23c25800210fef4e83de2e5be8637221e07ab))
+
+
+### Bug Fixes
+
+* **render:** address MCP preview review findings ([0962974](https://github.com/BOTOOM/Cliprithm/commit/0962974bfb98048d85b7217063d22ea3f2027266))
+
 ## [1.6.1](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.6.0...cliprithm-v1.6.1) (2026-08-11)
 
 
