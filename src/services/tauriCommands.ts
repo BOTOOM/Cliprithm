@@ -187,6 +187,16 @@ export async function cancelProjectRender(jobId: string): Promise<void> {
   await invoke("cancel_project_render", { jobId });
 }
 
+export async function prunePreviewCache(): Promise<void> {
+  assertDesktop("Preview cache cleanup");
+  await invoke("prune_preview_cache");
+}
+
+export async function cleanupProjectPreviewCache(projectId: number): Promise<void> {
+  assertDesktop("Project preview cache cleanup");
+  await invoke("cleanup_project_preview_cache", { projectId: String(projectId) });
+}
+
 export async function estimateProjectExportSize(options: {
   clips: Array<{
     inputPath: string;

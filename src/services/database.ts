@@ -4,6 +4,7 @@ import { remove, exists } from "@tauri-apps/plugin-fs";
 import { isOwnedEditedPreviewPath } from "../lib/editor/preview";
 import { log } from "../lib/logger";
 import { isDesktopRuntime } from "../lib/runtime";
+import { cleanupProjectPreviewCache } from "./tauriCommands";
 
 export interface ProjectRecord {
   id: number;
@@ -268,6 +269,11 @@ export async function deleteProject(id: number): Promise<void> {
 
   const database = await getDb();
   await database.execute("DELETE FROM projects WHERE id = $1", [id]);
+  try {
+    await cleanupProjectPreviewCache(id);
+  } catch (error) {
+    log.warn("[db]", "Failed to clean project preview cache after deletion:", error);
+  }
 }
 
 export async function getSetting(key: string): Promise<string | null> {

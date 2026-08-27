@@ -339,7 +339,7 @@ export function ProjectEditorView() {
     setPreviewUpdateState("waiting");
     previewDebounceRef.current = setTimeout(() => {
       previewDebounceRef.current = null;
-      requestEditedPreview(0);
+      requestEditedPreview(useProjectStore.getState().playhead);
     }, 300);
 
     return () => {

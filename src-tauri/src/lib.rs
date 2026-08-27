@@ -159,6 +159,8 @@ pub fn run() {
             ffmpeg::generate_project_preview_frame,
             ffmpeg::generate_preview_proxy,
             ffmpeg::cancel_project_render,
+            ffmpeg::prune_preview_cache,
+            ffmpeg::cleanup_project_preview_cache,
             ffmpeg::wait_for_project_idle,
             library::generate_thumbnail,
             media_server::get_media_server_port,

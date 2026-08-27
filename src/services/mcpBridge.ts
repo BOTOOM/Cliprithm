@@ -992,6 +992,7 @@ async function confirmProjectSwitchIfNeeded(
     persistedRecord === null ||
     persistedRecord.clip_segments !== JSON.stringify(currentState.clipSegments) ||
     persistedRecord.preview_mode !== persistedPreviewMode(currentState.previewMode, currentState.editedPreviewFilePath) ||
+    persistedRecord.auto_preview_enabled !== (currentState.autoPreviewEnabled ? 1 : 0) ||
     persistedRecord.edited_preview_path !== currentState.editedPreviewFilePath ||
     persistedRecord.edited_preview_window_json !== JSON.stringify(currentState.editedPreviewWindow) ||
     persistedRecord.current_view !== currentState.currentView ||
