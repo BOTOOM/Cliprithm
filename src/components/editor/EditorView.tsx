@@ -338,7 +338,7 @@ export function EditorView() {
     setCurrentSourceTime(sourceTime);
 
     // In edited mode, skip over silence gaps during playback
-    if (isEditedPreviewMode && !video.paused) {
+    if (currentView === "editor" && previewMode === "source" && !video.paused) {
       const currentClip = findClipAtSourceTime(sourceTime, activeClips);
       if (currentClip) {
         // Check if we've passed the end of the current clip

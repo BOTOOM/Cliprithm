@@ -165,6 +165,7 @@ export function MediaLibrary() {
         };
         const savedView = (project.current_view || "import") as AppView;
         const savedPreviewMode = (project.preview_mode || "source") as PreviewMode;
+        const autoPreviewEnabled = Number(project.auto_preview_enabled) === 1;
         const editedPreviewPath = await existingEditedPreviewPath(project.edited_preview_path);
         const editedPreviewWindow = editedPreviewPath
           ? project.edited_preview_window_json === null
@@ -259,6 +260,7 @@ export function MediaLibrary() {
             timelineProject: migratedTimelineProject,
             currentView: "processing",
             previewMode: restoredPreviewMode,
+            autoPreviewEnabled,
             editedPreviewPath,
             editedPreviewWindow,
             processedPath: project.processed_path,
@@ -301,6 +303,7 @@ export function MediaLibrary() {
           timelineProject: null,
           currentView: "processing",
           previewMode: "source",
+          autoPreviewEnabled: false,
           processedPath: project.processed_path,
         });
         loadedProjectSnapshot = snapshotProjectState(useProjectStore.getState());
@@ -331,6 +334,7 @@ export function MediaLibrary() {
             removedSegments: segments,
             currentView: "detection",
             previewMode: "source",
+            autoPreviewEnabled,
             processedPath: project.processed_path,
           });
 

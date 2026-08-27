@@ -926,6 +926,7 @@ export interface ActiveProjectPersistenceSnapshot {
   clipSegmentsJson: string;
   currentView: string;
   previewMode: string;
+  autoPreviewEnabled: boolean;
   editedPreviewPath: string | null;
   editedPreviewWindowJson: string;
   detectionResultJson: string | null;
@@ -943,6 +944,7 @@ export function snapshotActiveProjectState(
     clipSegmentsJson: JSON.stringify(state.clipSegments),
     currentView: state.currentView,
     previewMode: state.previewMode,
+    autoPreviewEnabled: state.autoPreviewEnabled,
     editedPreviewPath: state.editedPreviewFilePath,
     editedPreviewWindowJson: JSON.stringify(state.editedPreviewWindow),
     detectionResultJson: state.detectionResult ? JSON.stringify(state.detectionResult) : null,
@@ -1395,9 +1397,11 @@ async function openProjectRecord(
       : parseJson<PreviewWindow | null>(record.edited_preview_window_json, null)
     : null;
   const previewMode = record.preview_mode === "edited" && editedPreviewPath ? "edited" : "source";
+  const autoPreviewEnabled = Number(record.auto_preview_enabled) === 1;
   const restoredView = projectViewAfterOpen(record.current_view);
   const needsPreviewPersistence =
     record.preview_mode !== previewMode ||
+    record.auto_preview_enabled !== (autoPreviewEnabled ? 1 : 0) ||
     record.edited_preview_path !== editedPreviewPath ||
     record.edited_preview_window_json !== JSON.stringify(editedPreviewWindow);
   const needsViewPersistence = record.current_view !== restoredView;
@@ -1415,6 +1419,7 @@ async function openProjectRecord(
       ...(needsPreviewPersistence
         ? {
             preview_mode: previewMode,
+            auto_preview_enabled: autoPreviewEnabled ? 1 : 0,
             edited_preview_path: editedPreviewPath,
             edited_preview_window_json: JSON.stringify(editedPreviewWindow),
           }
@@ -1441,6 +1446,7 @@ async function openProjectRecord(
     timelineProject,
     currentView: restoredView,
     previewMode,
+    autoPreviewEnabled: Number(record.auto_preview_enabled) === 1,
     editedPreviewPath,
     editedPreviewWindow,
     processedPath: record.processed_path,
@@ -1457,6 +1463,7 @@ async function saveActiveProject(projectId: number) {
     clip_segments: JSON.stringify(state.clipSegments),
     current_view: state.currentView,
     preview_mode: persistedPreviewMode(state.previewMode, state.editedPreviewFilePath),
+    auto_preview_enabled: state.autoPreviewEnabled ? 1 : 0,
     edited_preview_path: state.editedPreviewFilePath,
     edited_preview_window_json: JSON.stringify(state.editedPreviewWindow),
     silence_segments: JSON.stringify(state.detectionResult?.segments ?? []),

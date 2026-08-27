@@ -102,6 +102,12 @@ pub fn run() {
             sql: "ALTER TABLE projects ADD COLUMN edited_preview_window_json TEXT DEFAULT NULL;",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "add_auto_preview_preference",
+            sql: "ALTER TABLE projects ADD COLUMN auto_preview_enabled INTEGER NOT NULL DEFAULT 0;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Start the local HTTP media server for video streaming
@@ -149,6 +155,7 @@ pub fn run() {
             ffmpeg::generate_sequence_preview,
             ffmpeg::export_project,
             ffmpeg::generate_project_preview,
+            ffmpeg::estimate_project_export_size,
             ffmpeg::generate_project_preview_frame,
             ffmpeg::generate_preview_proxy,
             ffmpeg::cancel_project_render,

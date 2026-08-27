@@ -175,6 +175,7 @@ interface ProjectState {
   editedPreviewWindow: PreviewWindow | null;
   editedPreviewPending: boolean;
   editedPreviewJobId: string | null;
+  autoPreviewEnabled: boolean;
   previewMode: PreviewMode;
   setFilePath: (path: string | null) => void;
   setVideoMetadata: (metadata: VideoMetadata | null) => void;
@@ -184,6 +185,7 @@ interface ProjectState {
   setEditedPreviewWindow: (window: PreviewWindow | null) => void;
   setEditedPreviewPending: (pending: boolean) => void;
   setEditedPreviewJobId: (jobId: string | null) => void;
+  setAutoPreviewEnabled: (enabled: boolean) => void;
   setPreviewMode: (mode: PreviewMode) => void;
 
   detectionResult: DetectionResult | null;
@@ -261,6 +263,7 @@ interface ProjectState {
     timelineProject?: TimelineProject | null;
     currentView: AppView;
     previewMode: PreviewMode;
+    autoPreviewEnabled?: boolean;
     editedPreviewPath?: string | null;
     editedPreviewWindow?: PreviewWindow | null;
     processedPath: string | null;
@@ -322,6 +325,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   editedPreviewWindow: null,
   editedPreviewPending: false,
   editedPreviewJobId: null,
+  autoPreviewEnabled: false,
   previewMode: "source",
   setFilePath: (path) =>
     set({
@@ -331,6 +335,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       editedPreviewWindow: null,
       editedPreviewPending: false,
       editedPreviewJobId: null,
+      autoPreviewEnabled: false,
       previewMode: "source",
       selectedSemanticRangeId: null,
       selectedRange: null,
@@ -348,6 +353,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         : { previewMode: "source" as const }),
     })),
   setEditedPreviewJobId: (jobId) => set({ editedPreviewJobId: jobId }),
+  setAutoPreviewEnabled: (enabled) => set({ autoPreviewEnabled: enabled }),
   setPreviewMode: (mode) => set({ previewMode: mode }),
 
   detectionResult: null,
@@ -424,6 +430,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         editedPreviewWindow: null,
         editedPreviewPending: false,
         editedPreviewJobId: null,
+        autoPreviewEnabled: false,
         previewMode: "source",
         playhead: 0,
       };
@@ -873,6 +880,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       editedPreviewWindow: opts.editedPreviewWindow ?? null,
       editedPreviewPending: false,
       editedPreviewJobId: null,
+      autoPreviewEnabled: Boolean(opts.autoPreviewEnabled),
       editHistory: [],
       canUndo: false,
       progress: defaultProgress,
@@ -892,6 +900,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       editedPreviewWindow: null,
       editedPreviewPending: false,
       editedPreviewJobId: null,
+      autoPreviewEnabled: false,
       previewMode: "source",
       detectionResult: null,
       silenceCandidate: null,

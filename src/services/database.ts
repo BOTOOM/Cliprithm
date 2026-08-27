@@ -27,6 +27,7 @@ export interface ProjectRecord {
   clip_segments: string;
   current_view: string;
   preview_mode: string;
+  auto_preview_enabled: number;
   detection_result_json: string | null;
   detection_settings_json: string | null;
   video_metadata_json: string | null;
@@ -103,6 +104,7 @@ export async function createProject(
     | "clip_segments"
     | "current_view"
     | "preview_mode"
+    | "auto_preview_enabled"
     | "detection_result_json"
     | "detection_settings_json"
     | "video_metadata_json"
@@ -124,6 +126,7 @@ export async function createProject(
       clip_segments: "[]",
       current_view: "import",
       preview_mode: "source",
+      auto_preview_enabled: 0,
       detection_result_json: null,
       detection_settings_json: null,
       video_metadata_json: null,
@@ -175,6 +178,7 @@ export function updateProject(
       | "clip_segments"
       | "current_view"
       | "preview_mode"
+      | "auto_preview_enabled"
       | "detection_result_json"
       | "detection_settings_json"
       | "video_metadata_json"

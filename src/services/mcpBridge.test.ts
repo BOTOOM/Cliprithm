@@ -505,8 +505,13 @@ describe("MCP tool contract", () => {
         minDuration: initialState.detectionSettings.minDuration + 0.1,
       },
     };
+    const changedPreviewPreference = {
+      ...initialState,
+      autoPreviewEnabled: true,
+    };
     expect(activeProjectStateMatches(initialState, snapshot)).toBe(true);
     expect(activeProjectStateMatches(changedState, snapshot)).toBe(false);
+    expect(activeProjectStateMatches(changedPreviewPreference, snapshot)).toBe(false);
 
     useProjectStore.getState().resetProject();
   });

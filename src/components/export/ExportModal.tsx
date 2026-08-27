@@ -7,9 +7,11 @@ import { resolveMediaSrc } from "../../lib/media";
 import { useI18n } from "../../lib/i18n";
 import { isDesktopRuntime } from "../../lib/runtime";
 import { formatFileSize, formatTime } from "../../lib/utils";
+import { estimateExportSize, estimateStreamCopySize } from "../../lib/exportEstimate";
 import { useProjectStore } from "../../stores/projectStore";
 import {
   cancelProjectRender,
+  estimateProjectExportSize,
   exportProject,
   exportVideo,
   generateExportPreview,
@@ -21,6 +23,7 @@ import type {
   ExportProfile,
   ExportResizeMode,
   ExportSettings,
+  ExportSizeEstimate,
   PreviewSegment,
   ProcessingProgress,
 } from "../../types";
@@ -204,7 +207,14 @@ export function ExportModal() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewFrameOffset, setPreviewFrameOffset] = useState(0);
+  const [refinedSizeEstimate, setRefinedSizeEstimate] = useState<{
+    key: string;
+    estimate: ExportSizeEstimate;
+  } | null>(null);
+  const [sizeEstimateLoading, setSizeEstimateLoading] = useState(false);
   const previewRequestRef = useRef(0);
+  const sizeEstimateRequestRef = useRef(0);
+  const sizeEstimateJobIdRef = useRef<string | null>(null);
   const getStageLabel = useCallback(
     (payload: ProcessingProgress) => {
       switch (payload.stage) {
@@ -341,10 +351,105 @@ export function ExportModal() {
   const estimatedDurationSeconds = timelineProject
     ? projectClips.reduce((total, clip) => total + clip.timelineDuration, 0)
     : clipSegments.reduce((total, clip) => total + clip.duration, 0);
-  const previewDurationSeconds =
-    (detectionSettings.playbackRate ?? 1.0) > 0.01
+  const outputDurationSeconds = timelineProject
+    ? estimatedDurationSeconds
+    : (detectionSettings.playbackRate ?? 1.0) > 0.01
       ? estimatedDurationSeconds / (detectionSettings.playbackRate ?? 1.0)
       : estimatedDurationSeconds;
+  const exportRenderClips = useMemo(() => {
+    if (!filePath || !videoMetadata) return [];
+    if (timelineProject) {
+      return projectClips.flatMap((clip) => {
+        const asset = getAsset(timelineProject, clip.assetId);
+        return asset
+          ? [{
+              inputPath: asset.path,
+              sourceStart: clip.sourceStart,
+              sourceEnd: clip.sourceEnd,
+              speed: clip.speed,
+              fps: asset.metadata?.fps ?? 30,
+              width: asset.metadata?.width ?? activeTarget.width,
+              height: asset.metadata?.height ?? activeTarget.height,
+              hasAudio: asset.metadata?.has_audio ?? false,
+            }]
+          : [];
+      });
+    }
+    const speed = Math.max(0.25, detectionSettings.playbackRate ?? 1);
+    return clipSegments.map((clip) => ({
+      inputPath: filePath,
+      sourceStart: clip.start,
+      sourceEnd: clip.end,
+      speed,
+      fps: videoMetadata.fps || 30,
+      width: videoMetadata.width || activeTarget.width,
+      height: videoMetadata.height || activeTarget.height,
+      hasAudio: videoMetadata.has_audio,
+    }));
+  }, [
+    activeTarget.height,
+    activeTarget.width,
+    clipSegments,
+    detectionSettings.playbackRate,
+    filePath,
+    projectClips,
+    timelineProject,
+    videoMetadata,
+  ]);
+  const outputHasAudio = exportRenderClips.some((clip) => clip.hasAudio);
+  const streamCopyLikely = Boolean(
+    !timelineProject &&
+      videoMetadata &&
+      exportRenderClips.length === 1 &&
+      activeResizeMode === "original" &&
+      activeTarget.width === videoMetadata.width &&
+      activeTarget.height === videoMetadata.height &&
+      exportSettings.fps === Math.round(videoMetadata.fps) &&
+      Math.abs((detectionSettings.playbackRate ?? 1) - 1) < 0.001,
+  );
+  const initialSizeEstimate = useMemo(
+    () => streamCopyLikely
+      ? estimateStreamCopySize(
+          videoMetadata?.file_size ?? 0,
+          videoMetadata?.duration ?? 0,
+          outputDurationSeconds,
+        ) ?? estimateExportSize({
+          durationSeconds: outputDurationSeconds,
+          targetWidth: activeTarget.width,
+          targetHeight: activeTarget.height,
+          fps: exportSettings.fps,
+          profile: exportSettings.profile,
+          hasAudio: outputHasAudio,
+        })
+      : estimateExportSize({
+          durationSeconds: outputDurationSeconds,
+          targetWidth: activeTarget.width,
+          targetHeight: activeTarget.height,
+          fps: exportSettings.fps,
+          profile: exportSettings.profile,
+          hasAudio: outputHasAudio,
+        }),
+    [
+      activeTarget.height,
+      activeTarget.width,
+      detectionSettings.playbackRate,
+      exportSettings.fps,
+      exportSettings.profile,
+      outputDurationSeconds,
+      outputHasAudio,
+      streamCopyLikely,
+      videoMetadata,
+    ],
+  );
+  const sizeEstimateKey = stableHash(JSON.stringify({
+    previewCacheKey,
+    outputDurationSeconds,
+    exportRenderClips,
+  }));
+  const activeSizeEstimate = refinedSizeEstimate?.key === sizeEstimateKey
+    ? refinedSizeEstimate.estimate
+    : initialSizeEstimate;
+  const hasRefinedSizeEstimate = refinedSizeEstimate?.key === sizeEstimateKey;
   const ffmpegUnavailable = isDesktopRuntime() && ffmpegStatus?.available === false;
   const hardwareLabel = ffmpegStatus?.hardware_vendor
     ? t(
@@ -462,6 +567,87 @@ export function ExportModal() {
     videoMetadata,
   ]);
 
+  useEffect(() => {
+    if (
+      isExporting ||
+      !isDesktopRuntime() ||
+      !filePath ||
+      !videoMetadata ||
+      !hasExportableProject ||
+      !timelineProject ||
+      streamCopyLikely ||
+      exportRenderClips.length === 0 ||
+      ffmpegUnavailable ||
+      activeTarget.width <= 0 ||
+      activeTarget.height <= 0
+    ) {
+      setRefinedSizeEstimate(null);
+      setSizeEstimateLoading(false);
+      return;
+    }
+
+    const requestId = sizeEstimateRequestRef.current + 1;
+    sizeEstimateRequestRef.current = requestId;
+    const jobId = createJobId("estimate");
+    sizeEstimateJobIdRef.current = jobId;
+    setRefinedSizeEstimate(null);
+    setSizeEstimateLoading(true);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const estimate = await estimateProjectExportSize({
+            clips: exportRenderClips,
+            targetWidth: activeTarget.width,
+            targetHeight: activeTarget.height,
+            resizeMode: activeResizeMode,
+            profile: exportSettings.profile,
+            fps: exportSettings.fps,
+            jobId,
+            projectId,
+          });
+          if (sizeEstimateRequestRef.current === requestId) {
+            setRefinedSizeEstimate({ key: sizeEstimateKey, estimate });
+          }
+        } catch (estimateError) {
+          if (sizeEstimateRequestRef.current === requestId) {
+            log.warn("[export-estimate]", "Content estimate unavailable:", estimateError);
+          }
+        } finally {
+          if (sizeEstimateRequestRef.current === requestId) {
+            sizeEstimateJobIdRef.current = null;
+            setSizeEstimateLoading(false);
+          }
+        }
+      })();
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timer);
+      sizeEstimateRequestRef.current += 1;
+      if (sizeEstimateJobIdRef.current === jobId) {
+        sizeEstimateJobIdRef.current = null;
+        void cancelProjectRender(jobId).catch(() => undefined);
+      }
+      setSizeEstimateLoading(false);
+    };
+  }, [
+    activeResizeMode,
+    activeTarget.height,
+    activeTarget.width,
+    exportRenderClips,
+    exportSettings.fps,
+    exportSettings.profile,
+    ffmpegUnavailable,
+    filePath,
+    hasExportableProject,
+    isExporting,
+    projectId,
+    sizeEstimateKey,
+    streamCopyLikely,
+    timelineProject,
+    videoMetadata,
+  ]);
+
   const applyCustomSizeMode = useCallback(
     (sizeMode: ExportSettings["sizingMode"]) => {
       if (sizeMode === "original") {
@@ -532,6 +718,14 @@ export function ExportModal() {
     if (activeTarget.width <= 0 || activeTarget.height <= 0) {
       setError(t("exportModal.invalidDimensions"));
       return;
+    }
+
+    sizeEstimateRequestRef.current += 1;
+    const estimateJobId = sizeEstimateJobIdRef.current;
+    sizeEstimateJobIdRef.current = null;
+    setSizeEstimateLoading(false);
+    if (estimateJobId) {
+      void cancelProjectRender(estimateJobId).catch(() => undefined);
     }
 
     const outputPath = await save({
@@ -1060,7 +1254,7 @@ export function ExportModal() {
                   {t("exportModal.outputSummary")}
                 </div>
                 <div className="text-lg font-mono text-white">
-                  {formatTime(previewDurationSeconds)}
+                  {formatTime(outputDurationSeconds)}
                 </div>
                 <div className="text-[11px] text-on-surface-variant mt-1 leading-relaxed">
                   {t("exportModal.finalSizeDependsOnContent")}
@@ -1068,7 +1262,18 @@ export function ExportModal() {
               </div>
             </div>
             <div className="text-left sm:text-right">
-              <div className="text-xs text-on-surface-variant">{t("exportModal.sourceSize")}</div>
+              <div className="text-xs text-on-surface-variant">{t("exportModal.estimatedSize")}</div>
+              <div className="text-sm font-medium text-on-surface">
+                {formatFileSize(activeSizeEstimate.lower_bytes)} – {formatFileSize(activeSizeEstimate.upper_bytes)}
+              </div>
+              <div className="text-[10px] text-on-surface-variant mt-1">
+                {hasRefinedSizeEstimate
+                  ? t("exportModal.refinedEstimate")
+                  : sizeEstimateLoading
+                    ? t("exportModal.refiningEstimate")
+                    : t("exportModal.initialEstimate")} · ≈ {formatFileSize(activeSizeEstimate.expected_bytes)}
+              </div>
+              <div className="text-xs text-on-surface-variant mt-2">{t("exportModal.sourceSize")}</div>
               <div className="text-sm font-medium text-on-surface">
                 {videoMetadata ? formatFileSize(videoMetadata.file_size) : "—"}
               </div>
