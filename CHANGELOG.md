@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.8.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.7.0...cliprithm-v1.8.0) (2026-08-27)
+
+
+### Features
+
+* **preview:** add incremental auto-preview and export size estimates ([70c8e0b](https://github.com/BOTOOM/Cliprithm/commit/70c8e0b9a7ccf37e5d365db2388914a2b6ce309a))
+* **preview:** add incremental auto-preview and export size estimates ([a4a05ce](https://github.com/BOTOOM/Cliprithm/commit/a4a05cea625dbbe0bdfad2a3f18423528a38cf03))
+
+
+### Bug Fixes
+
+* **preview:** address review feedback for cache and playback ([00a585d](https://github.com/BOTOOM/Cliprithm/commit/00a585df692e7345fb9434f4216d2902b4e6e34d))
+
 ## [1.7.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.6.1...cliprithm-v1.7.0) (2026-08-20)
 
 
