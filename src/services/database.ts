@@ -4,6 +4,7 @@ import { remove, exists } from "@tauri-apps/plugin-fs";
 import { isOwnedEditedPreviewPath } from "../lib/editor/preview";
 import { log } from "../lib/logger";
 import { isDesktopRuntime } from "../lib/runtime";
+import { cleanupProjectPreviewCache } from "./tauriCommands";
 
 export interface ProjectRecord {
   id: number;
@@ -27,6 +28,7 @@ export interface ProjectRecord {
   clip_segments: string;
   current_view: string;
   preview_mode: string;
+  auto_preview_enabled: number;
   detection_result_json: string | null;
   detection_settings_json: string | null;
   video_metadata_json: string | null;
@@ -103,6 +105,7 @@ export async function createProject(
     | "clip_segments"
     | "current_view"
     | "preview_mode"
+    | "auto_preview_enabled"
     | "detection_result_json"
     | "detection_settings_json"
     | "video_metadata_json"
@@ -124,6 +127,7 @@ export async function createProject(
       clip_segments: "[]",
       current_view: "import",
       preview_mode: "source",
+      auto_preview_enabled: 0,
       detection_result_json: null,
       detection_settings_json: null,
       video_metadata_json: null,
@@ -175,6 +179,7 @@ export function updateProject(
       | "clip_segments"
       | "current_view"
       | "preview_mode"
+      | "auto_preview_enabled"
       | "detection_result_json"
       | "detection_settings_json"
       | "video_metadata_json"
@@ -264,6 +269,11 @@ export async function deleteProject(id: number): Promise<void> {
 
   const database = await getDb();
   await database.execute("DELETE FROM projects WHERE id = $1", [id]);
+  try {
+    await cleanupProjectPreviewCache(id);
+  } catch (error) {
+    log.warn("[db]", "Failed to clean project preview cache after deletion:", error);
+  }
 }
 
 export async function getSetting(key: string): Promise<string | null> {

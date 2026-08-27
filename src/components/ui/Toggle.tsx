@@ -5,9 +5,10 @@ interface ToggleProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   tooltip?: string;
+  disabled?: boolean;
 }
 
-export function Toggle({ label, checked, onChange, tooltip }: ToggleProps) {
+export function Toggle({ label, checked, onChange, tooltip, disabled = false }: ToggleProps) {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
@@ -15,8 +16,13 @@ export function Toggle({ label, checked, onChange, tooltip }: ToggleProps) {
         {tooltip ? <Tooltip content={tooltip} /> : null}
       </div>
       <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`w-8 h-4 rounded-full relative p-0.5 transition-colors ${
+        className={`w-8 h-4 rounded-full relative p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40 ${
           checked ? "bg-secondary-container" : "bg-surface-container-highest"
         }`}
       >

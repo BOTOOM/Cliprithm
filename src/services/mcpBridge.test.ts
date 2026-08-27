@@ -364,6 +364,62 @@ describe("MCP tool contract", () => {
     }
   });
 
+  it("requires confirmation when only automatic preview is unsaved", async () => {
+    const timelineProject = createVideoProject(previewAsset);
+    const projectId = await createProject({
+      name: "auto-preview-project.mp4",
+      file_path: previewAsset.path,
+      thumbnail_path: null,
+      duration: previewAsset.metadata?.duration ?? 0,
+      width: previewAsset.metadata?.width ?? 1280,
+      height: previewAsset.metadata?.height ?? 720,
+      fps: previewAsset.metadata?.fps ?? 30,
+      codec: previewAsset.metadata?.codec ?? "h264",
+      file_size: previewAsset.metadata?.file_size ?? 100,
+      noise_threshold: -30,
+      min_duration: 0.5,
+      mode: "cut",
+    });
+    const currentState = useProjectStore.getState();
+    await updateProject(projectId, {
+      current_view: "editor",
+      preview_mode: "source",
+      auto_preview_enabled: 0,
+      clip_segments: JSON.stringify([]),
+      detection_result_json: null,
+      detection_settings_json: JSON.stringify(currentState.detectionSettings),
+      video_metadata_json: JSON.stringify(previewAsset.metadata),
+      timeline_json: JSON.stringify(timelineProject),
+      project_schema_version: timelineProject.schemaVersion,
+      status: "in_progress",
+    });
+
+    try {
+      currentState.loadProject({
+        projectId,
+        filePath: previewAsset.path,
+        videoMetadata: previewAsset.metadata!,
+        detectionResult: null,
+        detectionSettings: currentState.detectionSettings,
+        clipSegments: [],
+        removedSegments: [],
+        timelineProject,
+        currentView: "editor",
+        previewMode: "source",
+        autoPreviewEnabled: true,
+        processedPath: null,
+      });
+
+      await expect(handleTool("cliprithm_project_open", { projectId })).resolves.toMatchObject({
+        ok: false,
+        errorCode: "CONFIRMATION_REQUIRED",
+      });
+    } finally {
+      useProjectStore.getState().resetProject();
+      await deleteProject(projectId);
+    }
+  });
+
   it("restores legacy clips and resumes the editor when opening through MCP", async () => {
     const projectId = await createProject({
       name: "legacy-source.mp4",
@@ -505,8 +561,13 @@ describe("MCP tool contract", () => {
         minDuration: initialState.detectionSettings.minDuration + 0.1,
       },
     };
+    const changedPreviewPreference = {
+      ...initialState,
+      autoPreviewEnabled: true,
+    };
     expect(activeProjectStateMatches(initialState, snapshot)).toBe(true);
     expect(activeProjectStateMatches(changedState, snapshot)).toBe(false);
+    expect(activeProjectStateMatches(changedPreviewPreference, snapshot)).toBe(false);
 
     useProjectStore.getState().resetProject();
   });

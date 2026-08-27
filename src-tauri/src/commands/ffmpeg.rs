@@ -21,10 +21,14 @@ const MAX_ACTIVE_JOBS: usize = 32;
 const MAX_JOB_ID_LENGTH: usize = 128;
 const MAX_RENDER_PATH_LENGTH: usize = 32_768;
 const PROJECT_PREVIEW_THREADS: &str = "2";
+const PREVIEW_CHUNK_SECONDS: f64 = 5.0;
+const MAX_PREVIEW_CACHE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_ESTIMATE_SAMPLE_SECONDS: f64 = 12.0;
 const JOB_PREEMPTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RenderJobKind {
+    Estimate,
     Preview,
     Export,
 }
@@ -94,7 +98,14 @@ fn begin_job(
             .get(active_job_id)
             .copied()
             .unwrap_or(RenderJobKind::Preview);
-        if kind != RenderJobKind::Export || active_kind != RenderJobKind::Preview {
+        let can_preempt = matches!(
+            (kind, active_kind),
+            (
+                RenderJobKind::Export,
+                RenderJobKind::Preview | RenderJobKind::Estimate
+            ) | (RenderJobKind::Preview, RenderJobKind::Estimate)
+        );
+        if !can_preempt {
             return Err("A render job is already active for this project.".to_string());
         }
         registry.cancelled.insert(active_job_id.clone());
@@ -290,7 +301,16 @@ pub struct ProjectPreviewClip {
     pub has_audio: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExportSizeEstimate {
+    pub lower_bytes: u64,
+    pub expected_bytes: u64,
+    pub upper_bytes: u64,
+    pub sampled_seconds: f64,
+    pub method: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 struct CachedPreviewSource {
     path: String,
     source_start: f64,
@@ -298,6 +318,33 @@ struct CachedPreviewSource {
     speed: f64,
     size: u64,
     modified_ns: u128,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+struct PreviewChunkManifest {
+    key: String,
+    source: CachedPreviewSource,
+    width: u32,
+    height: u32,
+    fps: u32,
+    resize_mode: String,
+    encoder: String,
+    has_audio: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+struct PreviewAssemblyManifest {
+    version: u32,
+    signature: String,
+    chunks: Vec<String>,
+}
+
+#[derive(Clone)]
+struct PreviewChunkSpec {
+    clip: ProjectPreviewClip,
+    source: CachedPreviewSource,
+    key: String,
+    duration: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1364,10 +1411,8 @@ pub async fn generate_preview_proxy(
         let (fallback_filter, fallback_label) =
             prepare_video_filter(base_filter, "[vout]", &encoder.name);
         replace_video_filter_args(&mut args, &fallback_filter, &fallback_label);
-        if encoder.name != "h264_vaapi" {
-            if !args.iter().any(|argument| argument == "-pix_fmt") {
-                args.extend(["-pix_fmt".to_string(), "yuv420p".to_string()]);
-            }
+        if encoder.name != "h264_vaapi" && !args.iter().any(|argument| argument == "-pix_fmt") {
+            args.extend(["-pix_fmt".to_string(), "yuv420p".to_string()]);
         }
         run_ffmpeg_with_progress(
             &window,
@@ -1562,6 +1607,7 @@ pub async fn export_project(
         false,
         job_id,
         project_id,
+        RenderJobKind::Export,
     )
     .await
 }
@@ -1588,8 +1634,75 @@ pub async fn generate_project_preview(
         true,
         job_id,
         project_id,
+        RenderJobKind::Preview,
     )
     .await
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn estimate_project_export_size(
+    window: Window,
+    clips: Vec<ProjectPreviewClip>,
+    target_width: u32,
+    target_height: u32,
+    resize_mode: Option<String>,
+    fps: Option<u32>,
+    profile: Option<String>,
+    job_id: Option<String>,
+    project_id: Option<String>,
+) -> Result<ExportSizeEstimate, String> {
+    let (sample_clips, total_duration, sampled_seconds) = sample_project_clips(&clips)?;
+    let data_dir = window
+        .app_handle()
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve export estimate directory: {error}"))?;
+    let estimate_dir = data_dir.join("export-estimates");
+    std::fs::create_dir_all(&estimate_dir)
+        .map_err(|error| format!("Failed to create export estimate directory: {error}"))?;
+    let descriptor = serde_json::to_string(&(
+        &sample_clips,
+        total_duration,
+        target_width,
+        target_height,
+        &resize_mode,
+        &fps,
+        &profile,
+    ))
+    .map_err(|error| format!("Failed to fingerprint export estimate: {error}"))?;
+    let render_job_id = job_id.unwrap_or_else(|| new_job_id("estimate"));
+    let output_path = export_estimate_output_path(&estimate_dir, &descriptor, &render_job_id)
+        .to_string_lossy()
+        .into_owned();
+    let rendered_path = render_project_video(
+        window,
+        output_path.clone(),
+        sample_clips,
+        target_width,
+        target_height,
+        resize_mode.as_deref(),
+        fps,
+        profile.as_deref(),
+        false,
+        Some(render_job_id),
+        project_id,
+        RenderJobKind::Estimate,
+    )
+    .await?;
+    let sample_bytes = std::fs::metadata(&rendered_path)
+        .map_err(|error| format!("Could not inspect export estimate sample: {error}"))?
+        .len();
+    let _ = std::fs::remove_file(&rendered_path);
+    let bytes_per_second = sample_bytes as f64 / sampled_seconds;
+    let expected_bytes = (bytes_per_second * total_duration).max(1.0);
+    Ok(ExportSizeEstimate {
+        lower_bytes: (expected_bytes * 0.65).round().max(1.0) as u64,
+        expected_bytes: expected_bytes.round().max(1.0) as u64,
+        upper_bytes: (expected_bytes * 1.45).round().max(1.0) as u64,
+        sampled_seconds,
+        method: "sample".to_string(),
+    })
 }
 
 #[tauri::command]
@@ -1680,15 +1793,11 @@ async fn render_project_video(
     preview: bool,
     job_id: Option<String>,
     project_id: Option<String>,
+    job_kind: RenderJobKind,
 ) -> Result<String, String> {
     let job_id = job_id.unwrap_or_else(|| new_job_id(if preview { "preview" } else { "export" }));
-    let kind = if preview {
-        RenderJobKind::Preview
-    } else {
-        RenderJobKind::Export
-    };
     let (_job_guard, preempted_job_id) =
-        JobGuard::new(job_id.clone(), project_id.as_deref(), kind)?;
+        JobGuard::new(job_id.clone(), project_id.as_deref(), job_kind)?;
     if let Some(preempted_job_id) = preempted_job_id {
         wait_for_preempted_job_finish(&job_id, project_id.as_deref(), &preempted_job_id).await?;
     }
@@ -1751,6 +1860,26 @@ async fn render_project_video(
     } else {
         fps.unwrap_or_else(|| clips[0].fps.round().clamp(1.0, 240.0) as u32)
     };
+    if preview {
+        match generate_incremental_project_preview(
+            &window,
+            output_path.clone(),
+            clips.clone(),
+            target_width,
+            target_height,
+            resize_mode,
+            &job_id,
+        )
+        .await
+        {
+            Ok(result) => return Ok(result),
+            Err(error) if is_job_cancelled(&job_id) => return Err(error),
+            Err(error) => warn!(
+                "[preview-project] Incremental preview failed; using full render: {}",
+                error
+            ),
+        }
+    }
     let (base_filter, base_video_label, audio_label) =
         build_project_preview_filter(&clips, width, height, resize_mode, common_fps, true)?;
 
@@ -1961,6 +2090,789 @@ fn write_preview_manifest(output_path: &str, clips: &[ProjectPreviewClip]) {
             error
         ),
     }
+}
+
+fn stable_preview_hash(value: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn export_estimate_output_path(estimate_dir: &Path, descriptor: &str, job_id: &str) -> PathBuf {
+    estimate_dir.join(format!(
+        "estimate-{}-job-{}.mp4",
+        stable_preview_hash(descriptor),
+        stable_preview_hash(job_id),
+    ))
+}
+
+fn preview_chunk_manifest_path(path: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.manifest.json", path.display()))
+}
+
+fn preview_source_for_clip(clip: &ProjectPreviewClip) -> Option<CachedPreviewSource> {
+    let metadata = std::fs::metadata(&clip.input_path).ok()?;
+    let modified_ns = metadata
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    let path = std::fs::canonicalize(&clip.input_path)
+        .ok()?
+        .to_string_lossy()
+        .into_owned();
+    Some(CachedPreviewSource {
+        path,
+        source_start: clip.source_start,
+        source_end: clip.source_end,
+        speed: clip.speed,
+        size: metadata.len(),
+        modified_ns,
+    })
+}
+
+fn preview_chunk_cache_dir(window: &Window, output_path: &str) -> Result<PathBuf, String> {
+    validate_render_output_path(output_path, &["mp4"])?;
+    let app_data_dir = window
+        .app_handle()
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve preview directory: {error}"))?;
+    let preview_root = canonicalize_path_with_missing_components(&app_data_dir.join("previews"))?;
+    let mcp_output_root =
+        canonicalize_path_with_missing_components(&app_data_dir.join("mcp-outputs"))?;
+    let output = canonicalize_path_with_missing_components(Path::new(output_path))?;
+    if !output.starts_with(&preview_root) && !output.starts_with(&mcp_output_root) {
+        return Err(
+            "Project preview output must remain inside an application-managed output directory."
+                .to_string(),
+        );
+    }
+    let cache_dir = preview_root.join("chunks");
+    std::fs::create_dir_all(&cache_dir)
+        .map_err(|error| format!("Failed to create preview chunk directory: {error}"))?;
+    Ok(cache_dir)
+}
+
+fn merge_short_preview_ranges(ranges: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    let mut merged: Vec<(f64, f64)> = Vec::new();
+    let mut pending: Option<(f64, f64)> = None;
+    for &(start, end) in ranges {
+        if end - start < 0.08 {
+            if let Some(pending_range) = pending.as_mut() {
+                pending_range.1 = end;
+            } else if let Some(previous) = merged.last_mut() {
+                previous.1 = end;
+            } else {
+                pending = Some((start, end));
+            }
+            continue;
+        }
+
+        if let Some((pending_start, _)) = pending.take() {
+            merged.push((pending_start, end));
+        } else {
+            merged.push((start, end));
+        }
+    }
+    if let Some((pending_start, pending_end)) = pending {
+        if let Some(previous) = merged.last_mut() {
+            previous.1 = pending_end;
+        } else {
+            merged.push((pending_start, pending_end));
+        }
+    }
+    merged
+}
+
+fn prune_preview_cache_dir(cache_dir: &Path, preserved: &[PathBuf], max_bytes: u64) {
+    let preserved = preserved.iter().cloned().collect::<HashSet<_>>();
+    let entries = match std::fs::read_dir(cache_dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            warn!(
+                "[preview-cache] Could not inspect cache directory: {}",
+                error
+            );
+            return;
+        }
+    };
+    let mut candidates = Vec::new();
+    let mut total_bytes = 0u64;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("chunk-")
+            || path.extension().and_then(|value| value.to_str()) != Some("mp4")
+        {
+            continue;
+        }
+        let Ok(metadata) = std::fs::metadata(&path) else {
+            continue;
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        let manifest = preview_chunk_manifest_path(&path);
+        let manifest_bytes = std::fs::metadata(&manifest)
+            .map(|value| value.len())
+            .unwrap_or(0);
+        let entry_bytes = metadata.len().saturating_add(manifest_bytes);
+        total_bytes = total_bytes.saturating_add(entry_bytes);
+        candidates.push((
+            metadata.modified().unwrap_or(std::time::UNIX_EPOCH),
+            path,
+            entry_bytes,
+        ));
+    }
+    if total_bytes <= max_bytes {
+        return;
+    }
+    candidates.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    for (_, path, entry_bytes) in candidates {
+        if total_bytes <= max_bytes {
+            break;
+        }
+        if preserved.contains(&path) {
+            continue;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            let _ = std::fs::remove_file(preview_chunk_manifest_path(&path));
+            total_bytes = total_bytes.saturating_sub(entry_bytes);
+        }
+    }
+}
+
+#[tauri::command]
+pub fn prune_preview_cache(window: Window) -> Result<(), String> {
+    let app_data_dir = window
+        .app_handle()
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve preview directory: {error}"))?;
+    let cache_dir = app_data_dir.join("previews").join("chunks");
+    if !cache_dir.is_dir() {
+        return Ok(());
+    }
+    let active_jobs = jobs()
+        .lock()
+        .map_err(|_| "Render job state is unavailable.".to_string())?
+        .active
+        .len();
+    if active_jobs > 0 {
+        return Ok(());
+    }
+    prune_preview_cache_dir(&cache_dir, &[], MAX_PREVIEW_CACHE_BYTES);
+    Ok(())
+}
+
+fn is_project_preview_artifact(path: &Path, project_id: &str) -> bool {
+    let prefix = format!("project-{project_id}-");
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .is_some_and(|name| {
+            name.starts_with(&prefix)
+                && path.extension().and_then(|value| value.to_str()) == Some("mp4")
+        })
+}
+
+#[tauri::command]
+pub fn cleanup_project_preview_cache(window: Window, project_id: String) -> Result<(), String> {
+    validate_project_id(&project_id)?;
+    let active_jobs = jobs()
+        .lock()
+        .map_err(|_| "Render job state is unavailable.".to_string())?
+        .active
+        .len();
+    if active_jobs > 0 {
+        return Ok(());
+    }
+    let app_data_dir = window
+        .app_handle()
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve preview directory: {error}"))?;
+    let preview_dir = app_data_dir.join("previews");
+    if let Ok(entries) = std::fs::read_dir(&preview_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !is_project_preview_artifact(&path, &project_id) {
+                continue;
+            }
+            if std::fs::remove_file(&path).is_ok() {
+                let _ = std::fs::remove_file(preview_manifest_path(&path.to_string_lossy()));
+            }
+        }
+    }
+    prune_preview_cache(window)
+}
+
+fn preview_chunk_specs(
+    clip: &ProjectPreviewClip,
+    width: u32,
+    height: u32,
+    fps: u32,
+    resize_mode: &str,
+    encoder: &str,
+) -> Result<Vec<PreviewChunkSpec>, String> {
+    if !clip.source_start.is_finite()
+        || !clip.source_end.is_finite()
+        || clip.source_start < 0.0
+        || clip.source_end <= clip.source_start
+        || !clip.speed.is_finite()
+        || !(0.25..=32.0).contains(&clip.speed)
+    {
+        return Err("Project preview contains an invalid chunk range.".to_string());
+    }
+    let source = preview_source_for_clip(clip)
+        .ok_or_else(|| "Project preview source metadata is unavailable.".to_string())?;
+    let mut ranges = Vec::new();
+    let mut start = clip.source_start;
+    while start < clip.source_end - 0.000001 {
+        let next_grid = ((start / PREVIEW_CHUNK_SECONDS).floor() + 1.0) * PREVIEW_CHUNK_SECONDS;
+        let end = clip.source_end.min(if next_grid > start {
+            next_grid
+        } else {
+            clip.source_end
+        });
+        ranges.push((start, end));
+        start = end;
+    }
+
+    let specs = merge_short_preview_ranges(&ranges)
+        .into_iter()
+        .map(|(start, end)| {
+            let mut chunk_clip = clip.clone();
+            chunk_clip.source_start = start;
+            chunk_clip.source_end = end;
+            let chunk_source = CachedPreviewSource {
+                source_start: start,
+                source_end: end,
+                ..source.clone()
+            };
+            let descriptor = serde_json::to_string(&(
+                &chunk_source,
+                width,
+                height,
+                fps,
+                resize_mode,
+                encoder,
+                chunk_clip.fps,
+                chunk_clip.width,
+                chunk_clip.height,
+                chunk_clip.has_audio,
+            ))
+            .map_err(|error| format!("Failed to fingerprint preview chunk: {error}"))?;
+            let key = stable_preview_hash(&descriptor);
+            Ok(PreviewChunkSpec {
+                clip: chunk_clip,
+                source: chunk_source,
+                key,
+                duration: (end - start) / clip.speed,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(specs)
+}
+
+fn preview_chunk_manifest(
+    spec: &PreviewChunkSpec,
+    width: u32,
+    height: u32,
+    fps: u32,
+    resize_mode: &str,
+    encoder: &str,
+) -> PreviewChunkManifest {
+    PreviewChunkManifest {
+        key: spec.key.clone(),
+        source: spec.source.clone(),
+        width,
+        height,
+        fps,
+        resize_mode: resize_mode.to_string(),
+        encoder: encoder.to_string(),
+        has_audio: spec.clip.has_audio,
+    }
+}
+
+fn preview_chunk_path(cache_dir: &Path, key: &str) -> PathBuf {
+    cache_dir.join(format!("chunk-{key}.mp4"))
+}
+
+fn cached_preview_chunk(path: &Path, expected: &PreviewChunkManifest) -> bool {
+    let output_is_valid = std::fs::metadata(path)
+        .map(|metadata| metadata.is_file() && metadata.len() > 0)
+        .unwrap_or(false);
+    if !output_is_valid {
+        return false;
+    }
+    std::fs::read_to_string(preview_chunk_manifest_path(path))
+        .ok()
+        .and_then(|manifest| serde_json::from_str::<PreviewChunkManifest>(&manifest).ok())
+        .is_some_and(|actual| actual == *expected)
+}
+
+fn write_preview_chunk_manifest(
+    path: &Path,
+    manifest: &PreviewChunkManifest,
+) -> Result<(), String> {
+    let data = serde_json::to_vec(manifest)
+        .map_err(|error| format!("Failed to serialize preview chunk manifest: {error}"))?;
+    let manifest_path = preview_chunk_manifest_path(path);
+    let temporary_path = PathBuf::from(format!("{}.tmp", manifest_path.display()));
+    std::fs::write(&temporary_path, data)
+        .map_err(|error| format!("Failed to write preview chunk manifest: {error}"))?;
+    let _ = std::fs::remove_file(&manifest_path);
+    if let Err(error) = std::fs::rename(&temporary_path, &manifest_path) {
+        let _ = std::fs::remove_file(&temporary_path);
+        return Err(format!("Failed to publish preview chunk manifest: {error}"));
+    }
+    Ok(())
+}
+
+fn project_clip_duration(clip: &ProjectPreviewClip) -> f64 {
+    (clip.source_end - clip.source_start) / clip.speed
+}
+
+fn sample_project_clips(
+    clips: &[ProjectPreviewClip],
+) -> Result<(Vec<ProjectPreviewClip>, f64, f64), String> {
+    let total_duration = clips.iter().map(project_clip_duration).sum::<f64>();
+    if !total_duration.is_finite() || total_duration <= 0.0 {
+        return Err("Cannot estimate an empty project export.".to_string());
+    }
+    let sample_window = (MAX_ESTIMATE_SAMPLE_SECONDS / 3.0).min(total_duration);
+    let mut windows = if total_duration <= MAX_ESTIMATE_SAMPLE_SECONDS {
+        vec![(0.0, total_duration)]
+    } else {
+        vec![
+            (0.0, sample_window),
+            ((total_duration / 2.0 - sample_window / 2.0).max(0.0), 0.0),
+            ((total_duration - sample_window).max(0.0), total_duration),
+        ]
+    };
+    if windows.len() > 1 && windows[1].1 == 0.0 {
+        windows[1].1 = (windows[1].0 + sample_window).min(total_duration);
+    }
+    windows.sort_by(|left, right| left.0.total_cmp(&right.0));
+    let mut merged_windows: Vec<(f64, f64)> = Vec::new();
+    for (start, end) in windows {
+        if end <= start {
+            continue;
+        }
+        if let Some(previous) = merged_windows.last_mut() {
+            if start <= previous.1 {
+                previous.1 = previous.1.max(end);
+                continue;
+            }
+        }
+        merged_windows.push((start, end));
+    }
+
+    let mut sampled_clips = Vec::new();
+    let mut sampled_duration = 0.0;
+    for (window_start, window_end) in merged_windows {
+        let mut timeline_cursor = 0.0;
+        for clip in clips {
+            let clip_duration = project_clip_duration(clip);
+            let clip_start = timeline_cursor;
+            let clip_end = clip_start + clip_duration;
+            let overlap_start = window_start.max(clip_start);
+            let overlap_end = window_end.min(clip_end);
+            if overlap_end - overlap_start >= 0.08 {
+                let source_start = (clip.source_start + (overlap_start - clip_start) * clip.speed)
+                    .max(clip.source_start)
+                    .min(clip.source_end);
+                let source_end = (clip.source_start + (overlap_end - clip_start) * clip.speed)
+                    .max(source_start)
+                    .min(clip.source_end);
+                if source_end - source_start >= 0.08 {
+                    let mut sample = clip.clone();
+                    sample.source_start = source_start;
+                    sample.source_end = source_end;
+                    sampled_duration += (source_end - source_start) / clip.speed;
+                    sampled_clips.push(sample);
+                }
+            }
+            timeline_cursor = clip_end;
+            if timeline_cursor >= window_end {
+                break;
+            }
+        }
+    }
+    if sampled_clips.is_empty() || sampled_duration <= 0.0 {
+        return Err("Could not select export estimate samples.".to_string());
+    }
+    Ok((sampled_clips, total_duration, sampled_duration))
+}
+
+fn preview_assembly_manifest(
+    specs: &[PreviewChunkSpec],
+    width: u32,
+    height: u32,
+    fps: u32,
+    resize_mode: &str,
+    encoder: &str,
+) -> Result<PreviewAssemblyManifest, String> {
+    let signature_data = serde_json::to_string(&(
+        specs
+            .iter()
+            .map(|spec| spec.key.clone())
+            .collect::<Vec<_>>(),
+        width,
+        height,
+        fps,
+        resize_mode,
+        encoder,
+    ))
+    .map_err(|error| format!("Failed to fingerprint preview assembly: {error}"))?;
+    Ok(PreviewAssemblyManifest {
+        version: 1,
+        signature: stable_preview_hash(&signature_data),
+        chunks: specs
+            .iter()
+            .map(|spec| format!("chunk-{}.mp4", spec.key))
+            .collect(),
+    })
+}
+
+fn cached_preview_assembly(
+    output_path: &Path,
+    cache_dir: &Path,
+    expected: &PreviewAssemblyManifest,
+    expected_chunks: &[PreviewChunkManifest],
+) -> bool {
+    let output_is_valid = std::fs::metadata(output_path)
+        .map(|metadata| metadata.is_file() && metadata.len() > 0)
+        .unwrap_or(false);
+    if !output_is_valid {
+        return false;
+    }
+    let manifest_matches = std::fs::read_to_string(preview_manifest_path(
+        output_path.to_string_lossy().as_ref(),
+    ))
+    .ok()
+    .and_then(|manifest| serde_json::from_str::<PreviewAssemblyManifest>(&manifest).ok())
+    .is_some_and(|actual| actual == *expected);
+    manifest_matches
+        && expected.chunks.len() == expected_chunks.len()
+        && expected
+            .chunks
+            .iter()
+            .zip(expected_chunks)
+            .all(|(chunk, manifest)| cached_preview_chunk(&cache_dir.join(chunk), manifest))
+}
+
+fn write_preview_assembly_manifest(
+    output_path: &Path,
+    manifest: &PreviewAssemblyManifest,
+) -> Result<(), String> {
+    let data = serde_json::to_vec(manifest)
+        .map_err(|error| format!("Failed to serialize preview assembly manifest: {error}"))?;
+    let manifest_path = preview_manifest_path(&output_path.to_string_lossy());
+    let temporary_path = PathBuf::from(format!("{}.tmp", manifest_path.display()));
+    std::fs::write(&temporary_path, data)
+        .map_err(|error| format!("Failed to write preview assembly manifest: {error}"))?;
+    let _ = std::fs::remove_file(&manifest_path);
+    if let Err(error) = std::fs::rename(&temporary_path, &manifest_path) {
+        let _ = std::fs::remove_file(&temporary_path);
+        return Err(format!(
+            "Failed to publish preview assembly manifest: {error}"
+        ));
+    }
+    Ok(())
+}
+
+fn write_preview_concat_list(path: &Path, chunks: &[PathBuf]) -> Result<(), String> {
+    let contents = chunks
+        .iter()
+        .map(|chunk| {
+            let normalized = chunk.to_string_lossy().replace('\\', "/");
+            format!("file '{}'", normalized.replace('\'', "\\'"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(path, format!("{contents}\n"))
+        .map_err(|error| format!("Failed to write preview concat list: {error}"))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn render_preview_chunk(
+    window: &Window,
+    spec: &PreviewChunkSpec,
+    output_path: &Path,
+    width: u32,
+    height: u32,
+    resize_mode: &str,
+    common_fps: u32,
+    encoder: &VideoEncoderSelection,
+    job_id: &str,
+) -> Result<(), String> {
+    validate_render_output_path(&output_path.to_string_lossy(), &["mp4"])?;
+    let temporary_output = PathBuf::from(format!(
+        "{}.tmp-{}.mp4",
+        output_path.display(),
+        stable_preview_hash(job_id),
+    ));
+    validate_render_output_path(&temporary_output.to_string_lossy(), &["mp4"])?;
+    let (base_filter, base_video_label, audio_label) = build_project_preview_filter(
+        std::slice::from_ref(&spec.clip),
+        width,
+        height,
+        resize_mode,
+        common_fps,
+        true,
+    )?;
+    let (filter, video_label) =
+        prepare_video_filter(&base_filter, &base_video_label, &encoder.name);
+    let mut args = vec![
+        "-y".to_string(),
+        "-threads".to_string(),
+        PROJECT_PREVIEW_THREADS.to_string(),
+    ];
+    args.extend([
+        "-ss".to_string(),
+        format!("{:.6}", spec.clip.source_start),
+        "-t".to_string(),
+        format!("{:.6}", spec.clip.source_end - spec.clip.source_start),
+    ]);
+    append_decoder_args(&mut args, encoder.decoder.as_ref());
+    if let Some(discard) = decoder_frame_discard(spec.clip.fps, spec.clip.speed, common_fps) {
+        args.extend(["-skip_frame".to_string(), discard.to_string()]);
+    }
+    args.extend([
+        "-i".to_string(),
+        spec.clip.input_path.clone(),
+        "-filter_complex".to_string(),
+        filter,
+        "-map".to_string(),
+        video_label,
+        "-map".to_string(),
+        audio_label,
+    ]);
+    append_video_encoder_args(&mut args, encoder, Some("fast"));
+    if encoder.name != "h264_vaapi" {
+        args.extend(["-pix_fmt".to_string(), "yuv420p".to_string()]);
+    }
+    args.extend([
+        "-c:a".to_string(),
+        "aac".to_string(),
+        "-b:a".to_string(),
+        "128k".to_string(),
+        "-movflags".to_string(),
+        "+faststart".to_string(),
+        temporary_output.to_string_lossy().into_owned(),
+    ]);
+
+    if let Err(error) = run_ffmpeg_with_progress(
+        window,
+        "export-progress",
+        "preview",
+        &args,
+        spec.duration,
+        job_id,
+        encoder,
+    )
+    .await
+    {
+        cleanup_partial_output(&temporary_output.to_string_lossy());
+        return Err(error);
+    }
+    if is_job_cancelled(job_id) {
+        cleanup_partial_output(&temporary_output.to_string_lossy());
+        return Err("Render cancelled.".to_string());
+    }
+    if output_path.exists() {
+        std::fs::remove_file(output_path)
+            .map_err(|error| format!("Failed to replace cached preview chunk: {error}"))?;
+    }
+    if let Err(error) = std::fs::rename(&temporary_output, output_path) {
+        cleanup_partial_output(&temporary_output.to_string_lossy());
+        return Err(format!("Failed to publish cached preview chunk: {error}"));
+    }
+    Ok(())
+}
+
+async fn generate_incremental_project_preview(
+    window: &Window,
+    output_path: String,
+    clips: Vec<ProjectPreviewClip>,
+    target_width: u32,
+    target_height: u32,
+    resize_mode: &str,
+    job_id: &str,
+) -> Result<String, String> {
+    if clips.is_empty() {
+        return Err("No clips available for project preview.".to_string());
+    }
+    let cache_dir = preview_chunk_cache_dir(window, &output_path)?;
+    let (width, height) = preview_dimensions(target_width, target_height);
+    let common_fps = 30;
+    let encoder = select_video_encoder(window.app_handle(), true).await?;
+    let mut specs = Vec::new();
+    for clip in &clips {
+        specs.extend(preview_chunk_specs(
+            clip,
+            width,
+            height,
+            common_fps,
+            resize_mode,
+            &encoder.name,
+        )?);
+        if specs.len() > 20_000 {
+            return Err("Project preview contains too many chunks.".to_string());
+        }
+    }
+    if specs.is_empty() {
+        return Err("No valid preview chunks available.".to_string());
+    }
+
+    let chunk_manifests = specs
+        .iter()
+        .map(|spec| {
+            preview_chunk_manifest(spec, width, height, common_fps, resize_mode, &encoder.name)
+        })
+        .collect::<Vec<_>>();
+    let assembly = preview_assembly_manifest(
+        &specs,
+        width,
+        height,
+        common_fps,
+        resize_mode,
+        &encoder.name,
+    )?;
+    let output = PathBuf::from(&output_path);
+    if cached_preview_assembly(&output, &cache_dir, &assembly, &chunk_manifests) {
+        info!(
+            "[preview-project] Reusing cached chunk assembly: {}",
+            output_path
+        );
+        return Ok(output_path);
+    }
+
+    let mut chunk_paths = Vec::with_capacity(specs.len());
+    let mut missing = Vec::new();
+    for (spec, manifest) in specs.iter().zip(&chunk_manifests) {
+        let path = preview_chunk_path(&cache_dir, &spec.key);
+        if cached_preview_chunk(&path, manifest) {
+            chunk_paths.push(path);
+        } else {
+            chunk_paths.push(path.clone());
+            missing.push((spec, path, manifest));
+        }
+    }
+
+    emit_job_progress(window, "export-progress", Some(job_id), 10.0, "preview", "");
+    for (index, (spec, path, manifest)) in missing.iter().enumerate() {
+        if is_job_cancelled(job_id) {
+            return Err("Render cancelled.".to_string());
+        }
+        render_preview_chunk(
+            window,
+            spec,
+            path,
+            width,
+            height,
+            resize_mode,
+            common_fps,
+            &encoder,
+            job_id,
+        )
+        .await?;
+        write_preview_chunk_manifest(path, manifest)?;
+        let progress = 10.0 + ((index + 1) as f64 / missing.len().max(1) as f64) * 75.0;
+        emit_job_progress(
+            window,
+            "export-progress",
+            Some(job_id),
+            progress,
+            "preview",
+            "",
+        );
+    }
+
+    if is_job_cancelled(job_id) {
+        return Err("Render cancelled.".to_string());
+    }
+    if !chunk_paths.iter().all(|path| path.is_file()) {
+        return Err("Preview chunk assembly contains a missing chunk.".to_string());
+    }
+
+    let list_path = cache_dir.join(format!("concat-{}.txt", stable_preview_hash(job_id)));
+    let temporary_output = PathBuf::from(format!(
+        "{}.tmp-{}.mp4",
+        output_path,
+        stable_preview_hash(job_id)
+    ));
+    if let Err(error) = write_preview_concat_list(&list_path, &chunk_paths) {
+        let _ = std::fs::remove_file(&list_path);
+        return Err(error);
+    }
+    let args = vec![
+        "-y".to_string(),
+        "-f".to_string(),
+        "concat".to_string(),
+        "-safe".to_string(),
+        "0".to_string(),
+        "-i".to_string(),
+        list_path.to_string_lossy().into_owned(),
+        "-c".to_string(),
+        "copy".to_string(),
+        "-movflags".to_string(),
+        "+faststart".to_string(),
+        temporary_output.to_string_lossy().into_owned(),
+    ];
+    let expected_duration = specs.iter().map(|spec| spec.duration).sum::<f64>();
+    let result = run_ffmpeg_with_progress(
+        window,
+        "export-progress",
+        "preview",
+        &args,
+        expected_duration,
+        job_id,
+        &encoder,
+    )
+    .await;
+    let _ = std::fs::remove_file(&list_path);
+    if let Err(error) = result {
+        cleanup_partial_output(&temporary_output.to_string_lossy());
+        return Err(error);
+    }
+    if is_job_cancelled(job_id) {
+        cleanup_partial_output(&temporary_output.to_string_lossy());
+        return Err("Render cancelled.".to_string());
+    }
+    if output.exists() {
+        std::fs::remove_file(&output)
+            .map_err(|error| format!("Failed to replace previous preview: {error}"))?;
+    }
+    if let Err(error) = std::fs::rename(&temporary_output, &output) {
+        cleanup_partial_output(&temporary_output.to_string_lossy());
+        return Err(format!("Failed to publish assembled preview: {error}"));
+    }
+    write_preview_assembly_manifest(&output, &assembly)?;
+    let can_prune = jobs()
+        .lock()
+        .map(|registry| registry.active.len() <= 1)
+        .unwrap_or(false);
+    if can_prune {
+        prune_preview_cache_dir(&cache_dir, &chunk_paths, MAX_PREVIEW_CACHE_BYTES);
+    }
+    emit_job_progress(
+        window,
+        "export-progress",
+        Some(job_id),
+        100.0,
+        "complete",
+        "",
+    );
+    Ok(output_path)
 }
 
 fn preview_dimensions(target_width: u32, target_height: u32) -> (u32, u32) {
@@ -2783,12 +3695,13 @@ mod tests {
         append_decoder_args, begin_job, build_atempo_chain, build_concat_filter,
         build_project_preview_filter, cached_preview_is_current, cached_proxy_is_current,
         canonicalize_path_with_missing_components, cleanup_partial_output, decoder_frame_discard,
-        estimated_analysis_output_duration, finish_job, is_job_cancelled, paths_match,
-        prepare_video_filter, preview_dimensions, remove_hardware_decode_args,
-        restore_project_job_reservation, stream_copy_decision, validate_export_segments,
-        validate_render_output_path, write_preview_manifest, write_proxy_manifest, ExportOptions,
-        ProjectPreviewClip, RenderJobKind, StreamCopyDecision, VideoDecoderSelection,
-        VideoMetadata,
+        estimated_analysis_output_duration, export_estimate_output_path, finish_job,
+        is_job_cancelled, is_project_preview_artifact, merge_short_preview_ranges, paths_match,
+        prepare_video_filter, preview_chunk_specs, preview_dimensions, prune_preview_cache_dir,
+        remove_hardware_decode_args, restore_project_job_reservation, sample_project_clips,
+        stream_copy_decision, validate_export_segments, validate_render_output_path,
+        write_preview_manifest, write_proxy_manifest, ExportOptions, ProjectPreviewClip,
+        RenderJobKind, StreamCopyDecision, VideoDecoderSelection, VideoMetadata,
     };
     use std::fs::File;
     use std::io::Write;
@@ -3174,6 +4087,148 @@ mod tests {
         let parsed: ProjectPreviewClip = serde_json::from_value(value).unwrap();
         assert_eq!(parsed.input_path, "source.mp4");
         assert!(!parsed.has_audio);
+    }
+
+    #[test]
+    fn preview_chunk_plan_uses_absolute_source_boundaries() {
+        let directory = tempdir().unwrap();
+        let source = directory.path().join("source.mp4");
+        File::create(&source).unwrap().write_all(b"source").unwrap();
+        let mut source_clip = clip(30.0);
+        source_clip.input_path = source.to_string_lossy().into_owned();
+        source_clip.source_start = 2.0;
+        source_clip.source_end = 12.0;
+        let specs = preview_chunk_specs(&source_clip, 480, 270, 30, "fit", "libx264").unwrap();
+        assert_eq!(
+            specs
+                .iter()
+                .map(|spec| (spec.clip.source_start, spec.clip.source_end))
+                .collect::<Vec<_>>(),
+            vec![(2.0, 5.0), (5.0, 10.0), (10.0, 12.0)]
+        );
+        assert_ne!(specs[0].key, specs[1].key);
+    }
+
+    #[test]
+    fn estimate_sample_paths_are_unique_per_job() {
+        let directory = tempdir().unwrap();
+        let first = export_estimate_output_path(directory.path(), "same-input", "job-one");
+        let second = export_estimate_output_path(directory.path(), "same-input", "job-two");
+        assert_ne!(first, second);
+        assert!(first
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .ends_with(".mp4"));
+    }
+
+    #[test]
+    fn short_preview_fragments_are_merged_without_loss() {
+        assert_eq!(
+            merge_short_preview_ranges(&[(0.0, 5.0), (5.0, 5.05)]),
+            vec![(0.0, 5.05)]
+        );
+        assert_eq!(
+            merge_short_preview_ranges(&[(4.95, 5.0), (5.0, 5.05)]),
+            vec![(4.95, 5.05)]
+        );
+        assert_eq!(
+            merge_short_preview_ranges(&[(4.95, 5.0), (5.0, 10.0)]),
+            vec![(4.95, 10.0)]
+        );
+    }
+
+    #[test]
+    fn preview_cache_prunes_unpreserved_chunks_under_a_byte_limit() {
+        let directory = tempdir().unwrap();
+        let preserved = directory.path().join("chunk-preserved.mp4");
+        let evicted = directory.path().join("chunk-evicted.mp4");
+        File::create(&preserved)
+            .unwrap()
+            .write_all(b"1234")
+            .unwrap();
+        File::create(&evicted).unwrap().write_all(b"5678").unwrap();
+
+        prune_preview_cache_dir(directory.path(), std::slice::from_ref(&preserved), 7);
+
+        assert!(preserved.exists());
+        assert!(!evicted.exists());
+    }
+
+    #[test]
+    fn project_preview_cleanup_matches_only_the_requested_project() {
+        let directory = tempdir().unwrap();
+        assert!(is_project_preview_artifact(
+            &directory.path().join("project-12-revision-4.mp4"),
+            "12"
+        ));
+        assert!(!is_project_preview_artifact(
+            &directory.path().join("project-120-revision-4.mp4"),
+            "12"
+        ));
+        assert!(!is_project_preview_artifact(
+            &directory.path().join("project-12-revision-4.txt"),
+            "12"
+        ));
+    }
+
+    #[test]
+    fn export_estimate_samples_cover_short_projects_and_three_points() {
+        let mut source_clip = clip(30.0);
+        source_clip.source_end = 30.0;
+        let (short_samples, short_duration, short_sampled) =
+            sample_project_clips(&[source_clip.clone()]).unwrap();
+        assert_eq!(short_duration, 30.0);
+        assert_eq!(short_sampled, 12.0);
+        assert_eq!(short_samples.len(), 3);
+        assert_eq!(
+            short_samples
+                .iter()
+                .map(|sample| (sample.source_start, sample.source_end))
+                .collect::<Vec<_>>(),
+            vec![(0.0, 4.0), (13.0, 17.0), (26.0, 30.0)]
+        );
+
+        let mut tiny_clip = source_clip;
+        tiny_clip.source_end = 8.0;
+        let (samples, duration, sampled) = sample_project_clips(&[tiny_clip]).unwrap();
+        assert_eq!(duration, 8.0);
+        assert_eq!(sampled, 8.0);
+        assert_eq!(samples.len(), 1);
+
+        let mut fractional_clip = clip(29.97);
+        fractional_clip.source_end = 1.0;
+        fractional_clip.speed = 3.0;
+        let (fractional_samples, _, _) = sample_project_clips(&[fractional_clip]).unwrap();
+        assert!(fractional_samples
+            .iter()
+            .all(|sample| sample.source_end <= 1.0));
+    }
+
+    #[test]
+    fn preview_and_export_jobs_preempt_estimates_in_priority_order() {
+        let project_id = "test-project-estimate-priority";
+        let estimate_job = "test-job-estimate-priority";
+        let preview_job = "test-job-preview-priority";
+        let export_job = "test-job-export-priority-estimate";
+
+        begin_job(estimate_job, Some(project_id), RenderJobKind::Estimate).unwrap();
+        assert_eq!(
+            begin_job(preview_job, Some(project_id), RenderJobKind::Preview).unwrap(),
+            Some(estimate_job.to_string())
+        );
+        assert!(is_job_cancelled(estimate_job));
+        finish_job(preview_job);
+        finish_job(estimate_job);
+
+        begin_job(estimate_job, Some(project_id), RenderJobKind::Estimate).unwrap();
+        assert_eq!(
+            begin_job(export_job, Some(project_id), RenderJobKind::Export).unwrap(),
+            Some(estimate_job.to_string())
+        );
+        assert!(is_job_cancelled(estimate_job));
+        finish_job(export_job);
+        finish_job(estimate_job);
     }
 
     #[test]

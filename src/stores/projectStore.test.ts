@@ -54,6 +54,28 @@ describe("project store loading", () => {
     expect(useProjectStore.getState().selectedClipId).toBeNull();
   });
 
+  it("restores the per-project automatic preview preference", () => {
+    const timelineProject = createVideoProject(asset);
+    const state = useProjectStore.getState();
+
+    state.loadProject({
+      projectId: 12,
+      filePath: asset.path,
+      videoMetadata: metadata,
+      detectionResult: null,
+      detectionSettings: state.detectionSettings,
+      clipSegments: [],
+      removedSegments: [],
+      timelineProject,
+      currentView: "editor",
+      previewMode: "source",
+      autoPreviewEnabled: true,
+      processedPath: null,
+    });
+
+    expect(useProjectStore.getState().autoPreviewEnabled).toBe(true);
+  });
+
   it("rejects a split that would not produce a timeline mutation", () => {
     const timelineProject = createVideoProject(asset);
     const clipId = timelineProject.clips[0].id;
@@ -85,6 +107,7 @@ describe("project store loading", () => {
       removedSegments: [{ start: 1, end: 2, duration: 1 }],
       editedPreviewFilePath: "/previews/old.mp4",
       editedPreviewPending: true,
+      autoPreviewEnabled: true,
       previewMode: "edited",
       editHistory: [{ clipSegments: [], removedSegments: [], selectedClipId: null }],
       canUndo: true,
@@ -98,6 +121,7 @@ describe("project store loading", () => {
     expect(state.removedSegments).toEqual([]);
     expect(state.editedPreviewFilePath).toBeNull();
     expect(state.editedPreviewPending).toBe(false);
+    expect(state.autoPreviewEnabled).toBe(false);
     expect(state.previewMode).toBe("source");
     expect(state.editHistory).toEqual([]);
     expect(state.canUndo).toBe(false);
@@ -148,6 +172,7 @@ describe("project store loading", () => {
       timelineProject,
       editedPreviewFilePath: "/previews/old.mp4",
       editedPreviewPending: false,
+      autoPreviewEnabled: true,
       previewMode: "edited",
     });
 
@@ -158,6 +183,7 @@ describe("project store loading", () => {
     })).toBe(true);
     expect(useProjectStore.getState().editedPreviewFilePath).toBeNull();
     expect(useProjectStore.getState().editedPreviewPending).toBe(false);
+    expect(useProjectStore.getState().autoPreviewEnabled).toBe(true);
     expect(useProjectStore.getState().previewMode).toBe("source");
   });
 

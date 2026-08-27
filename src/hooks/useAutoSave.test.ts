@@ -64,13 +64,14 @@ describe("project autosave snapshots", () => {
       projectId: 7,
       timelineProject,
       previewMode: "edited",
+      autoPreviewEnabled: true,
       editedPreviewFilePath: null,
     });
 
     await expect(saveProjectState(7, useProjectStore.getState())).resolves.toBe(true);
     expect(updateProject).toHaveBeenCalledWith(
       7,
-      expect.objectContaining({ preview_mode: "source", edited_preview_path: null }),
+      expect.objectContaining({ preview_mode: "source", auto_preview_enabled: 1, edited_preview_path: null }),
     );
 
     useProjectStore.setState({

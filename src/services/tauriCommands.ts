@@ -5,6 +5,7 @@ import type { DistributionContext } from "../types/distribution";
 import type {
   DetectionResult,
   ExportOptions,
+  ExportSizeEstimate,
   FfmpegStatus,
   PreviewSegment,
   VideoMetadata,
@@ -184,6 +185,48 @@ export async function exportProject(options: {
 export async function cancelProjectRender(jobId: string): Promise<void> {
   assertDesktop("Project render cancellation");
   await invoke("cancel_project_render", { jobId });
+}
+
+export async function prunePreviewCache(): Promise<void> {
+  assertDesktop("Preview cache cleanup");
+  await invoke("prune_preview_cache");
+}
+
+export async function cleanupProjectPreviewCache(projectId: number): Promise<void> {
+  assertDesktop("Project preview cache cleanup");
+  await invoke("cleanup_project_preview_cache", { projectId: String(projectId) });
+}
+
+export async function estimateProjectExportSize(options: {
+  clips: Array<{
+    inputPath: string;
+    sourceStart: number;
+    sourceEnd: number;
+    speed: number;
+    fps: number;
+    width: number;
+    height: number;
+    hasAudio: boolean;
+  }>;
+  targetWidth: number;
+  targetHeight: number;
+  resizeMode?: "original" | "fit" | "crop" | "stretch" | null;
+  profile?: "fast" | "balanced" | "quality" | null;
+  fps?: number | null;
+  jobId?: string;
+  projectId?: number | null;
+}): Promise<ExportSizeEstimate> {
+  assertDesktop("Export size estimation");
+  return invoke<ExportSizeEstimate>("estimate_project_export_size", {
+    clips: options.clips,
+    targetWidth: options.targetWidth,
+    targetHeight: options.targetHeight,
+    resizeMode: options.resizeMode ?? null,
+    profile: options.profile ?? null,
+    fps: options.fps ?? null,
+    jobId: options.jobId ?? null,
+    projectId: options.projectId == null ? null : String(options.projectId),
+  });
 }
 
 export async function replaceMcpOutput(

@@ -1,5 +1,6 @@
 export type AppView = "import" | "processing" | "detection" | "editor" | "export";
 export type PreviewMode = "source" | "edited";
+export type PreviewUpdateState = "idle" | "waiting" | "rendering" | "ready" | "failed";
 
 export interface TimelineSelectionRange {
   start: number;
@@ -144,6 +145,14 @@ export interface PreviewJobState {
 export interface PreviewSegment {
   start: number;
   end: number;
+}
+
+export interface ExportSizeEstimate {
+  lower_bytes: number;
+  expected_bytes: number;
+  upper_bytes: number;
+  sampled_seconds: number;
+  method: "formula" | "sample";
 }
 
 export interface DetectionResult {

@@ -12,6 +12,7 @@ export interface ProjectStateSnapshot {
   clipSegmentsJson: string;
   currentView: string;
   previewMode: string;
+  autoPreviewEnabled: boolean;
   editedPreviewPath: string | null;
   detectionResultJson: string | null;
   detectionSettingsJson: string;
@@ -25,6 +26,7 @@ export function snapshotProjectState(state: ProjectStoreState): ProjectStateSnap
     clipSegmentsJson: JSON.stringify(state.clipSegments),
     currentView: state.currentView,
     previewMode: persistedPreviewMode(state.previewMode, state.editedPreviewFilePath),
+    autoPreviewEnabled: state.autoPreviewEnabled,
     editedPreviewPath: state.editedPreviewFilePath,
     detectionResultJson: state.detectionResult ? JSON.stringify(state.detectionResult) : null,
     detectionSettingsJson: JSON.stringify(state.detectionSettings),
@@ -55,6 +57,7 @@ export function useAutoSave() {
         state.currentView !== prevState.currentView ||
         state.detectionResult !== prevState.detectionResult ||
         state.previewMode !== prevState.previewMode ||
+        state.autoPreviewEnabled !== prevState.autoPreviewEnabled ||
         state.editedPreviewFilePath !== prevState.editedPreviewFilePath ||
         state.detectionSettings !== prevState.detectionSettings ||
         state.videoMetadata !== prevState.videoMetadata ||
@@ -96,6 +99,7 @@ export async function saveProjectState(
       // instead of the editor, so keep whatever view was last saved.
       ...(state.currentView === "import" ? {} : { current_view: state.currentView }),
       preview_mode: persistedPreviewMode(state.previewMode, state.editedPreviewFilePath),
+      auto_preview_enabled: state.autoPreviewEnabled ? 1 : 0,
       edited_preview_path: state.editedPreviewFilePath,
       edited_preview_window_json: JSON.stringify(state.editedPreviewWindow),
       silence_segments: JSON.stringify(
