@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.8.0...cliprithm-v1.8.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **appimage:** make .DirIcon a relative symlink ([53c6d35](https://github.com/BOTOOM/Cliprithm/commit/53c6d358cbbdc6e5ef94bbf81de2235eedd89e48))
+
 ## [1.8.0](https://github.com/BOTOOM/Cliprithm/compare/cliprithm-v1.7.0...cliprithm-v1.8.0) (2026-08-27)
 
 
