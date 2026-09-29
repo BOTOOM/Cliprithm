@@ -195,7 +195,7 @@ jobs:
           appimage_dir=$(dirname "$appimage_path")
           cd "$appimage_dir"
           appimage_filename=$(basename "$appimage_path")
-            ./"$appimage_filename" --appimage-extract
+          ./"$appimage_filename" --appimage-extract
 
           # 4. Verify FFmpeg and FFprobe inside the extracted AppImage
           node "$GITHUB_WORKSPACE/scripts/verify_bundled_sidecars.mjs" \
@@ -204,12 +204,16 @@ jobs:
           # 5. Purge all bundled system libraries
           rm -rf squashfs-root/usr/lib/*.so* squashfs-root/usr/lib/x86_64-linux-gnu
 
-          # 6. Repack the AppImage
+          # 6. Point .DirIcon at the bundled icon with a relative link
+          ln -sfn Cliprithm.png squashfs-root/.DirIcon
+          test -f squashfs-root/.DirIcon
+
+          # 7. Repack the AppImage
           rm -f "$appimage_filename"
           ARCH=x86_64 /tmp/appimagetool squashfs-root "$appimage_filename"
           chmod +x "$appimage_filename"
 
-          # 7. Clean up extracted directory
+          # 8. Clean up extracted directory
           rm -rf squashfs-root
           cd -
 
